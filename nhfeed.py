@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html as html_lib
 import os
 import re
 import threading
@@ -8,32 +9,28 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, Iterable
 
 import requests
-
 from engine import Quote
 
 KST = timezone(timedelta(hours=9))
 
 KR_DEFAULT_CODES = [
-    "005930", "000660", "035420", "035720", "068270",
-    "012450", "267260", "042700", "005380", "000270",
-    "105560", "055550", "086790", "028260", "207940",
+    "005930", "000660", "035420", "035720", "068270", "012450", "267260",
+    "042700", "005380", "000270", "105560", "055550", "086790", "028260",
+    "207940",
 ]
 
 US_DEFAULT_CODES = [
-    "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "TSLA",
-    "AVGO", "AMD", "NFLX", "COST", "PLTR", "JPM", "BAC", "WMT",
-    "LLY", "UNH", "XOM", "CVX", "ORCL", "CRM", "ADBE", "QCOM",
-    "MU", "INTC", "ARM", "TSM",
+    "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "TSLA", "AVGO", "AMD",
+    "NFLX", "COST", "PLTR", "JPM", "BAC", "WMT", "LLY", "UNH", "XOM", "CVX",
+    "ORCL", "CRM", "ADBE", "QCOM", "MU", "INTC", "ARM", "TSM",
 ]
 
 
 def walk(value):
     if isinstance(value, dict):
         yield value
-
         for child in value.values():
             yield from walk(child)
-
     elif isinstance(value, list):
         for child in value:
             yield from walk(child)
@@ -47,7 +44,6 @@ def num(value):
             .replace("+", "")
             .strip()
         )
-
     except Exception:
         return 0.0
 
@@ -57,7 +53,6 @@ def pick(data, keys: Iterable[str]):
         for key in keys:
             if key in obj and obj[key] not in (None, ""):
                 return num(obj[key])
-
     return 0.0
 
 
@@ -65,10 +60,8 @@ def pick_text(data, keys: Iterable[str]):
     for obj in walk(data):
         for key in keys:
             value = obj.get(key)
-
             if value not in (None, ""):
                 return str(value).strip()
-
     return ""
 
 
@@ -76,10 +69,8 @@ def first_list(data, keys: Iterable[str]):
     for obj in walk(data):
         for key in keys:
             value = obj.get(key)
-
             if isinstance(value, list):
                 return value
-
     return []
 
 
@@ -106,7 +97,6 @@ def dataframe_rows(frame):
     if hasattr(frame, "to_dict"):
         try:
             return frame.to_dict("records")
-
         except TypeError:
             pass
 
@@ -118,10 +108,7 @@ def dataframe_rows(frame):
 
 class NHFeed:
     def __init__(self):
-        self.quotes: Dict[
-            str,
-            Dict[str, Quote],
-        ] = {
+        self.quotes: Dict[str, Dict[str, Quote]] = {
             "KR": {},
             "US": {},
         }
@@ -161,13 +148,10 @@ class NHFeed:
         }
 
         self.market = {}
-
         self.market_errors = {}
-
         self.market_updated_at = 0.0
 
         self.usdkrw = 0.0
-
         self.usdkrw_asof = ""
 
         self.index_symbols = {
@@ -220,28 +204,21 @@ class NHFeed:
         }
 
         self.nxt = {
-            "session":
-                "CLOSED",
-
-            "label":
-                "NXT 장외시간",
-
-            "open":
-                False,
-
-            "updated_at":
-                0.0,
+            "session": "CLOSED",
+            "label": "NXT 장외시간",
+            "open": False,
+            "updated_at": 0.0,
         }
 
-        self._stop = (
-            threading.Event()
-        )
+        self.krx_series = {
+            "kospi": [],
+            "kosdaq": [],
+        }
+
+        self._stop = threading.Event()
 
     @staticmethod
-    def _env_codes(
-        key,
-        defaults,
-    ):
+    def _env_codes(key, defaults):
         configured = [
             x.strip().upper()
 
@@ -253,20 +230,12 @@ class NHFeed:
             if x.strip()
         ]
 
-        return (
-            configured
-            or list(defaults)
-        )
+        return configured or list(defaults)
 
-    def quotes_for(
-        self,
-        market: str,
-    ):
+    def quotes_for(self, market: str):
         return self.quotes[
             "US"
-            if str(
-                market
-            ).upper() == "US"
+            if str(market).upper() == "US"
             else "KR"
         ]
 
@@ -275,30 +244,20 @@ class NHFeed:
             self.connected.values()
         )
 
-    def q(
-        self,
-        market: str,
-        code: str,
-    ):
+    def q(self, market: str, code: str):
         market = (
             "US"
-            if str(
-                market
-            ).upper() == "US"
+            if str(market).upper() == "US"
             else "KR"
         )
 
-        code = (
-            str(code)
-            .strip()
-            .upper()
-        )
+        code = str(
+            code
+        ).strip().upper()
 
-        bucket = (
-            self.quotes[
-                market
-            ]
-        )
+        bucket = self.quotes[
+            market
+        ]
 
         if code not in bucket:
             bucket[
@@ -318,7 +277,6 @@ class NHFeed:
         )
 
         if now.weekday() >= 5:
-
             (
                 session,
                 label,
@@ -330,7 +288,6 @@ class NHFeed:
             )
 
         else:
-
             mins = (
                 now.hour
                 * 60
@@ -439,15 +396,10 @@ class NHFeed:
                 time.time(),
         }
 
-    def session_state(
-        self,
-        market: str,
-    ):
-        if (
-            str(
-                market
-            ).upper() == "US"
-        ):
+    def session_state(self, market: str):
+        if str(
+            market
+        ).upper() == "US":
             return None
 
         self.update_nxt_session()
@@ -712,7 +664,6 @@ class NHFeed:
 
     def _load_kr_master(self):
         try:
-
             from nhplug.instruments import (
                 load_master,
             )
@@ -730,7 +681,6 @@ class NHFeed:
             )
 
             for row in rows:
-
                 code = str(
                     row.get(
                         "shrn_iscd"
@@ -796,14 +746,11 @@ class NHFeed:
             ][:]
 
         except Exception as exc:
-
             self.errors[
                 "KR"
             ] = (
-                "국내 종목마스터: "
-                + str(
-                    exc
-                )
+                f"국내 종목마스터: "
+                f"{exc}"
             )[:300]
 
             self.code_lists[
@@ -814,7 +761,6 @@ class NHFeed:
 
     def _load_us_master(self):
         try:
-
             from nhplug.instruments import (
                 load_master,
             )
@@ -832,7 +778,6 @@ class NHFeed:
             )
 
             for row in rows:
-
                 symbol = str(
                     row.get(
                         "symbol"
@@ -890,14 +835,11 @@ class NHFeed:
             ][:]
 
         except Exception as exc:
-
             self.errors[
                 "US"
             ] = (
-                "해외 종목마스터: "
-                + str(
-                    exc
-                )
+                f"해외 종목마스터: "
+                f"{exc}"
             )[:300]
 
             self.code_lists[
@@ -908,7 +850,6 @@ class NHFeed:
 
     def _discover_futures(self):
         try:
-
             from nhplug.instruments import (
                 load_master,
             )
@@ -916,7 +857,6 @@ class NHFeed:
             if not self.future_symbols[
                 "kospi_night"
             ]:
-
                 fallback = []
 
                 for row in dataframe_rows(
@@ -924,7 +864,6 @@ class NHFeed:
                         "m_future"
                     )
                 ):
-
                     code = str(
                         row.get(
                             "code"
@@ -990,7 +929,6 @@ class NHFeed:
             if not self.future_symbols[
                 "nasdaq_future"
             ]:
-
                 candidates = []
 
                 for row in dataframe_rows(
@@ -998,7 +936,6 @@ class NHFeed:
                         "fucode_h"
                     )
                 ):
-
                     symbol = str(
                         row.get(
                             "isym"
@@ -1034,9 +971,7 @@ class NHFeed:
                                 "ExchName"
                             )
                             or "FCME"
-                        )
-                        .strip()
-                        .upper()
+                        ).strip().upper()
                         or "FCME"
                     )
 
@@ -1062,13 +997,11 @@ class NHFeed:
                                 else 0,
 
                                 symbol,
-
                                 exnm,
                             )
                         )
 
                 if candidates:
-
                     candidates.sort(
                         reverse=True
                     )
@@ -1090,7 +1023,6 @@ class NHFeed:
                     ] = exnm
 
         except Exception as exc:
-
             self.market_errors[
                 "future_master"
             ] = str(
@@ -1098,7 +1030,6 @@ class NHFeed:
             )[:300]
 
     def _market_order(self):
-
         self.update_nxt_session()
 
         if self.nxt[
@@ -1112,12 +1043,9 @@ class NHFeed:
                 "KRX",
             )
 
-        if (
-            self.nxt[
-                "session"
-            ]
-            == "MAIN"
-        ):
+        if self.nxt[
+            "session"
+        ] == "MAIN":
             return (
                 "KRX",
                 "NXT",
@@ -1128,7 +1056,6 @@ class NHFeed:
         )
 
     def kr_scanner(self):
-
         self._load_kr_master()
 
         codes = (
@@ -1143,7 +1070,6 @@ class NHFeed:
         from nhplug import call
 
         while not self._stop.is_set():
-
             code = codes[
                 self.scan_index[
                     "KR"
@@ -1169,9 +1095,7 @@ class NHFeed:
             for market_cd in (
                 self._market_order()
             ):
-
                 try:
-
                     data = call(
                         "/krstock/quote/v1/currentPrice",
                         {
@@ -1206,7 +1130,6 @@ class NHFeed:
                         break
 
                 except Exception as exc:
-
                     last_error = (
                         f"{market_cd} "
                         f"{code}: "
@@ -1220,7 +1143,6 @@ class NHFeed:
                         time.sleep(
                             1.5
                         )
-
                         break
 
             if (
@@ -1240,7 +1162,6 @@ class NHFeed:
             )
 
     def us_scanner(self):
-
         self._load_us_master()
 
         codes = (
@@ -1255,7 +1176,6 @@ class NHFeed:
         from nhplug import call
 
         while not self._stop.is_set():
-
             code = codes[
                 self.scan_index[
                     "US"
@@ -1277,7 +1197,6 @@ class NHFeed:
             )
 
             try:
-
                 data = call(
                     "/gbstock/quote/v1/current",
                     {
@@ -1307,7 +1226,6 @@ class NHFeed:
                     ] = ""
 
             except Exception as exc:
-
                 self.errors[
                     "US"
                 ] = (
@@ -1340,7 +1258,6 @@ class NHFeed:
         series=None,
         asof="",
     ):
-
         return {
             "label":
                 label,
@@ -1370,35 +1287,11 @@ class NHFeed:
                 asof,
         }
 
-    def _krx_rows(
-        self,
-        market_code,
-        trade_date,
-    ):
-
-        payload = {
-            "bld":
-                (
-                    "dbms/MDC/STAT/"
-                    "standard/"
-                    "MDCSTAT00101"
-                ),
-
-            "trdDd":
-                trade_date,
-
-            "idxIndMidclssCd":
-                market_code,
-
-            "share":
-                "2",
-
-            "money":
-                "3",
-
-            "csvxls_isNo":
-                "false",
-        }
+    def _krx_home_text(self):
+        urls = (
+            "https://global.krx.co.kr/",
+            "https://global.krx.co.kr/cn/main/main.jsp",
+        )
 
         headers = {
             "User-Agent":
@@ -1407,221 +1300,128 @@ class NHFeed:
                     "(Windows NT 10.0; Win64; x64) "
                     "AppleWebKit/537.36 "
                     "(KHTML, like Gecko) "
-                    "Chrome/124.0 Safari/537.36"
+                    "Chrome/131.0.0.0 Safari/537.36"
                 ),
 
-            "Origin":
-                "http://data.krx.co.kr",
-
-            "Referer":
-                "http://data.krx.co.kr/",
-
-            "Accept":
-                "application/json, text/plain, */*",
+            "Accept-Language":
+                "en-US,en;q=0.9,ko;q=0.8",
         }
 
-        urls = [
-            (
-                "http://data.krx.co.kr/"
-                "comm/bldAttendant/"
-                "getJsonData.cmd"
-            ),
-
-            (
-                "https://data.krx.co.kr/"
-                "comm/bldAttendant/"
-                "getJsonData.cmd"
-            ),
-        ]
-
-        last = None
+        last_error = None
 
         for url in urls:
-
             try:
-
-                r = requests.post(
+                response = requests.get(
                     url,
-                    data=payload,
-                    timeout=10,
                     headers=headers,
+                    timeout=8,
                 )
 
-                r.raise_for_status()
+                response.raise_for_status()
+
+                text = html_lib.unescape(
+                    re.sub(
+                        r"<[^>]+>",
+                        " ",
+                        response.text,
+                    )
+                )
+
+                text = re.sub(
+                    r"\s+",
+                    " ",
+                    text,
+                ).strip()
 
                 if (
-                    not r.text.strip()
-                    or r.text
-                    .strip()
-                    .upper()
-                    == "LOGOUT"
+                    "KOSPI"
+                    in text
+                    and "KOSDAQ"
+                    in text
                 ):
-                    raise RuntimeError(
-                        "KRX empty/LOGOUT"
-                    )
-
-                data = r.json()
-
-                rows = (
-                    data.get(
-                        "output"
-                    )
-                    or data.get(
-                        "OutBlock_1"
-                    )
-                    or data.get(
-                        "block1"
-                    )
-                    or []
-                )
-
-                if not isinstance(
-                    rows,
-                    list,
-                ):
-                    raise RuntimeError(
-                        "KRX index response "
-                        "has no row list"
-                    )
-
-                return rows
+                    return text
 
             except Exception as exc:
-                last = exc
+                last_error = exc
 
         raise RuntimeError(
-            str(last)
+            "KRX Global 홈페이지 조회 실패: "
+            f"{last_error}"
         )
 
     @staticmethod
-    def _find_index_row(
-        rows,
-        names,
+    def _parse_krx_home_index(
+        text,
+        label,
     ):
+        pattern = re.compile(
+            rf"\b{re.escape(label)}\b"
+            r"\s*"
+            r"([\d,]+(?:\.\d+)?)"
+            r"\s*"
+            r"([▲▼]?)"
+            r"\s*"
+            r"([\d,]+(?:\.\d+)?)?"
+            r"\s*"
+            r"(?:\(\s*([\d.]+)\s*\))?",
+            re.IGNORECASE,
+        )
 
-        targets = {
-            re.sub(
-                r"\s+",
-                "",
-                x,
-            ).upper()
+        match = pattern.search(
+            text
+        )
 
-            for x in names
-        }
-
-        for row in rows:
-
-            name = str(
-                row.get(
-                    "IDX_NM"
-                )
-                or row.get(
-                    "IDX_NM_KOR"
-                )
-                or row.get(
-                    "idx_nm"
-                )
-                or ""
+        if not match:
+            raise RuntimeError(
+                f"{label} 값 파싱 실패"
             )
-
-            if (
-                re.sub(
-                    r"\s+",
-                    "",
-                    name,
-                ).upper()
-                in targets
-            ):
-                return row
-
-        return None
-
-    @staticmethod
-    def _parse_krx_row(
-        row,
-    ):
 
         value = num(
-            row.get(
-                "CLSPRC_IDX"
-            )
-            or row.get(
-                "TDD_CLSPRC"
-            )
-            or row.get(
-                "close"
+            match.group(
+                1
             )
         )
 
-        change = num(
-            row.get(
-                "CMPPREVDD_IDX"
-            )
-            or row.get(
-                "CMPPREVDD_PRC"
-            )
-            or row.get(
-                "change"
-            )
-        )
-
-        change_pct = num(
-            row.get(
-                "FLUC_RT"
-            )
-            or row.get(
-                "change_rate"
-            )
-        )
-
-        sign = str(
-            row.get(
-                "FLUC_TP_CD"
-            )
-            or row.get(
-                "fluc_tp_cd"
+        sign = (
+            match.group(
+                2
             )
             or ""
         )
 
-        if sign in (
-            "4",
-            "5",
-            "8",
-            "9",
-            "-",
-            "▼",
-        ):
-            change = (
-                -abs(
-                    change
-                )
+        change = num(
+            match.group(
+                3
+            )
+        )
+
+        change_pct = num(
+            match.group(
+                4
+            )
+        )
+
+        if sign == "▼":
+            change = -abs(
+                change
             )
 
-            change_pct = (
-                -abs(
-                    change_pct
-                )
+            change_pct = -abs(
+                change_pct
             )
 
-        elif sign in (
-            "1",
-            "2",
-            "6",
-            "7",
-            "+",
-            "▲",
-        ):
-            change = (
-                abs(
-                    change
-                )
+        elif sign == "▲":
+            change = abs(
+                change
             )
 
-            change_pct = (
-                abs(
-                    change_pct
-                )
+            change_pct = abs(
+                change_pct
+            )
+
+        if value <= 0:
+            raise RuntimeError(
+                f"{label} 값이 0 이하"
             )
 
         return (
@@ -1630,241 +1430,182 @@ class NHFeed:
             change_pct,
         )
 
-    def _read_krx_history(self):
-
-        today = datetime.now(
+    def _krx_status(self):
+        now = datetime.now(
             KST
-        ).date()
+        )
 
-        history = {
-            "kospi": [],
-            "kosdaq": [],
-        }
-
-        latest = {
-            "kospi": None,
-            "kosdaq": None,
-        }
-
-        last_error = None
-
-        for offset in range(
-            18
-        ):
-
-            day = (
-                today
-                - timedelta(
-                    days=offset
-                )
+        if now.weekday() < 5:
+            minutes = (
+                now.hour
+                * 60
+                + now.minute
             )
 
-            if day.weekday() >= 5:
-                continue
-
-            trade_date = (
-                day.strftime(
-                    "%Y%m%d"
+            if (
+                540
+                <= minutes
+                <= 930
+            ):
+                return (
+                    "장중 공식값"
                 )
+
+        return (
+            "최근 종가"
+        )
+
+    def _update_krx_series(
+        self,
+        key,
+        value,
+        change,
+    ):
+        series = (
+            self.krx_series[
+                key
+            ]
+        )
+
+        if not series:
+            previous_close = (
+                value - change
+                if change
+                else value
             )
 
-            try:
-
-                kp_rows = (
-                    self._krx_rows(
-                        "02",
-                        trade_date,
+            if (
+                previous_close
+                > 0
+            ):
+                series.append(
+                    round(
+                        previous_close,
+                        4,
                     )
                 )
-
-                kq_rows = (
-                    self._krx_rows(
-                        "03",
-                        trade_date,
-                    )
-                )
-
-                kp = (
-                    self._find_index_row(
-                        kp_rows,
-                        (
-                            "코스피",
-                            "KOSPI",
-                        ),
-                    )
-                )
-
-                kq = (
-                    self._find_index_row(
-                        kq_rows,
-                        (
-                            "코스닥",
-                            "KOSDAQ",
-                        ),
-                    )
-                )
-
-                if (
-                    not kp
-                    or not kq
-                ):
-                    raise RuntimeError(
-                        "KOSPI/KOSDAQ "
-                        "representative row "
-                        "not found"
-                    )
-
-                for (
-                    key,
-                    row,
-                ) in (
-                    (
-                        "kospi",
-                        kp,
-                    ),
-
-                    (
-                        "kosdaq",
-                        kq,
-                    ),
-                ):
-
-                    (
-                        value,
-                        change,
-                        change_pct,
-                    ) = (
-                        self._parse_krx_row(
-                            row
-                        )
-                    )
-
-                    if value <= 0:
-                        continue
-
-                    history[
-                        key
-                    ].append(
-                        (
-                            trade_date,
-                            value,
-                        )
-                    )
-
-                    if (
-                        latest[
-                            key
-                        ]
-                        is None
-                    ):
-                        latest[
-                            key
-                        ] = (
-                            trade_date,
-                            value,
-                            change,
-                            change_pct,
-                        )
-
-                if (
-                    len(
-                        history[
-                            "kospi"
-                        ]
-                    ) >= 10
-                    and len(
-                        history[
-                            "kosdaq"
-                        ]
-                    ) >= 10
-                ):
-                    break
-
-            except Exception as exc:
-                last_error = exc
-
-            time.sleep(
-                0.08
-            )
 
         if (
-            not latest[
-                "kospi"
-            ]
-            or not latest[
-                "kosdaq"
-            ]
+            not series
+            or abs(
+                series[-1]
+                - value
+            ) > 1e-9
         ):
-            raise RuntimeError(
-                "KRX index load failed: "
-                f"{last_error}"
+            series.append(
+                round(
+                    value,
+                    4,
+                )
             )
+
+        self.krx_series[
+            key
+        ] = series[
+            -60:
+        ]
+
+        return list(
+            self.krx_series[
+                key
+            ]
+        )
+
+    def _read_krx_indices(self):
+        text = (
+            self._krx_home_text()
+        )
+
+        status = (
+            self._krx_status()
+        )
 
         out = {}
 
         for (
             key,
-            label,
+            raw_label,
+            display_label,
         ) in (
             (
                 "kospi",
+                "KOSPI",
                 "코스피",
             ),
 
             (
                 "kosdaq",
+                "KOSDAQ",
                 "코스닥",
             ),
         ):
-
             (
-                asof,
                 value,
                 change,
                 change_pct,
-            ) = latest[
-                key
-            ]
-
-            series = [
-                v
-
-                for _,
-                v
-                in reversed(
-                    history[
-                        key
-                    ]
+            ) = (
+                self._parse_krx_home_index(
+                    text,
+                    raw_label,
                 )
-            ]
+            )
+
+            series = (
+                self._update_krx_series(
+                    key,
+                    value,
+                    change,
+                )
+            )
 
             out[
                 key
             ] = (
                 self._market_item(
-                    label,
+                    display_label,
                     value,
                     change,
                     change_pct,
-                    (
-                        "종가 기준 · "
-                        f"{asof[:4]}-"
-                        f"{asof[4:6]}-"
-                        f"{asof[6:]}"
-                    ),
+                    status,
                     "KRX 공식",
                     series,
-                    asof,
+                    "",
                 )
             )
 
         return out
 
+    def krx_loop(self):
+        while not self._stop.is_set():
+            try:
+                self.market.update(
+                    self._read_krx_indices()
+                )
+
+                self.market_errors.pop(
+                    "krx_indices",
+                    None,
+                )
+
+            except Exception as exc:
+                self.market_errors[
+                    "krx_indices"
+                ] = str(
+                    exc
+                )[:500]
+
+            self.market_updated_at = (
+                time.time()
+            )
+
+            time.sleep(
+                60
+            )
+
     def _symbol_candidates(
         self,
         key,
     ):
-
         configured = (
             self.index_symbols.get(
                 key,
@@ -1922,13 +1663,15 @@ class NHFeed:
         label,
         status="종가 기준",
     ):
-
         from nhplug import call
 
-        today = datetime.now(
-            KST
-        ).strftime(
-            "%Y%m%d"
+        today = (
+            datetime.now(
+                KST
+            )
+            .strftime(
+                "%Y%m%d"
+            )
         )
 
         data = call(
@@ -1989,15 +1732,17 @@ class NHFeed:
             sign,
         )
 
-        change_pct = signed_value(
-            pick(
-                data,
-                (
-                    "prdy_ctrt",
-                    "change_rate",
+        change_pct = (
+            signed_value(
+                pick(
+                    data,
+                    (
+                        "prdy_ctrt",
+                        "change_rate",
+                    ),
                 ),
-            ),
-            sign,
+                sign,
+            )
         )
 
         rows = first_list(
@@ -2011,11 +1756,9 @@ class NHFeed:
         )
 
         series = []
-
         asof = ""
 
         for row in rows:
-
             v = num(
                 row.get(
                     "ovrs_prpr"
@@ -2034,7 +1777,6 @@ class NHFeed:
                 )
 
             if not asof:
-
                 raw_date = str(
                     row.get(
                         "xymd"
@@ -2069,39 +1811,39 @@ class NHFeed:
             not value
             and series
         ):
-            value = (
-                series[
-                    0
-                ]
-            )
+            value = series[
+                0
+            ]
 
         if value <= 0:
             raise RuntimeError(
-                f"{label} value "
-                f"missing for {symbol}"
+                f"{label} value missing "
+                f"for {symbol}"
             )
 
         if not asof:
             asof = today
 
-        return self._market_item(
-            label,
-            value,
-            change,
-            change_pct,
-            (
-                f"{status} · "
-                f"{asof[:4]}-"
-                f"{asof[4:6]}-"
-                f"{asof[6:]}"
-            ),
-            "NHPLUG",
-            list(
-                reversed(
-                    series
-                )
-            ),
-            asof,
+        return (
+            self._market_item(
+                label,
+                value,
+                change,
+                change_pct,
+                (
+                    f"{status} · "
+                    f"{asof[:4]}-"
+                    f"{asof[4:6]}-"
+                    f"{asof[6:]}"
+                ),
+                "NHPLUG",
+                list(
+                    reversed(
+                        series
+                    )
+                ),
+                asof,
+            )
         )
 
     def _read_symbol_period(
@@ -2110,7 +1852,6 @@ class NHFeed:
         label,
         status="종가 기준",
     ):
-
         errors = []
 
         for symbol in (
@@ -2118,9 +1859,7 @@ class NHFeed:
                 key
             )
         ):
-
             try:
-
                 item = (
                     self._read_symbol_period_one(
                         symbol,
@@ -2136,9 +1875,9 @@ class NHFeed:
                 return item
 
             except Exception as exc:
-
                 errors.append(
-                    f"{symbol}: {exc}"
+                    f"{symbol}: "
+                    f"{exc}"
                 )
 
         raise RuntimeError(
@@ -2148,7 +1887,6 @@ class NHFeed:
         )
 
     def _read_fx(self):
-
         item = (
             self._read_symbol_period(
                 "usdkrw",
@@ -2174,7 +1912,6 @@ class NHFeed:
         return item
 
     def _read_kospi_night(self):
-
         from nhplug import call
 
         symbol = (
@@ -2222,14 +1959,16 @@ class NHFeed:
             sign,
         )
 
-        change_pct = signed_value(
-            pick(
-                data,
-                (
-                    "ctrt",
+        change_pct = (
+            signed_value(
+                pick(
+                    data,
+                    (
+                        "ctrt",
+                    ),
                 ),
-            ),
-            sign,
+                sign,
+            )
         )
 
         if value <= 0:
@@ -2259,23 +1998,24 @@ class NHFeed:
             ]
         )[-30:]
 
-        return self._market_item(
-            "코스피 야간선물",
-            value,
-            change,
-            change_pct,
-            "실시간",
-            "NHPLUG",
-            series,
-            datetime.now(
-                KST
-            ).strftime(
-                "%Y%m%d"
-            ),
+        return (
+            self._market_item(
+                "코스피 야간선물",
+                value,
+                change,
+                change_pct,
+                "실시간",
+                "NHPLUG",
+                series,
+                datetime.now(
+                    KST
+                ).strftime(
+                    "%Y%m%d"
+                ),
+            )
         )
 
     def _read_nasdaq_future(self):
-
         from nhplug import call
 
         symbol = (
@@ -2334,21 +2074,22 @@ class NHFeed:
             sign,
         )
 
-        change_pct = signed_value(
-            pick(
-                data,
-                (
-                    "rate",
+        change_pct = (
+            signed_value(
+                pick(
+                    data,
+                    (
+                        "rate",
+                    ),
                 ),
-            ),
-            sign,
+                sign,
+            )
         )
 
         if value <= 0:
             raise RuntimeError(
                 f"{symbol} "
-                "나스닥 선물 "
-                "현재가 없음"
+                "나스닥 선물 현재가 없음"
             )
 
         old = (
@@ -2372,60 +2113,25 @@ class NHFeed:
             ]
         )[-30:]
 
-        return self._market_item(
-            "나스닥 선물",
-            value,
-            change,
-            change_pct,
-            "실시간",
-            "NHPLUG",
-            series,
-            datetime.now(
-                KST
-            ).strftime(
-                "%Y%m%d"
-            ),
+        return (
+            self._market_item(
+                "나스닥 선물",
+                value,
+                change,
+                change_pct,
+                "실시간",
+                "NHPLUG",
+                series,
+                datetime.now(
+                    KST
+                ).strftime(
+                    "%Y%m%d"
+                ),
+            )
         )
 
     def reference_loop(self):
-
-        last_krx = 0.0
-
         while not self._stop.is_set():
-
-            errors = dict(
-                self.market_errors
-            )
-
-            if (
-                time.time()
-                - last_krx
-                > 600
-            ):
-
-                try:
-
-                    self.market.update(
-                        self._read_krx_history()
-                    )
-
-                    errors.pop(
-                        "krx_indices",
-                        None,
-                    )
-
-                    last_krx = (
-                        time.time()
-                    )
-
-                except Exception as exc:
-
-                    errors[
-                        "krx_indices"
-                    ] = str(
-                        exc
-                    )[:500]
-
             for (
                 key,
                 label,
@@ -2445,9 +2151,7 @@ class NHFeed:
                     "필라델피아 반도체지수",
                 ),
             ):
-
                 try:
-
                     self.market[
                         key
                     ] = (
@@ -2457,39 +2161,32 @@ class NHFeed:
                         )
                     )
 
-                    errors.pop(
+                    self.market_errors.pop(
                         key,
                         None,
                     )
 
                 except Exception as exc:
-
-                    errors[
+                    self.market_errors[
                         key
                     ] = str(
                         exc
                     )[:500]
 
             try:
-
                 self._read_fx()
 
-                errors.pop(
+                self.market_errors.pop(
                     "usdkrw",
                     None,
                 )
 
             except Exception as exc:
-
-                errors[
+                self.market_errors[
                     "usdkrw"
                 ] = str(
                     exc
                 )[:500]
-
-            self.market_errors = (
-                errors
-            )
 
             self.market_updated_at = (
                 time.time()
@@ -2500,60 +2197,46 @@ class NHFeed:
             )
 
     def futures_loop(self):
-
         self._discover_futures()
 
         while not self._stop.is_set():
-
-            errors = dict(
-                self.market_errors
-            )
-
             try:
-
                 self.market[
                     "kospi_night"
                 ] = (
                     self._read_kospi_night()
                 )
 
-                errors.pop(
+                self.market_errors.pop(
                     "kospi_night",
                     None,
                 )
 
             except Exception as exc:
-
-                errors[
+                self.market_errors[
                     "kospi_night"
                 ] = str(
                     exc
                 )[:300]
 
             try:
-
                 self.market[
                     "nasdaq_future"
                 ] = (
                     self._read_nasdaq_future()
                 )
 
-                errors.pop(
+                self.market_errors.pop(
                     "nasdaq_future",
                     None,
                 )
 
             except Exception as exc:
-
-                errors[
+                self.market_errors[
                     "nasdaq_future"
                 ] = str(
                     exc
                 )[:300]
-
-            self.market_errors = (
-                errors
-            )
 
             self.market_updated_at = (
                 time.time()
@@ -2569,35 +2252,33 @@ class NHFeed:
         label,
         source="NHPLUG",
     ):
-
         err = (
             self.market_errors.get(
                 key
             )
         )
 
-        return self._market_item(
-            label,
-            None,
-            None,
-            None,
-            (
-                "수신 오류 · "
-                + err[
-                    :100
-                ]
-                if err
-                else "수신 대기"
-            ),
-            source,
-            [],
+        return (
+            self._market_item(
+                label,
+                None,
+                None,
+                None,
+                (
+                    f"수신 오류 · "
+                    f"{err[:100]}"
+                    if err
+                    else "수신 대기"
+                ),
+                source,
+                [],
+            )
         )
 
     def market_state(
         self,
         market: str,
     ):
-
         market = (
             "US"
             if str(
@@ -2607,7 +2288,6 @@ class NHFeed:
         )
 
         if market == "KR":
-
             return [
                 (
                     self.market.get(
@@ -2705,7 +2385,6 @@ class NHFeed:
         ]
 
     def health(self):
-
         return {
             "nh_realtime":
                 self.connected_any(),
@@ -2730,12 +2409,10 @@ class NHFeed:
             "kr_priced":
                 sum(
                     1
-
                     for q in
                     self.quotes[
                         "KR"
                     ].values()
-
                     if q.price > 0
                 ),
 
@@ -2749,12 +2426,10 @@ class NHFeed:
             "us_priced":
                 sum(
                     1
-
                     for q in
                     self.quotes[
                         "US"
                     ].values()
-
                     if q.price > 0
                 ),
 
@@ -2774,14 +2449,13 @@ class NHFeed:
         }
 
     def start(self):
-
         for target in (
             self.kr_scanner,
             self.us_scanner,
+            self.krx_loop,
             self.reference_loop,
             self.futures_loop,
         ):
-
             threading.Thread(
                 target=target,
                 daemon=True,
