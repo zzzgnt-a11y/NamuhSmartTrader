@@ -1,22 +1,104 @@
-<div
-  id="modal"
-  class="modal"
->
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Namuh Smart Trader</title>
+  <link rel="stylesheet" href="/static/styles.css?v=2">
+</head>
 
-  <div class="modal-card">
+<body>
 
-    <button
-      id="closeModalBtn"
-      class="x"
-      type="button"
-    >
-      ×
-    </button>
+<header>
+  <div>
+    <div class="eyebrow">LIVE · AI PAPER</div>
+    <h1>Namuh Smart Trader</h1>
+    <p>실제 KRX 데이터를 보고 가상자금으로 자동매매</p>
+  </div>
+  <div class="mascot">📈🧒🏻✨</div>
+</header>
 
-    <div id="detail"></div>
+<main>
 
+<section class="hero">
+  <div>
+    <span class="label">가상 총자산</span>
+    <strong id="equity">-</strong>
+    <small id="health">연결 확인 중</small>
   </div>
 
+  <div class="budget">
+    <label>오늘 운용금액</label>
+    <div>
+      <input id="budget" inputmode="numeric" value="200000">
+      <button id="saveBudgetBtn" type="button">저장</button>
+    </div>
+    <small>보유 원가 합이 이 금액에 도달하면 신규매수 차단 · 매도 후 재사용</small>
+  </div>
+</section>
+
+<h2>시장 대시보드</h2>
+<div id="markets" class="market-grid"></div>
+
+<section class="panel">
+  <div class="title-row">
+    <h2>오늘의 주도섹터</h2>
+    <span>KRX 수급/동조</span>
+  </div>
+  <div id="sectors" class="sector-row"></div>
+</section>
+
+<nav>
+  <button class="active" data-tab="scalp" type="button">1. 단타</button>
+  <button data-tab="smart" type="button">2. 스마트머니</button>
+  <button data-tab="trades" type="button">3. 오늘 매매</button>
+</nav>
+
+<section id="scalp" class="tab active">
+  <div class="panel">
+    <div class="title-row">
+      <h2>현재 AI 보유</h2>
+      <span id="heldCost"></span>
+    </div>
+    <div id="positions"></div>
+  </div>
+
+  <div class="panel">
+    <div class="title-row">
+      <h2>오늘 급수급 후보</h2>
+      <span>KRX ONLY · NXT 제외</span>
+    </div>
+    <div id="scalpList"></div>
+  </div>
+</section>
+
+<section id="smart" class="tab">
+  <div class="panel">
+    <div class="title-row">
+      <h2>스마트머니 + 저평가</h2>
+      <span>PER · PBR · 외국인 · 기관</span>
+    </div>
+    <div id="smartList"></div>
+  </div>
+</section>
+
+<section id="trades" class="tab">
+  <div class="panel">
+    <div class="title-row">
+      <h2>오늘 매수/매도</h2>
+      <span id="cash"></span>
+    </div>
+    <div id="tradeList"></div>
+  </div>
+</section>
+
+</main>
+
+<div id="modal" class="modal">
+  <div class="modal-card">
+    <button id="closeModalBtn" class="x" type="button">×</button>
+    <div id="detail"></div>
+  </div>
 </div>
 
 <script src="/static/app.js?v=2"></script>
