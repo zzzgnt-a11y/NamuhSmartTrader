@@ -92,7 +92,9 @@ def _parse_krx_index(text: str, label: str):
         r"([\d,]+(?:\.\d+)?)\s*"
         r"\(\s*([\d.]+)\s*\)"
     )
+
     m = pattern.search(text)
+
     if not m:
         return None
 
@@ -115,6 +117,7 @@ class NHFeed:
             for x in os.getenv("TRACKED_CODES", "").split(",")
             if x.strip()
         ]
+
         self.fixed = configured or DEFAULT_CODES[:]
         self.all_codes = []
         self.scan_index = 0
@@ -153,17 +156,34 @@ class NHFeed:
         mins = now.hour * 60 + now.minute + now.second / 60
 
         if 480 <= mins < 530:
-            session, label, opened = "PRE", "NXT 프리마켓", True
+            session = "PRE"
+            label = "NXT 프리마켓"
+            opened = True
+
         elif 530 <= mins < 540.5:
-            session, label, opened = "BREAK", "NXT 메인마켓 대기", False
+            session = "BREAK"
+            label = "NXT 메인마켓 대기"
+            opened = False
+
         elif 540.5 <= mins < 920:
-            session, label, opened = "MAIN", "NXT 메인마켓", True
+            session = "MAIN"
+            label = "NXT 메인마켓"
+            opened = True
+
         elif 920 <= mins < 940:
-            session, label, opened = "AFTER_WAIT", "NXT 애프터마켓 대기", False
+            session = "AFTER_WAIT"
+            label = "NXT 애프터마켓 대기"
+            opened = False
+
         elif 940 <= mins < 1200:
-            session, label, opened = "AFTER", "NXT 애프터마켓", True
+            session = "AFTER"
+            label = "NXT 애프터마켓"
+            opened = True
+
         else:
-            session, label, opened = "CLOSED", "NXT 장외시간", False
+            session = "CLOSED"
+            label = "NXT 장외시간"
+            opened = False
 
         self.nxt = {
             "session": session,
@@ -175,6 +195,7 @@ class NHFeed:
     def q(self, code):
         if code not in self.quotes:
             self.quotes[code] = Quote(code, code)
+
         return self.quotes[code]
 
     def _apply(self, code, data):
@@ -182,21 +203,39 @@ class NHFeed:
 
         price = pick(
             data,
-            ("stck_prpr", "price", "prc", "cur_pr", "now_pr", "last_price"),
+            (
+                "stck_prpr",
+                "price",
+                "prc",
+                "cur_pr",
+                "now_pr",
+                "last_price",
+            ),
         )
 
         volume = pick(
             data,
-            ("acml_vol", "new_volume", "volume", "vol"),
+            (
+                "acml_vol",
+                "new_volume",
+                "volume",
+                "vol",
+            ),
         )
 
         if price:
-            q.mark(round(price), volume)
+            q.mark(
+                round(price),
+                volume,
+            )
 
         q.open = round(
             pick(
                 data,
-                ("stck_oprc", "open"),
+                (
+                    "stck_oprc",
+                    "open",
+                ),
             )
             or q.open
         )
@@ -204,7 +243,10 @@ class NHFeed:
         q.high = round(
             pick(
                 data,
-                ("stck_hgpr", "high"),
+                (
+                    "stck_hgpr",
+                    "high",
+                ),
             )
             or q.high
         )
@@ -212,7 +254,10 @@ class NHFeed:
         q.low = round(
             pick(
                 data,
-                ("stck_lwpr", "low"),
+                (
+                    "stck_lwpr",
+                    "low",
+                ),
             )
             or q.low
         )
@@ -220,7 +265,10 @@ class NHFeed:
         q.per = (
             pick(
                 data,
-                ("per", "per_val"),
+                (
+                    "per",
+                    "per_val",
+                ),
             )
             or q.per
         )
@@ -228,7 +276,10 @@ class NHFeed:
         q.pbr = (
             pick(
                 data,
-                ("pbr", "pbr_val"),
+                (
+                    "pbr",
+                    "pbr_val",
+                ),
             )
             or q.pbr
         )
@@ -236,7 +287,10 @@ class NHFeed:
         q.foreign_net = (
             pick(
                 data,
-                ("frgn_ntby_qty", "foreign_net"),
+                (
+                    "frgn_ntby_qty",
+                    "foreign_net",
+                ),
             )
             or q.foreign_net
         )
@@ -244,14 +298,22 @@ class NHFeed:
         q.institution_net = (
             pick(
                 data,
-                ("orgn_ntby_qty", "gigwan", "institution_net"),
+                (
+                    "orgn_ntby_qty",
+                    "gigwan",
+                    "institution_net",
+                ),
             )
             or q.institution_net
         )
 
         strength = pick(
             data,
-            ("cttr", "volpower", "execution_strength"),
+            (
+                "cttr",
+                "volpower",
+                "execution_strength",
+            ),
         )
 
         if strength:
@@ -262,15 +324,23 @@ class NHFeed:
             from nhplug.instruments import load_master
 
             df = load_master("m_new_stock")
-            cols = list(map(str, df.columns))
+
+            cols = list(
+                map(
+                    str,
+                    df.columns,
+                )
+            )
 
             code_col = next(
                 (
                     c
                     for c in cols
-                    if "code" in c.lower()
-                    or "단축" in c
-                    or "종목코드" in c
+                    if (
+                        "code" in c.lower()
+                        or "단축" in c
+                        or "종목코드" in c
+                    )
                 ),
                 None,
             )
@@ -279,9 +349,11 @@ class NHFeed:
                 (
                     c
                     for c in cols
-                    if "name" in c.lower()
-                    or "종목명" in c
-                    or "한글" in c
+                    if (
+                        "name" in c.lower()
+                        or "종목명" in c
+                        or "한글" in c
+                    )
                 ),
                 None,
             )
@@ -290,9 +362,11 @@ class NHFeed:
                 (
                     c
                     for c in cols
-                    if "업종" in c
-                    or "sector" in c.lower()
-                    or "industry" in c.lower()
+                    if (
+                        "업종" in c
+                        or "sector" in c.lower()
+                        or "industry" in c.lower()
+                    )
                 ),
                 None,
             )
@@ -303,7 +377,12 @@ class NHFeed:
                 for _, row in df.iterrows():
                     m = re.search(
                         r"(\d{6})",
-                        str(row.get(code_col, "")),
+                        str(
+                            row.get(
+                                code_col,
+                                "",
+                            )
+                        ),
                     )
 
                     if not m:
@@ -314,20 +393,30 @@ class NHFeed:
 
                     if name_col:
                         q.name = str(
-                            row.get(name_col, "")
+                            row.get(
+                                name_col,
+                                "",
+                            )
                             or code
                         )
 
                     if sector_col:
                         q.sector = str(
-                            row.get(sector_col, "")
+                            row.get(
+                                sector_col,
+                                "",
+                            )
                             or ""
                         )
 
                     arr.append(code)
 
             self.all_codes = (
-                list(dict.fromkeys(arr))
+                list(
+                    dict.fromkeys(
+                        arr
+                    )
+                )
                 or self.fixed[:]
             )
 
@@ -338,18 +427,30 @@ class NHFeed:
     def _market_order(self):
         self.update_nxt_session()
 
-        if self.nxt["session"] in ("PRE", "AFTER"):
-            return ("NXT", "KRX")
+        if self.nxt["session"] in (
+            "PRE",
+            "AFTER",
+        ):
+            return (
+                "NXT",
+                "KRX",
+            )
 
         if self.nxt["session"] == "MAIN":
-            return ("KRX", "NXT")
+            return (
+                "KRX",
+                "NXT",
+            )
 
         return ("KRX",)
 
     def scanner(self):
         self.load_master()
 
-        codes = self.all_codes or self.fixed
+        codes = (
+            self.all_codes
+            or self.fixed
+        )
 
         if not codes:
             return
@@ -398,7 +499,10 @@ class NHFeed:
                         time.sleep(1)
                         break
 
-            if not success and last_error:
+            if (
+                not success
+                and last_error
+            ):
                 self.error = last_error
 
             time.sleep(0.28)
@@ -406,7 +510,10 @@ class NHFeed:
     def priority(self):
         rows = []
 
-        for code, q in list(
+        for (
+            code,
+            q,
+        ) in list(
             self.quotes.items()
         ):
             if q.price <= 0:
@@ -512,7 +619,7 @@ class NHFeed:
 
     def _read_krx_indices(self):
         response = requests.get(
-            "https://index.krx.co.kr/main/main.jsp",
+            "https://index.krx.co.kr/",
             timeout=10,
             headers={
                 "User-Agent": (
@@ -532,9 +639,18 @@ class NHFeed:
 
         out = {}
 
-        for key, label in (
-            ("kospi", "KOSPI"),
-            ("kosdaq", "KOSDAQ"),
+        for (
+            key,
+            label,
+        ) in (
+            (
+                "kospi",
+                "KOSPI",
+            ),
+            (
+                "kosdaq",
+                "KOSDAQ",
+            ),
         ):
             parsed = _parse_krx_index(
                 text,
@@ -546,12 +662,18 @@ class NHFeed:
                     f"KRX {label} parse failed"
                 )
 
-            value, change, change_pct = parsed
+            (
+                value,
+                change,
+                change_pct,
+            ) = parsed
 
             out[key] = self._market_item(
-                "코스피"
-                if key == "kospi"
-                else "코스닥",
+                (
+                    "코스피"
+                    if key == "kospi"
+                    else "코스닥"
+                ),
                 value,
                 change,
                 change_pct,
@@ -589,18 +711,24 @@ class NHFeed:
 
         value = pick(
             data,
-            ("ovrs_prpr",),
+            (
+                "ovrs_prpr",
+            ),
         )
 
         sign = pick_text(
             data,
-            ("prdy_vrss_sign",),
+            (
+                "prdy_vrss_sign",
+            ),
         )
 
         change = signed_value(
             pick(
                 data,
-                ("prdy_vrss",),
+                (
+                    "prdy_vrss",
+                ),
             ),
             sign,
         )
@@ -608,7 +736,9 @@ class NHFeed:
         change_pct = signed_value(
             pick(
                 data,
-                ("prdy_ctrt",),
+                (
+                    "prdy_ctrt",
+                ),
             ),
             sign,
         )
@@ -670,7 +800,6 @@ class NHFeed:
                     env_key,
                     label,
                 ) in symbols:
-
                     symbol = os.getenv(
                         env_key,
                         "",
@@ -701,10 +830,7 @@ class NHFeed:
                     new_market
                 )
 
-                self.market_errors = (
-                    errors
-                )
-
+                self.market_errors = errors
                 self.market_updated_at = (
                     time.time()
                 )
@@ -729,7 +855,9 @@ class NHFeed:
         )
 
         return [
-            self.market.get("kospi")
+            self.market.get(
+                "kospi"
+            )
             or self._market_item(
                 "코스피",
                 None,
@@ -738,7 +866,9 @@ class NHFeed:
                 "KRX 지수 수신 대기",
             ),
 
-            self.market.get("kosdaq")
+            self.market.get(
+                "kosdaq"
+            )
             or self._market_item(
                 "코스닥",
                 None,
@@ -755,7 +885,9 @@ class NHFeed:
                 nxt_status,
             ),
 
-            self.market.get("kospi_night")
+            self.market.get(
+                "kospi_night"
+            )
             or self._market_item(
                 "코스피 야간선물",
                 None,
@@ -764,7 +896,9 @@ class NHFeed:
                 "NHPLUG 야간선물 심볼 설정 필요",
             ),
 
-            self.market.get("nasdaq")
+            self.market.get(
+                "nasdaq"
+            )
             or self._market_item(
                 "나스닥",
                 None,
@@ -773,7 +907,9 @@ class NHFeed:
                 "NHPLUG 지수 심볼 설정 필요",
             ),
 
-            self.market.get("sox")
+            self.market.get(
+                "sox"
+            )
             or self._market_item(
                 "필라델피아 반도체",
                 None,
@@ -782,7 +918,9 @@ class NHFeed:
                 "NHPLUG 지수 심볼 설정 필요",
             ),
 
-            self.market.get("nasdaq_future")
+            self.market.get(
+                "nasdaq_future"
+            )
             or self._market_item(
                 "나스닥 선물",
                 None,
