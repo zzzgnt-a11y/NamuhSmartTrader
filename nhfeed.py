@@ -30,10 +30,8 @@ US_DEFAULT_CODES = [
 def walk(value):
     if isinstance(value, dict):
         yield value
-
         for child in value.values():
             yield from walk(child)
-
     elif isinstance(value, list):
         for child in value:
             yield from walk(child)
@@ -41,135 +39,62 @@ def walk(value):
 
 def num(value):
     try:
-        return float(
-            str(value)
-            .replace(",", "")
-            .replace("+", "")
-            .strip()
-        )
-
+        return float(str(value).replace(",", "").replace("+", "").strip())
     except Exception:
         return 0.0
 
 
-def pick(
-    data,
-    keys: Iterable[str],
-):
+def pick(data, keys: Iterable[str]):
     for obj in walk(data):
         for key in keys:
-            if (
-                key in obj
-                and obj[key] not in (
-                    None,
-                    "",
-                )
-            ):
-                return num(
-                    obj[key]
-                )
-
+            if key in obj and obj[key] not in (None, ""):
+                return num(obj[key])
     return 0.0
 
 
-def pick_text(
-    data,
-    keys: Iterable[str],
-):
+def pick_text(data, keys: Iterable[str]):
     for obj in walk(data):
         for key in keys:
-            value = obj.get(
-                key
-            )
-
-            if value not in (
-                None,
-                "",
-            ):
-                return str(
-                    value
-                ).strip()
-
+            value = obj.get(key)
+            if value not in (None, ""):
+                return str(value).strip()
     return ""
 
 
-def first_list(
-    data,
-    keys: Iterable[str],
-):
+def first_list(data, keys: Iterable[str]):
     for obj in walk(data):
         for key in keys:
-            value = obj.get(
-                key
-            )
-
-            if isinstance(
-                value,
-                list,
-            ):
+            value = obj.get(key)
+            if isinstance(value, list):
                 return value
-
     return []
 
 
-def signed_value(
-    value,
-    sign,
-):
-    value = abs(
-        num(value)
-    )
-
-    if str(sign) in (
-        "4",
-        "5",
-        "8",
-        "9",
-        "-",
-        "▼",
-    ):
+def signed_value(value, sign):
+    value = abs(num(value))
+    if str(sign) in ("4", "5", "8", "9", "-", "▼"):
         return -value
-
     return value
 
 
-def dataframe_rows(
-    frame,
-):
+def dataframe_rows(frame):
     if frame is None:
         return []
 
-    if hasattr(
-        frame,
-        "to_dict",
-    ):
+    if hasattr(frame, "to_dict"):
         try:
-            return frame.to_dict(
-                "records"
-            )
-
+            return frame.to_dict("records")
         except TypeError:
             pass
 
-    if isinstance(
-        frame,
-        list,
-    ):
-        return frame
-
-    return []
+    return frame if isinstance(frame, list) else []
 
 
 class NHFeed:
-    def __init__(
-        self,
-    ):
+    def __init__(self):
         self.quotes: Dict[
             str,
-            Dict[
-                str,
-                Quote,
-            ],
+            Dict[str, Quote],
         ] = {
             "KR": {},
             "US": {},
@@ -196,41 +121,26 @@ class NHFeed:
         }
 
         self.fixed = {
-            "KR":
-                self._env_codes(
-                    "TRACKED_CODES",
-                    KR_DEFAULT_CODES,
-                ),
-
-            "US":
-                self._env_codes(
-                    "US_TRACKED_CODES",
-                    US_DEFAULT_CODES,
-                ),
+            "KR": self._env_codes(
+                "TRACKED_CODES",
+                KR_DEFAULT_CODES,
+            ),
+            "US": self._env_codes(
+                "US_TRACKED_CODES",
+                US_DEFAULT_CODES,
+            ),
         }
 
         self.market = {}
-
         self.market_errors = {}
+        self.market_updated_at = 0.0
 
-        self.market_updated_at = (
-            0.0
-        )
+        self._usdkrw = 0.0
+        self.usdkrw_asof = ""
+        self.usdkrw_source = ""
 
-        # 미국 PAPER 매매용 환율.
-        # NHPLUG 해외주식 현재가 응답의
-        # currency_prc + trade_date만 사용.
-        self._usdkrw = (
-            0.0
-        )
-
-        self.usdkrw_asof = (
-            ""
-        )
-
-        self.usdkrw_source = (
-            ""
-        )
+        self.us_warmup_done = set()
+        self.us_warmup_errors = {}
 
         self.index_symbols = {
             "sp500":
@@ -248,12 +158,6 @@ class NHFeed:
             "sox":
                 os.getenv(
                     "NH_SOX_SYMBOL",
-                    "",
-                ).strip(),
-
-            "usdkrw":
-                os.getenv(
-                    "NH_USDKRW_SYMBOL",
                     "",
                 ).strip(),
         }
@@ -311,12 +215,11 @@ class NHFeed:
     ):
         configured = [
             x.strip().upper()
-
-            for x in os.getenv(
+            for x
+            in os.getenv(
                 key,
                 "",
             ).split(",")
-
             if x.strip()
         ]
 
@@ -333,7 +236,8 @@ class NHFeed:
             "US"
             if str(
                 market
-            ).upper() == "US"
+            ).upper()
+            == "US"
             else "KR"
         ]
 
@@ -353,7 +257,8 @@ class NHFeed:
             "US"
             if str(
                 market
-            ).upper() == "US"
+            ).upper()
+            == "US"
             else "KR"
         )
 
@@ -363,11 +268,9 @@ class NHFeed:
             .upper()
         )
 
-        bucket = (
-            self.quotes[
-                market
-            ]
-        )
+        bucket = self.quotes[
+            market
+        ]
 
         if code not in bucket:
             bucket[
@@ -381,9 +284,7 @@ class NHFeed:
             code
         ]
 
-    # ==============================
-    # NXT 상태
-    # ==============================
+    # ---------- NXT ----------
 
     def update_nxt_session(
         self,
@@ -591,9 +492,7 @@ class NHFeed:
             "KRX",
         )
 
-    # ==============================
-    # 미국 당일 USD/KRW
-    # ==============================
+    # ---------- strict US FX ----------
 
     @staticmethod
     def _expected_us_trade_date(
@@ -610,11 +509,8 @@ class NHFeed:
         )
 
         if now.hour < 6:
-            now = (
-                now
-                - timedelta(
-                    days=1
-                )
+            now -= timedelta(
+                days=1
             )
 
         return now.strftime(
@@ -637,9 +533,7 @@ class NHFeed:
                 or 0
             )
             <= 2500
-            and len(
-                asof
-            ) == 8
+            and len(asof) == 8
             and asof.isdigit()
             and asof
             ==
@@ -652,25 +546,22 @@ class NHFeed:
     def usdkrw(
         self,
     ):
-        if (
-            self._usdkrw_is_tradeable()
-        ):
-            return float(
+        return (
+            float(
                 self._usdkrw
             )
-
-        return 0.0
+            if self._usdkrw_is_tradeable()
+            else 0.0
+        )
 
     @usdkrw.setter
     def usdkrw(
         self,
         value,
     ):
-        self._usdkrw = (
-            float(
-                value
-                or 0
-            )
+        self._usdkrw = float(
+            value
+            or 0
         )
 
     @property
@@ -729,8 +620,8 @@ class NHFeed:
         ):
             return
 
-        self._usdkrw = (
-            float(rate)
+        self._usdkrw = float(
+            rate
         )
 
         self.usdkrw_asof = (
@@ -741,9 +632,7 @@ class NHFeed:
             "NHPLUG 해외주식 현재가"
         )
 
-    # ==============================
-    # 국내/미국 현재가 파싱
-    # ==============================
+    # ---------- quote parsing ----------
 
     def _apply_kr(
         self,
@@ -911,8 +800,6 @@ class NHFeed:
                 sector
             )
 
-        # NHPLUG 해외주식 현재가상세
-        # 공식 필드 trdprc 우선.
         price = pick(
             data,
             (
@@ -921,6 +808,7 @@ class NHFeed:
                 "last",
                 "prc",
                 "price",
+                "close_prc",
                 "close",
             ),
         )
@@ -931,6 +819,7 @@ class NHFeed:
                 "acvol",
                 "acml_vol",
                 "tvol",
+                "movolume",
                 "volume",
                 "vol",
             ),
@@ -947,6 +836,7 @@ class NHFeed:
                 data,
                 (
                     "open_prc",
+                    "normal_open_prc",
                     "ovrs_oprc",
                     "open",
                 ),
@@ -1005,16 +895,14 @@ class NHFeed:
             data
         )
 
-    # ==============================
-    # 종목 마스터
-    # ==============================
+    # ---------- masters ----------
 
     def _load_kr_master(
         self,
     ):
         try:
             from nhplug.instruments import (
-                load_master,
+                load_master
             )
 
             rows = dataframe_rows(
@@ -1030,7 +918,7 @@ class NHFeed:
             )
 
             for row in rows:
-                code = str(
+                raw = str(
                     row.get(
                         "shrn_iscd"
                     )
@@ -1043,20 +931,23 @@ class NHFeed:
                     or ""
                 ).strip()
 
-                match = re.search(
+                m = re.search(
                     r"(\d{6})",
-                    code,
+                    raw,
                 )
 
-                if not match:
+                if (
+                    not m
+                    or m.group(
+                        1
+                    )
+                    not in wanted
+                ):
                     continue
 
-                code = match.group(
+                code = m.group(
                     1
                 )
-
-                if code not in wanted:
-                    continue
 
                 q = self.q(
                     "KR",
@@ -1113,7 +1004,7 @@ class NHFeed:
     ):
         try:
             from nhplug.instruments import (
-                load_master,
+                load_master
             )
 
             rows = dataframe_rows(
@@ -1204,7 +1095,7 @@ class NHFeed:
     ):
         try:
             from nhplug.instruments import (
-                load_master,
+                load_master
             )
 
             if not self.future_symbols[
@@ -1348,9 +1239,9 @@ class NHFeed:
                         candidates.append(
                             (
                                 10
-                                if lead == "1"
+                                if lead
+                                == "1"
                                 else 0,
-
                                 symbol,
                                 exnm,
                             )
@@ -1384,9 +1275,274 @@ class NHFeed:
                 exc
             )[:300]
 
-    # ==============================
-    # 종목 스캐너
-    # ==============================
+    # ---------- US minute warm-up ----------
+
+    @staticmethod
+    def _period_points(
+        data,
+    ):
+        rows = first_list(
+            data,
+            (
+                "Output_1",
+                "output_1",
+                "output1",
+                "Output1",
+            ),
+        )
+
+        points = []
+
+        for idx, row in enumerate(
+            rows
+        ):
+            close = num(
+                row.get(
+                    "close_prc"
+                )
+                or row.get(
+                    "trdprc"
+                )
+                or row.get(
+                    "ovrs_prpr"
+                )
+                or row.get(
+                    "close"
+                )
+                or row.get(
+                    "last"
+                )
+            )
+
+            if close <= 0:
+                continue
+
+            date = str(
+                row.get(
+                    "bsop_date"
+                )
+                or row.get(
+                    "trade_date"
+                )
+                or row.get(
+                    "date"
+                )
+                or ""
+            )[:8]
+
+            tm = str(
+                row.get(
+                    "bsop_time"
+                )
+                or row.get(
+                    "trade_time"
+                )
+                or row.get(
+                    "time"
+                )
+                or ""
+            )[:6]
+
+            volume = num(
+                row.get(
+                    "movolume"
+                )
+                or row.get(
+                    "acvol"
+                )
+                or row.get(
+                    "vol"
+                )
+                or row.get(
+                    "volume"
+                )
+            )
+
+            points.append(
+                (
+                    date,
+                    tm,
+                    idx,
+                    close,
+                    volume,
+                )
+            )
+
+        if not points:
+            return []
+
+        if any(
+            p[0]
+            or p[1]
+            for p
+            in points
+        ):
+            points.sort(
+                key=lambda p:
+                    (
+                        p[0],
+                        p[1],
+                        p[2],
+                    )
+            )
+
+        else:
+            points.reverse()
+
+        return points
+
+    def _warmup_us_one(
+        self,
+        code,
+        call,
+    ):
+        end_dt = (
+            self._expected_us_trade_date()
+        )
+
+        requests_to_try = [
+            {
+                "iem_cd":
+                    code,
+
+                "end_dt":
+                    end_dt,
+
+                "count":
+                    "0060",
+
+                "maxavg":
+                    "020",
+
+                "gubun":
+                    "2",
+
+                "xtick":
+                    "0001",
+
+                "today_cls":
+                    "1",
+
+                "market_cls":
+                    "0",
+            },
+            {
+                "iem_cd":
+                    code,
+
+                "end_dt":
+                    end_dt,
+
+                "count":
+                    "0060",
+
+                "maxavg":
+                    "020",
+
+                "gubun":
+                    "3",
+
+                "xtick":
+                    "0001",
+
+                "today_cls":
+                    "0",
+
+                "market_cls":
+                    "1",
+            },
+        ]
+
+        last_error = ""
+
+        for payload in (
+            requests_to_try
+        ):
+            try:
+                data = call(
+                    "/gbstock/quote/v1/period",
+                    payload,
+                )
+
+                points = (
+                    self._period_points(
+                        data
+                    )
+                )
+
+                if len(
+                    points
+                ) < 20:
+                    last_error = (
+                        f"history rows="
+                        f"{len(points)}"
+                    )
+
+                    continue
+
+                q = self.q(
+                    "US",
+                    code,
+                )
+
+                closes = [
+                    p[3]
+                    for p
+                    in points
+                ][-120:]
+
+                q.prices.clear()
+
+                q.prices.extend(
+                    closes
+                )
+
+                if q.price <= 0:
+                    q.price = closes[
+                        -1
+                    ]
+
+                if q.open <= 0:
+                    q.open = closes[
+                        0
+                    ]
+
+                if points[
+                    -1
+                ][4] > 0:
+                    q.volume = max(
+                        q.volume,
+                        points[
+                            -1
+                        ][4],
+                    )
+
+                q.updated_at = (
+                    time.time()
+                )
+
+                self.us_warmup_done.add(
+                    code
+                )
+
+                self.us_warmup_errors.pop(
+                    code,
+                    None,
+                )
+
+                return
+
+            except Exception as exc:
+                last_error = str(
+                    exc
+                )
+
+        raise RuntimeError(
+            last_error
+            or "미장 히스토리 20개 미만"
+        )
+
+    # ---------- scanners ----------
 
     def kr_scanner(
         self,
@@ -1534,6 +1690,8 @@ class NHFeed:
                 codes
             )
 
+            current_ok = False
+
             try:
                 data = call(
                     "/gbstock/quote/v1/current",
@@ -1563,6 +1721,10 @@ class NHFeed:
                         "US"
                     ] = ""
 
+                    current_ok = (
+                        True
+                    )
+
             except Exception as exc:
                 self.errors[
                     "US"
@@ -1581,13 +1743,38 @@ class NHFeed:
                         1.5
                     )
 
-            time.sleep(
-                0.5
-            )
+            if (
+                code
+                not in self.us_warmup_done
+            ):
+                if current_ok:
+                    time.sleep(
+                        1.05
+                    )
 
-    # ==============================
-    # 지수 카드 공통
-    # ==============================
+                try:
+                    self._warmup_us_one(
+                        code,
+                        call,
+                    )
+
+                except Exception as exc:
+                    self.us_warmup_errors[
+                        code
+                    ] = str(
+                        exc
+                    )[:220]
+
+                time.sleep(
+                    1.05
+                )
+
+            else:
+                time.sleep(
+                    0.5
+                )
+
+    # ---------- market card ----------
 
     @staticmethod
     def _market_item(
@@ -1629,9 +1816,7 @@ class NHFeed:
                 asof,
         }
 
-    # ==============================
-    # KRX KOSPI/KOSDAQ
-    # ==============================
+    # ---------- KRX KOSPI/KOSDAQ ----------
 
     def _krx_home_text(
         self,
@@ -1647,26 +1832,21 @@ class NHFeed:
                     "Mozilla/5.0 "
                     "(Windows NT 10.0; Win64; x64) "
                     "AppleWebKit/537.36 "
-                    "(KHTML, like Gecko) "
-                    "Chrome/131.0.0.0 Safari/537.36"
+                    "Chrome/131 Safari/537.36"
                 ),
 
             "Accept-Language":
                 "en-US,en;q=0.9,ko;q=0.8",
         }
 
-        last_error = (
-            None
-        )
+        last_error = None
 
         for url in urls:
             try:
-                response = (
-                    requests.get(
-                        url,
-                        headers=headers,
-                        timeout=8,
-                    )
+                response = requests.get(
+                    url,
+                    headers=headers,
+                    timeout=8,
                 )
 
                 response.raise_for_status()
@@ -1723,36 +1903,36 @@ class NHFeed:
             re.IGNORECASE,
         )
 
-        match = pattern.search(
+        m = pattern.search(
             text
         )
 
-        if not match:
+        if not m:
             raise RuntimeError(
                 f"{label} 값 파싱 실패"
             )
 
         value = num(
-            match.group(
+            m.group(
                 1
             )
         )
 
         sign = (
-            match.group(
+            m.group(
                 2
             )
             or ""
         )
 
         change = num(
-            match.group(
+            m.group(
                 3
             )
         )
 
         change_pct = num(
-            match.group(
+            m.group(
                 4
             )
         )
@@ -1771,16 +1951,12 @@ class NHFeed:
             )
 
         elif sign == "▲":
-            change = (
-                abs(
-                    change
-                )
+            change = abs(
+                change
             )
 
-            change_pct = (
-                abs(
-                    change_pct
-                )
+            change_pct = abs(
+                change_pct
             )
 
         if value <= 0:
@@ -1801,21 +1977,20 @@ class NHFeed:
             KST
         )
 
-        if now.weekday() < 5:
-            minutes = (
+        if (
+            now.weekday()
+            < 5
+            and 540
+            <= (
                 now.hour
                 * 60
                 + now.minute
             )
-
-            if (
-                540
-                <= minutes
-                <= 930
-            ):
-                return (
-                    "장중 공식값"
-                )
+            <= 930
+        ):
+            return (
+                "장중 공식값"
+            )
 
         return (
             "최근 종가"
@@ -1834,19 +2009,16 @@ class NHFeed:
         )
 
         if not series:
-            previous_close = (
+            previous = (
                 value - change
                 if change
                 else value
             )
 
-            if (
-                previous_close
-                > 0
-            ):
+            if previous > 0:
                 series.append(
                     round(
-                        previous_close,
+                        previous,
                         4,
                     )
                 )
@@ -1854,9 +2026,11 @@ class NHFeed:
         if (
             not series
             or abs(
-                series[-1]
-                - value
-            ) > 1e-9
+                series[
+                    -1
+                ] - value
+            )
+            > 1e-9
         ):
             series.append(
                 round(
@@ -1900,7 +2074,6 @@ class NHFeed:
                 "KOSPI",
                 "코스피",
             ),
-
             (
                 "kosdaq",
                 "KOSDAQ",
@@ -1972,9 +2145,7 @@ class NHFeed:
                 60
             )
 
-    # ==============================
-    # NHPLUG 해외 지수
-    # ==============================
+    # ---------- NHPLUG overseas indices ----------
 
     def _symbol_candidates(
         self,
@@ -2005,21 +2176,13 @@ class NHFeed:
                 "PHLXSOX",
                 "N@SOX",
             ],
-
-            # 거래용 환율에는 사용하지 않음.
-            "usdkrw": [
-                "USDKRW",
-                "KRW",
-                "X@KRW",
-            ],
         }
 
-        values = []
-
-        if configured:
-            values.append(
-                configured
-            )
+        values = (
+            [configured]
+            if configured
+            else []
+        )
 
         for item in defaults.get(
             key,
@@ -2043,8 +2206,7 @@ class NHFeed:
         today = (
             datetime.now(
                 KST
-            )
-            .strftime(
+            ).strftime(
                 "%Y%m%d"
             )
         )
@@ -2081,6 +2243,7 @@ class NHFeed:
         value = pick(
             data,
             (
+                "close_prc",
                 "ovrs_prpr",
                 "last",
                 "close",
@@ -2092,21 +2255,21 @@ class NHFeed:
             data,
             (
                 "prdy_vrss_sign",
+                "netchng_cls",
                 "sign",
             ),
         )
 
-        change = (
-            signed_value(
-                pick(
-                    data,
-                    (
-                        "prdy_vrss",
-                        "change",
-                    ),
+        change = signed_value(
+            pick(
+                data,
+                (
+                    "prdy_vrss",
+                    "netchng",
+                    "change",
                 ),
-                sign,
-            )
+            ),
+            sign,
         )
 
         change_pct = (
@@ -2115,6 +2278,7 @@ class NHFeed:
                     data,
                     (
                         "prdy_ctrt",
+                        "rate",
                         "change_rate",
                     ),
                 ),
@@ -2133,12 +2297,14 @@ class NHFeed:
         )
 
         series = []
-
         asof = ""
 
         for row in rows:
             v = num(
                 row.get(
+                    "close_prc"
+                )
+                or row.get(
                     "ovrs_prpr"
                 )
                 or row.get(
@@ -2232,24 +2398,26 @@ class NHFeed:
                 today
             )
 
-        return self._market_item(
-            label,
-            value,
-            change,
-            change_pct,
-            (
-                f"{status} · "
-                f"{asof[:4]}-"
-                f"{asof[4:6]}-"
-                f"{asof[6:]}"
-            ),
-            "NHPLUG",
-            list(
-                reversed(
-                    series
-                )
-            ),
-            asof,
+        return (
+            self._market_item(
+                label,
+                value,
+                change,
+                change_pct,
+                (
+                    f"{status} · "
+                    f"{asof[:4]}-"
+                    f"{asof[4:6]}-"
+                    f"{asof[6:]}"
+                ),
+                "NHPLUG",
+                list(
+                    reversed(
+                        series
+                    )
+                ),
+                asof,
+            )
         )
 
     def _read_symbol_period(
@@ -2292,6 +2460,198 @@ class NHFeed:
             )[-900:]
         )
 
+    def _read_sox_nasdaq(
+        self,
+    ):
+        url = (
+            "https://indexes.nasdaq.com/"
+            "Index/Overview/SOX"
+        )
+
+        headers = {
+            "User-Agent":
+                (
+                    "Mozilla/5.0 "
+                    "(Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 "
+                    "Chrome/131 Safari/537.36"
+                ),
+
+            "Accept-Language":
+                "en-US,en;q=0.9",
+        }
+
+        response = requests.get(
+            url,
+            headers=headers,
+            timeout=10,
+        )
+
+        response.raise_for_status()
+
+        text = (
+            html_lib.unescape(
+                re.sub(
+                    r"<[^>]+>",
+                    " ",
+                    response.text,
+                )
+            )
+        )
+
+        text = re.sub(
+            r"\s+",
+            " ",
+            text,
+        ).strip()
+
+        m = re.search(
+            r"DATA\s+AS\s+OF\s+"
+            r"(\d{1,2}/\d{1,2}/\d{4})"
+            r"\s+"
+            r"([\d,]+(?:\.\d+)?)"
+            r"\s+"
+            r"([+-]?[\d,]+(?:\.\d+)?)"
+            r"\s+"
+            r"([+-]?[\d.]+)%",
+            text,
+            re.IGNORECASE,
+        )
+
+        if m:
+            (
+                date_text,
+                raw_value,
+                raw_change,
+                raw_pct,
+            ) = m.groups()
+
+            value = num(
+                raw_value
+            )
+
+            change = num(
+                raw_change
+            )
+
+            change_pct = num(
+                raw_pct
+            )
+
+        else:
+            date_match = re.search(
+                r"DATA\s+AS\s+OF\s+"
+                r"(\d{1,2}/\d{1,2}/\d{4})",
+                text,
+                re.IGNORECASE,
+            )
+
+            value_match = re.search(
+                r"\bLast\b"
+                r"\s*\|?\s*"
+                r"([\d,]+(?:\.\d+)?)",
+                text,
+                re.IGNORECASE,
+            )
+
+            change_match = re.search(
+                r"\bNet\s+Change\b"
+                r"(?!\s*\(%\))"
+                r"\s*\|?\s*"
+                r"([+-]?[\d,]+(?:\.\d+)?)",
+                text,
+                re.IGNORECASE,
+            )
+
+            pct_match = re.search(
+                r"Net\s+Change\s*\(%\)"
+                r"\s*\|?\s*"
+                r"([+-]?[\d.]+)%?",
+                text,
+                re.IGNORECASE,
+            )
+
+            if not (
+                date_match
+                and value_match
+                and change_match
+                and pct_match
+            ):
+                raise RuntimeError(
+                    "Nasdaq SOX 공식값 파싱 실패"
+                )
+
+            date_text = (
+                date_match.group(
+                    1
+                )
+            )
+
+            value = num(
+                value_match.group(
+                    1
+                )
+            )
+
+            change = num(
+                change_match.group(
+                    1
+                )
+            )
+
+            change_pct = num(
+                pct_match.group(
+                    1
+                )
+            )
+
+        if value <= 0:
+            raise RuntimeError(
+                "Nasdaq SOX 값이 0 이하"
+            )
+
+        asof = (
+            datetime.strptime(
+                date_text,
+                "%m/%d/%Y",
+            ).strftime(
+                "%Y%m%d"
+            )
+        )
+
+        previous = (
+            value - change
+        )
+
+        series = (
+            [
+                previous,
+                value,
+            ]
+            if previous > 0
+            else [
+                value
+            ]
+        )
+
+        return (
+            self._market_item(
+                "필라델피아 반도체지수",
+                value,
+                change,
+                change_pct,
+                (
+                    "공식값 · "
+                    f"{asof[:4]}-"
+                    f"{asof[4:6]}-"
+                    f"{asof[6:]}"
+                ),
+                "Nasdaq 공식",
+                series,
+                asof,
+            )
+        )
+
     def _read_fx(
         self,
     ):
@@ -2308,28 +2668,28 @@ class NHFeed:
                 f"{self.usdkrw_asof or '-'})"
             )
 
-        return self._market_item(
-            "USD/KRW",
-            rate,
-            None,
-            None,
-            (
-                "당일 공식환율 · "
-                f"{self.usdkrw_asof[:4]}-"
-                f"{self.usdkrw_asof[4:6]}-"
-                f"{self.usdkrw_asof[6:]}"
-            ),
-            (
-                self.usdkrw_source
-                or "NHPLUG"
-            ),
-            [],
-            self.usdkrw_asof,
+        return (
+            self._market_item(
+                "USD/KRW",
+                rate,
+                None,
+                None,
+                (
+                    "당일 공식환율 · "
+                    f"{self.usdkrw_asof[:4]}-"
+                    f"{self.usdkrw_asof[4:6]}-"
+                    f"{self.usdkrw_asof[6:]}"
+                ),
+                (
+                    self.usdkrw_source
+                    or "NHPLUG"
+                ),
+                [],
+                self.usdkrw_asof,
+            )
         )
 
-    # ==============================
-    # 선물
-    # ==============================
+    # ---------- futures ----------
 
     def _read_kospi_night(
         self,
@@ -2371,28 +2731,24 @@ class NHFeed:
             ),
         )
 
-        change = (
-            signed_value(
-                pick(
-                    data,
-                    (
-                        "vrss",
-                    ),
+        change = signed_value(
+            pick(
+                data,
+                (
+                    "vrss",
                 ),
-                sign,
-            )
+            ),
+            sign,
         )
 
-        change_pct = (
-            signed_value(
-                pick(
-                    data,
-                    (
-                        "ctrt",
-                    ),
+        change_pct = signed_value(
+            pick(
+                data,
+                (
+                    "ctrt",
                 ),
-                sign,
-            )
+            ),
+            sign,
         )
 
         if value <= 0:
@@ -2411,26 +2767,26 @@ class NHFeed:
             )
         )
 
-        series = (
-            old
-            + [
-                value
-            ]
-        )[-30:]
-
-        return self._market_item(
-            "코스피 야간선물",
-            value,
-            change,
-            change_pct,
-            "실시간",
-            "NHPLUG",
-            series,
-            datetime.now(
-                KST
-            ).strftime(
-                "%Y%m%d"
-            ),
+        return (
+            self._market_item(
+                "코스피 야간선물",
+                value,
+                change,
+                change_pct,
+                "실시간 조회 · 15초 갱신",
+                "NHPLUG",
+                (
+                    old
+                    + [
+                        value
+                    ]
+                )[-30:],
+                datetime.now(
+                    KST
+                ).strftime(
+                    "%Y%m%d"
+                ),
+            )
         )
 
     def _read_nasdaq_future(
@@ -2484,28 +2840,24 @@ class NHFeed:
             ),
         )
 
-        change = (
-            signed_value(
-                pick(
-                    data,
-                    (
-                        "diff",
-                    ),
+        change = signed_value(
+            pick(
+                data,
+                (
+                    "diff",
                 ),
-                sign,
-            )
+            ),
+            sign,
         )
 
-        change_pct = (
-            signed_value(
-                pick(
-                    data,
-                    (
-                        "rate",
-                    ),
+        change_pct = signed_value(
+            pick(
+                data,
+                (
+                    "rate",
                 ),
-                sign,
-            )
+            ),
+            sign,
         )
 
         if value <= 0:
@@ -2524,37 +2876,34 @@ class NHFeed:
             )
         )
 
-        series = (
-            old
-            + [
-                value
-            ]
-        )[-30:]
-
-        return self._market_item(
-            "나스닥 선물",
-            value,
-            change,
-            change_pct,
-            "실시간",
-            "NHPLUG",
-            series,
-            datetime.now(
-                KST
-            ).strftime(
-                "%Y%m%d"
-            ),
+        return (
+            self._market_item(
+                "나스닥 선물",
+                value,
+                change,
+                change_pct,
+                "실시간 조회 · 15초 갱신",
+                "NHPLUG",
+                (
+                    old
+                    + [
+                        value
+                    ]
+                )[-30:],
+                datetime.now(
+                    KST
+                ).strftime(
+                    "%Y%m%d"
+                ),
+            )
         )
 
-    # ==============================
-    # 참조 데이터
-    # ==============================
+    # ---------- loops ----------
 
     def reference_loop(
         self,
     ):
         while not self._stop.is_set():
-
             for (
                 key,
                 label,
@@ -2563,15 +2912,9 @@ class NHFeed:
                     "sp500",
                     "S&P500",
                 ),
-
                 (
                     "nasdaq",
                     "나스닥",
-                ),
-
-                (
-                    "sox",
-                    "필라델피아 반도체지수",
                 ),
             ):
                 try:
@@ -2595,6 +2938,36 @@ class NHFeed:
                     ] = str(
                         exc
                     )[:500]
+
+            try:
+                try:
+                    self.market[
+                        "sox"
+                    ] = (
+                        self._read_symbol_period(
+                            "sox",
+                            "필라델피아 반도체지수",
+                        )
+                    )
+
+                except Exception:
+                    self.market[
+                        "sox"
+                    ] = (
+                        self._read_sox_nasdaq()
+                    )
+
+                self.market_errors.pop(
+                    "sox",
+                    None,
+                )
+
+            except Exception as exc:
+                self.market_errors[
+                    "sox"
+                ] = str(
+                    exc
+                )[:500]
 
             try:
                 self._read_fx()
@@ -2625,7 +2998,6 @@ class NHFeed:
         self._discover_futures()
 
         while not self._stop.is_set():
-
             try:
                 self.market[
                     "kospi_night"
@@ -2672,9 +3044,7 @@ class NHFeed:
                 15
             )
 
-    # ==============================
-    # API 상태
-    # ==============================
+    # ---------- API state ----------
 
     def _pending(
         self,
@@ -2688,19 +3058,23 @@ class NHFeed:
             )
         )
 
-        return self._market_item(
-            label,
-            None,
-            None,
-            None,
-            (
-                f"수신 오류 · "
-                f"{err[:100]}"
-                if err
-                else "수신 대기"
-            ),
-            source,
-            [],
+        status = (
+            f"수신 오류 · "
+            f"{err[:100]}"
+            if err
+            else "수신 대기"
+        )
+
+        return (
+            self._market_item(
+                label,
+                None,
+                None,
+                None,
+                status,
+                source,
+                [],
+            )
         )
 
     def market_state(
@@ -2728,7 +3102,6 @@ class NHFeed:
                         "KRX 공식",
                     )
                 ),
-
                 (
                     self.market.get(
                         "kosdaq"
@@ -2739,7 +3112,6 @@ class NHFeed:
                         "KRX 공식",
                     )
                 ),
-
                 (
                     self.market.get(
                         "kospi_night"
@@ -2749,7 +3121,6 @@ class NHFeed:
                         "코스피 야간선물",
                     )
                 ),
-
                 (
                     self.market.get(
                         "nasdaq_future"
@@ -2759,7 +3130,6 @@ class NHFeed:
                         "나스닥 선물",
                     )
                 ),
-
                 (
                     self.market.get(
                         "sox"
@@ -2781,7 +3151,6 @@ class NHFeed:
                     "S&P500",
                 )
             ),
-
             (
                 self.market.get(
                     "nasdaq"
@@ -2791,7 +3160,6 @@ class NHFeed:
                     "나스닥",
                 )
             ),
-
             (
                 self.market.get(
                     "nasdaq_future"
@@ -2801,7 +3169,6 @@ class NHFeed:
                     "나스닥 선물",
                 )
             ),
-
             (
                 self.market.get(
                     "sox"
@@ -2840,12 +3207,10 @@ class NHFeed:
             "kr_priced":
                 sum(
                     1
-
                     for q
                     in self.quotes[
                         "KR"
                     ].values()
-
                     if q.price > 0
                 ),
 
@@ -2859,13 +3224,28 @@ class NHFeed:
             "us_priced":
                 sum(
                     1
-
                     for q
                     in self.quotes[
                         "US"
                     ].values()
-
                     if q.price > 0
+                ),
+
+            "us_warmup_done":
+                len(
+                    self.us_warmup_done
+                ),
+
+            "us_warmup_total":
+                len(
+                    self.fixed[
+                        "US"
+                    ]
+                ),
+
+            "us_warmup_errors":
+                dict(
+                    self.us_warmup_errors
                 ),
 
             "market_updated_at":
