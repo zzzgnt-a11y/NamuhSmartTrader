@@ -3,113 +3,257 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Namuh Smart Trader</title>
-  <link rel="stylesheet" href="/static/styles.css?v=3">
+  <title>GY 모의투자 시스템</title>
+  <link rel="stylesheet" href="/static/styles.css?v=5">
 </head>
 
 <body>
 
-<header>
-  <div>
-    <div class="eyebrow">LIVE · AI PAPER</div>
-    <h1>Namuh Smart Trader</h1>
-    <p>실제 KRX 데이터를 보고 가상자금으로 자동매매</p>
-  </div>
-  <div class="mascot">📈🧒🏻✨</div>
-</header>
-
-<main>
-
-<section class="hero">
-  <div>
-    <span class="label">가상 총자산</span>
-    <strong id="equity">-</strong>
-    <small id="health">연결 확인 중</small>
-  </div>
-
-  <div class="budget">
-    <label>오늘 운용금액</label>
+<header class="topbar">
+  <div class="brand-wrap">
+    <div class="brand-badge">GY</div>
 
     <div>
-      <input id="budget" inputmode="numeric" value="200000">
-      <button id="saveBudgetBtn" type="button">저장</button>
+      <div class="eyebrow">AI PAPER TRADING</div>
+      <h1>GY 모의투자 시스템</h1>
+      <p class="subtitle">실시간 KRX 데이터를 활용한 AI 모의투자 대시보드</p>
+    </div>
+  </div>
+</header>
+
+<main class="page">
+
+  <section class="hero-panel">
+    <div class="hero-left">
+
+      <div class="hero-chip">● LIVE SIGNAL</div>
+
+      <h2>
+        AI가 시장을 분석하고<br>
+        모의투자로 자동 운용
+      </h2>
+
+      <p>
+        수급 · 기술적 지표 · 기관/외국인 흐름을 분석해
+        조건 충족 종목만 자동으로 모의매수합니다.
+      </p>
+
+      <div class="hero-stats">
+
+        <div class="hero-stat">
+          <span>가상 총자산</span>
+          <strong id="equity">-</strong>
+        </div>
+
+        <div class="hero-stat">
+          <span>연결 상태</span>
+          <strong id="health">연결 확인 중</strong>
+        </div>
+
+      </div>
     </div>
 
-    <strong id="currentBudget" style="display:block;margin-top:10px;font-size:16px;">
-      현재 운용값: -
-    </strong>
+    <div class="hero-right">
+      <div class="robot-card">
 
-    <small>
-      보유 원가 합이 이 금액에 도달하면 신규매수 차단 · 매도 후 재사용
-    </small>
-  </div>
-</section>
+        <div class="robot-glow"></div>
 
-<h2>시장 대시보드</h2>
-<div id="markets" class="market-grid"></div>
+        <div class="robot-core">
+          🤖
+        </div>
 
-<section class="panel">
-  <div class="title-row">
-    <h2>오늘의 주도섹터</h2>
-    <span>KRX 수급/동조</span>
-  </div>
-  <div id="sectors" class="sector-row"></div>
-</section>
+        <div class="robot-text">
+          <b>AI SIGNAL ENGINE</b>
+          <span>KRX · PAPER · AUTO ANALYSIS</span>
+        </div>
 
-<nav>
-  <button class="active" data-tab="scalp" type="button">1. 단타</button>
-  <button data-tab="smart" type="button">2. 스마트머니</button>
-  <button data-tab="trades" type="button">3. 오늘 매매</button>
-</nav>
+      </div>
+    </div>
+  </section>
 
-<section id="scalp" class="tab active">
-  <div class="panel">
+  <section class="budget-panel panel">
+
     <div class="title-row">
-      <h2>현재 AI 보유</h2>
-      <span id="heldCost"></span>
+      <h2>오늘 운용금액</h2>
+      <span>가상자금 기준</span>
     </div>
-    <div id="positions"></div>
-  </div>
 
-  <div class="panel">
-    <div class="title-row">
-      <h2>오늘 급수급 후보</h2>
-      <span>KRX ONLY · NXT 제외</span>
-    </div>
-    <div id="scalpList"></div>
-  </div>
-</section>
+    <div class="budget-box">
 
-<section id="smart" class="tab">
-  <div class="panel">
-    <div class="title-row">
-      <h2>스마트머니 + 저박가</h2>
-      <span>PER · PBR · 외국인 · 기관</span>
-    </div>
-    <div id="smartList"></div>
-  </div>
-</section>
+      <div class="budget-input-row">
+        <input
+          id="budget"
+          inputmode="numeric"
+          value="200000"
+          placeholder="오늘 운용금액"
+        >
 
-<section id="trades" class="tab">
-  <div class="panel">
-    <div class="title-row">
-      <h2>오늘 매수/매도</h2>
-      <span id="cash"></span>
+        <button
+          id="saveBudgetBtn"
+          type="button"
+        >
+          저장
+        </button>
+      </div>
+
+      <strong
+        id="currentBudget"
+        class="current-budget"
+      >
+        현재 운용값: -
+      </strong>
+
+      <small>
+        보유 원가 합이 설정 금액에 도달하면 신규매수를 차단하고,
+        매도한 금액만큼 다시 운용 가능합니다.
+      </small>
+
     </div>
-    <div id="tradeList"></div>
-  </div>
-</section>
+  </section>
+
+  <section class="panel">
+
+    <div class="title-row">
+      <h2>시장 지수</h2>
+      <span>국내 · 해외 시장 흐름</span>
+    </div>
+
+    <div
+      id="markets"
+      class="market-grid"
+    ></div>
+
+  </section>
+
+  <section class="panel">
+
+    <div class="title-row">
+      <h2>주도 섹터</h2>
+      <span>실시간 강도 순위</span>
+    </div>
+
+    <div
+      id="sectors"
+      class="sector-row"
+    ></div>
+
+  </section>
+
+  <nav class="main-tabs">
+
+    <button
+      class="active"
+      data-tab="scalp"
+      type="button"
+    >
+      1. 수급 포착
+    </button>
+
+    <button
+      data-tab="smart"
+      type="button"
+    >
+      2. 스마트머니
+    </button>
+
+    <button
+      data-tab="trades"
+      type="button"
+    >
+      3. 오늘 매매
+    </button>
+
+  </nav>
+
+  <section
+    id="scalp"
+    class="tab active"
+  >
+
+    <div class="panel">
+
+      <div class="title-row">
+        <h2>현재 AI 보유</h2>
+        <span id="heldCost"></span>
+      </div>
+
+      <div id="positions"></div>
+
+    </div>
+
+    <div class="panel">
+
+      <div class="title-row">
+        <h2>수급 포착 후보</h2>
+        <span>KRX ONLY · NXT 제외</span>
+      </div>
+
+      <div id="scalpList"></div>
+
+    </div>
+
+  </section>
+
+  <section
+    id="smart"
+    class="tab"
+  >
+
+    <div class="panel">
+
+      <div class="title-row">
+        <h2>스마트머니 + 저평가</h2>
+        <span>PER · PBR · 외국인 · 기관</span>
+      </div>
+
+      <div id="smartList"></div>
+
+    </div>
+
+  </section>
+
+  <section
+    id="trades"
+    class="tab"
+  >
+
+    <div class="panel">
+
+      <div class="title-row">
+        <h2>오늘 매수/매도</h2>
+        <span id="cash"></span>
+      </div>
+
+      <div id="tradeList"></div>
+
+    </div>
+
+  </section>
 
 </main>
 
-<div id="modal" class="modal">
+<div
+  id="modal"
+  class="modal"
+>
+
   <div class="modal-card">
-    <button id="closeModalBtn" class="x" type="button">×</button>
+
+    <button
+      id="closeModalBtn"
+      class="x"
+      type="button"
+    >
+      ×
+    </button>
+
     <div id="detail"></div>
+
   </div>
+
 </div>
 
-<script src="/static/app.js?v=3"></script>
+<script src="/static/app.js?v=5"></script>
 
 </body>
 </html>
