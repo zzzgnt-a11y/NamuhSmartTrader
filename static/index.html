@@ -31,6 +31,7 @@
       font-weight: 800;
       color: #91a8c8;
       user-select: none;
+      cursor: pointer;
     }
 
     .market-switch-label.active {
@@ -146,7 +147,15 @@
 </aside>
 
 <div class="market-switch-wrap" aria-label="국장 미장 전환">
-  <span id="krModeLabel" class="market-switch-label active">국장</span>
+
+  <span
+    id="krModeLabel"
+    class="market-switch-label active"
+    role="button"
+    tabindex="0"
+  >
+    국장
+  </span>
 
   <button
     id="marketModeBtn"
@@ -155,9 +164,15 @@
     aria-label="국장과 미장 전환"
   ></button>
 
-  <span id="usModeLabel" class="market-switch-label">
+  <span
+    id="usModeLabel"
+    class="market-switch-label"
+    role="button"
+    tabindex="0"
+  >
     미장
   </span>
+
 </div>
 
 <div class="app-shell">
@@ -192,10 +207,7 @@
 
 <main class="page">
 
-<section
-  id="homeSec"
-  class="hero-panel"
->
+<section id="homeSec" class="hero-panel">
 
   <div class="hero-left">
 
@@ -250,17 +262,13 @@
       <div class="ai-grid"></div>
 
       <div class="ai-ring ring-1"></div>
-
       <div class="ai-ring ring-2"></div>
-
       <div class="ai-ring ring-3"></div>
 
       <div class="ai-core"></div>
 
       <div class="ai-node node-1"></div>
-
       <div class="ai-node node-2"></div>
-
       <div class="ai-node node-3"></div>
 
       <div class="ai-label-box">
@@ -331,10 +339,7 @@
 
 </section>
 
-<section
-  id="marketSec"
-  class="panel"
->
+<section id="marketSec" class="panel">
 
   <div class="title-row">
 
@@ -355,10 +360,7 @@
 
 </section>
 
-<section
-  id="sectorSec"
-  class="panel"
->
+<section id="sectorSec" class="panel">
 
   <div class="title-row">
 
@@ -379,10 +381,7 @@
 
 </section>
 
-<section
-  id="scalpSec"
-  class="panel"
->
+<section id="scalpSec" class="panel">
 
   <div class="title-row">
 
@@ -416,10 +415,7 @@
 
 </section>
 
-<section
-  id="smartSec"
-  class="panel"
->
+<section id="smartSec" class="panel">
 
   <div class="title-row">
 
@@ -456,10 +452,7 @@
 
 </section>
 
-<section
-  id="profitSec"
-  class="panel"
->
+<section id="profitSec" class="panel">
 
   <div class="title-row">
 
@@ -532,10 +525,7 @@
 </main>
 </div>
 
-<div
-  id="modal"
-  class="modal"
->
+<div id="modal" class="modal">
 
   <div class="modal-card">
 
@@ -616,21 +606,18 @@
       : 'KR';
 
 
-  let applying = false;
+  let applying =
+    false;
 
 
   const textOfCard = (
     card
   ) => {
 
-    const title =
-      card?.querySelector(
-        'b'
-      );
-
     return String(
-      title?.textContent ||
-      ''
+      card
+        ?.querySelector('b')
+        ?.textContent || ''
     ).trim();
 
   };
@@ -649,14 +636,16 @@
 
 
     const exists =
-      Array.from(
-        wrap.children
-      ).some(
-        (card) =>
-          US_LABELS.includes(
-            textOfCard(card)
-          )
-      );
+      Array
+        .from(
+          wrap.children
+        )
+        .some(
+          (card) =>
+            US_LABELS.includes(
+              textOfCard(card)
+            )
+        );
 
 
     if (exists) {
@@ -679,7 +668,9 @@
 
 
     card.innerHTML = `
-      <b>S&P500</b>
+      <b>
+        S&P500
+      </b>
 
       <strong>
         —
@@ -776,7 +767,8 @@
     }
 
 
-    applying = true;
+    applying =
+      true;
 
 
     try {
@@ -816,14 +808,10 @@
             );
 
 
-          const show =
+          card.style.display =
             order.includes(
               label
-            );
-
-
-          card.style.display =
-            show
+            )
               ? ''
               : 'none';
 
@@ -835,14 +823,17 @@
         order
           .map(
             (label) =>
-              Array.from(
-                wrap.children
-              ).find(
-                (item) =>
-                  textOfCard(
-                    item
-                  ) === label
-              )
+              Array
+                .from(
+                  wrap.children
+                )
+                .find(
+                  (item) =>
+                    textOfCard(
+                      item
+                    ) ===
+                    label
+                )
           )
           .filter(
             Boolean
@@ -850,20 +841,21 @@
 
 
       const currentDesiredCards =
-        Array.from(
-          wrap.children
-        ).filter(
-          (item) =>
-            order.includes(
-              textOfCard(
-                item
+        Array
+          .from(
+            wrap.children
+          )
+          .filter(
+            (item) =>
+              order.includes(
+                textOfCard(
+                  item
+                )
               )
-            )
-        );
+          );
 
 
       const sameOrder =
-
         desiredCards.length ===
           currentDesiredCards.length
 
@@ -885,6 +877,7 @@
 
         desiredCards.forEach(
           (card) =>
+
             wrap.appendChild(
               card
             )
@@ -898,17 +891,20 @@
 
     } finally {
 
-      applying = false;
+      applying =
+        false;
 
     }
 
   };
 
 
-  const toggleMode = () => {
+  const setMode = (
+    nextMode
+  ) => {
 
     mode =
-      mode === 'KR'
+      nextMode === 'US'
         ? 'US'
         : 'KR';
 
@@ -923,6 +919,40 @@
   };
 
 
+  const toggleMode = () => {
+
+    setMode(
+      mode === 'KR'
+        ? 'US'
+        : 'KR'
+    );
+
+  };
+
+
+  const keyboardSelect =
+    (nextMode) =>
+      (event) => {
+
+        if (
+          event.key ===
+            'Enter'
+          ||
+          event.key ===
+            ' '
+        ) {
+
+          event.preventDefault();
+
+          setMode(
+            nextMode
+          );
+
+        }
+
+      };
+
+
   const bindSwitch = () => {
 
     document
@@ -932,6 +962,56 @@
       ?.addEventListener(
         'click',
         toggleMode
+      );
+
+
+    document
+      .getElementById(
+        'krModeLabel'
+      )
+      ?.addEventListener(
+        'click',
+        () =>
+          setMode(
+            'KR'
+          )
+      );
+
+
+    document
+      .getElementById(
+        'usModeLabel'
+      )
+      ?.addEventListener(
+        'click',
+        () =>
+          setMode(
+            'US'
+          )
+      );
+
+
+    document
+      .getElementById(
+        'krModeLabel'
+      )
+      ?.addEventListener(
+        'keydown',
+        keyboardSelect(
+          'KR'
+        )
+      );
+
+
+    document
+      .getElementById(
+        'usModeLabel'
+      )
+      ?.addEventListener(
+        'keydown',
+        keyboardSelect(
+          'US'
+        )
       );
 
 
@@ -949,19 +1029,18 @@
     if (wrap) {
 
       new MutationObserver(
-        () => {
+        () =>
 
           queueMicrotask(
             applyMarketMode
-          );
-
-        }
-      ).observe(
-        wrap,
-        {
-          childList: true
-        }
-      );
+          )
+      )
+        .observe(
+          wrap,
+          {
+            childList: true
+          }
+        );
 
     }
 
@@ -970,7 +1049,7 @@
 
   if (
     document.readyState ===
-    'loading'
+      'loading'
   ) {
 
     document.addEventListener(
