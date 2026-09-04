@@ -1,16 +1,28 @@
 from __future__ import annotations
 
 import os
-import time
-import threading
 import re
-from datetime import datetime, timezone, timedelta
+import threading
+import time
+from datetime import datetime, timedelta, timezone
 from typing import Dict
 
 from engine import Quote
 
+KST = timezone(
+    timedelta(hours=9)
+)
 
-KST = timezone(timedelta(hours=9))
+DEFAULT_CODES = [
+    "005930",
+    "000660",
+    "035420",
+    "035720",
+    "068270",
+    "012450",
+    "267260",
+    "042700",
+]
 
 
 def walk(o):
@@ -43,9 +55,14 @@ def pick(data, keys):
         for k in keys:
             if (
                 k in d
-                and d[k] not in (None, "")
+                and d[k] not in (
+                    None,
+                    "",
+                )
             ):
-                return num(d[k])
+                return num(
+                    d[k]
+                )
 
     return 0.0
 
@@ -55,7 +72,10 @@ def pick_text(data, keys):
         for k in keys:
             v = d.get(k)
 
-            if v not in (None, ""):
+            if v not in (
+                None,
+                "",
+            ):
                 return str(v)
 
     return ""
@@ -70,14 +90,14 @@ def code_of(data):
             "symbol",
             "tr_key",
         ):
-
-            v = str(
-                d.get(k, "")
-            )
-
             m = re.search(
                 r"\b(\d{6})\b",
-                v,
+                str(
+                    d.get(
+                        k,
+                        "",
+                    )
+                ),
             )
 
             if m:
@@ -86,7 +106,10 @@ def code_of(data):
     return ""
 
 
-def signed_value(value, sign):
+def signed_value(
+    value,
+    sign,
+):
     value = abs(
         num(value)
     )
@@ -103,9 +126,7 @@ def signed_value(value, sign):
 
 
 class NHFeed:
-
     def __init__(self):
-
         self.quotes: Dict[
             str,
             Quote,
@@ -114,7 +135,7 @@ class NHFeed:
         self.connected = False
         self.error = ""
 
-        self.fixed = [
+        configured = [
             x.strip()
             for x in os.getenv(
                 "TRACKED_CODES",
@@ -123,25 +144,13 @@ class NHFeed:
             if x.strip()
         ]
 
-        self.all_codes = []
-        self.scan_index = 0
-
-        # KRX + NXT 통합시세
-        self.stock_market_cd = (
-            os.getenv(
-                "NH_STOCK_MARKET_CD",
-                "UNT",
-            )
-            .strip()
-            .upper()
+        self.fixed = (
+            configured
+            or DEFAULT_CODES[:]
         )
 
-        if self.stock_market_cd not in (
-            "KRX",
-            "NXT",
-            "UNT",
-        ):
-            self.stock_market_cd = "UNT"
+        self.all_codes = []
+        self.scan_index = 0
 
         self.market = {
             "kospi": None,
@@ -164,22 +173,18 @@ class NHFeed:
         }
 
 
-    # ====================================================
-    # NXT
-    # ====================================================
-
     def update_nxt_session(self):
+        now = datetime.now(
+            KST
+        )
 
-        now = datetime.now(KST)
-
-        # 주말
         if now.weekday() >= 5:
-
             self.nxt = {
                 "session": "CLOSED",
                 "label": "NXT 휴장",
                 "open": False,
-                "updated_at": time.time(),
+                "updated_at":
+                    time.time(),
             }
 
             return
@@ -190,63 +195,52 @@ class NHFeed:
             + now.second / 60
         )
 
-        # 08:00 ~ 08:50
         if (
-            8 * 60
+            480
             <= mins
-            < 8 * 60 + 50
+            < 530
         ):
-
             session = "PRE"
             label = "NXT 프리마켓"
             opened = True
 
-        # 08:50 ~ 09:00:30
         elif (
-            8 * 60 + 50
+            530
             <= mins
-            < 9 * 60 + 0.5
+            < 540.5
         ):
-
             session = "BREAK"
             label = "NXT 메인마켓 대기"
             opened = False
 
-        # 09:00:30 ~ 15:20
         elif (
-            9 * 60 + 0.5
+            540.5
             <= mins
-            < 15 * 60 + 20
+            < 920
         ):
-
             session = "MAIN"
             label = "NXT 메인마켓"
             opened = True
 
-        # 15:20 ~ 15:40
         elif (
-            15 * 60 + 20
+            920
             <= mins
-            < 15 * 60 + 40
+            < 940
         ):
-
             session = "AFTER_WAIT"
             label = "NXT 애프터마켓 대기"
             opened = False
 
-        # 15:40 ~ 20:00
         elif (
-            15 * 60 + 40
+            940
             <= mins
-            < 20 * 60
+            < 1200
         ):
-
             session = "AFTER"
             label = "NXT 애프터마켓"
             opened = True
 
         else:
-
             session = "CLOSED"
             label = "NXT 장외시간"
             opened = False
@@ -255,29 +249,36 @@ class NHFeed:
             "session": session,
             "label": label,
             "open": opened,
-            "updated_at": time.time(),
+            "updated_at":
+                time.time(),
         }
 
 
-    # ====================================================
-    # STOCK
-    # ====================================================
-
-    def q(self, code):
-
+    def q(
+        self,
+        code,
+    ):
         if code not in self.quotes:
-
-            self.quotes[code] = Quote(
-                code,
-                code,
+            self.quotes[code] = (
+                Quote(
+                    code,
+                    code,
+                )
             )
 
-        return self.quotes[code]
+        return self.quotes[
+            code
+        ]
 
 
-    def _apply(self, code, data):
-
-        q = self.q(code)
+    def _apply(
+        self,
+        code,
+        data,
+    ):
+        q = self.q(
+            code
+        )
 
         price = pick(
             data,
@@ -302,13 +303,12 @@ class NHFeed:
         )
 
         if price:
-
             q.mark(
-                price,
+                round(price),
                 volume,
             )
 
-        q.open = (
+        q.open = round(
             pick(
                 data,
                 (
@@ -319,7 +319,7 @@ class NHFeed:
             or q.open
         )
 
-        q.high = (
+        q.high = round(
             pick(
                 data,
                 (
@@ -330,7 +330,7 @@ class NHFeed:
             or q.high
         )
 
-        q.low = (
+        q.low = round(
             pick(
                 data,
                 (
@@ -396,13 +396,13 @@ class NHFeed:
         )
 
         if strength:
-            q.execution_strength = strength
+            q.execution_strength = (
+                strength
+            )
 
 
     def load_master(self):
-
         try:
-
             from nhplug.instruments import (
                 load_master,
             )
@@ -423,9 +423,12 @@ class NHFeed:
                     c
                     for c in cols
                     if (
-                        "code" in c.lower()
-                        or "단축" in c
-                        or "종목코드" in c
+                        "code"
+                        in c.lower()
+                        or "단축"
+                        in c
+                        or "종목코드"
+                        in c
                     )
                 ),
                 None,
@@ -436,9 +439,12 @@ class NHFeed:
                     c
                     for c in cols
                     if (
-                        "name" in c.lower()
-                        or "종목명" in c
-                        or "한글" in c
+                        "name"
+                        in c.lower()
+                        or "종목명"
+                        in c
+                        or "한글"
+                        in c
                     )
                 ),
                 None,
@@ -449,9 +455,12 @@ class NHFeed:
                     c
                     for c in cols
                     if (
-                        "업종" in c
-                        or "sector" in c.lower()
-                        or "industry" in c.lower()
+                        "업종"
+                        in c
+                        or "sector"
+                        in c.lower()
+                        or "industry"
+                        in c.lower()
                     )
                 ),
                 None,
@@ -460,9 +469,7 @@ class NHFeed:
             arr = []
 
             if code_col:
-
                 for _, row in df.iterrows():
-
                     m = re.search(
                         r"(\d{6})",
                         str(
@@ -476,14 +483,15 @@ class NHFeed:
                     if not m:
                         continue
 
-                    code = m.group(1)
+                    code = (
+                        m.group(1)
+                    )
 
                     q = self.q(
                         code
                     )
 
                     if name_col:
-
                         q.name = str(
                             row.get(
                                 name_col,
@@ -493,7 +501,6 @@ class NHFeed:
                         )
 
                     if sector_col:
-
                         q.sector = str(
                             row.get(
                                 sector_col,
@@ -506,14 +513,16 @@ class NHFeed:
                         code
                     )
 
-            self.all_codes = list(
-                dict.fromkeys(
-                    arr
+            self.all_codes = (
+                list(
+                    dict.fromkeys(
+                        arr
+                    )
                 )
+                or self.fixed[:]
             )
 
         except Exception as e:
-
             self.error = (
                 f"master: {e}"
             )
@@ -523,8 +532,34 @@ class NHFeed:
             )
 
 
-    def scanner(self):
+    def _market_order(self):
+        self.update_nxt_session()
 
+        if self.nxt[
+            "session"
+        ] in (
+            "PRE",
+            "AFTER",
+        ):
+            return (
+                "NXT",
+                "KRX",
+            )
+
+        if self.nxt[
+            "session"
+        ] == "MAIN":
+            return (
+                "KRX",
+                "NXT",
+            )
+
+        return (
+            "KRX",
+        )
+
+
+    def scanner(self):
         self.load_master()
 
         codes = (
@@ -538,7 +573,6 @@ class NHFeed:
         from nhplug import call
 
         while True:
-
             code = codes[
                 self.scan_index
                 % len(codes)
@@ -548,42 +582,74 @@ class NHFeed:
                 self.scan_index + 1
             ) % len(codes)
 
-            try:
+            success = False
+            last_error = ""
 
-                data = call(
-                    "/krstock/quote/v1/currentPrice",
-                    {
-                        "iem_cd": code,
-                        "market_cd":
-                            self.stock_market_cd,
-                    },
-                )
+            for market_cd in (
+                self._market_order()
+            ):
+                try:
+                    data = call(
+                        "/krstock/quote/v1/currentPrice",
+                        {
+                            "iem_cd":
+                                code,
 
-                self._apply(
-                    code,
-                    data,
-                )
+                            "market_cd":
+                                market_cd,
+                        },
+                    )
 
-            except Exception as e:
+                    self._apply(
+                        code,
+                        data,
+                    )
 
+                    if (
+                        self.q(
+                            code
+                        ).price
+                        > 0
+                    ):
+                        self.error = ""
+                        success = True
+                        break
+
+                except Exception as e:
+                    last_error = (
+                        f"{market_cd} "
+                        f"{code}: {e}"
+                    )[:300]
+
+                    if (
+                        "429"
+                        in last_error
+                    ):
+                        time.sleep(1)
+                        break
+
+            if (
+                not success
+                and last_error
+            ):
                 self.error = (
-                    str(e)[:300]
+                    last_error
                 )
 
-                if "429" in self.error:
-                    time.sleep(1)
-
-            time.sleep(0.28)
+            time.sleep(
+                0.28
+            )
 
 
     def priority(self):
-
         rows = []
 
-        for code, q in list(
+        for (
+            code,
+            q,
+        ) in list(
             self.quotes.items()
         ):
-
             if q.price <= 0:
                 continue
 
@@ -618,9 +684,10 @@ class NHFeed:
         ]
 
         for code in self.fixed:
-
             if code not in out:
-                out.append(code)
+                out.append(
+                    code
+                )
 
             if len(out) >= 20:
                 break
@@ -632,7 +699,6 @@ class NHFeed:
         self,
         msg,
     ):
-
         code = code_of(
             msg
         )
@@ -649,15 +715,12 @@ class NHFeed:
 
 
     def websocket(self):
-
         try:
-
             from nhplug.realtime import (
                 subscribe,
             )
 
         except Exception as e:
-
             self.error = (
                 f"realtime import: {e}"
             )
@@ -665,19 +728,16 @@ class NHFeed:
             return
 
         while True:
-
             keys = (
                 self.priority()
                 or self.fixed[:20]
             )
 
             if not keys:
-
                 time.sleep(2)
                 continue
 
             try:
-
                 subscribe(
                     keys,
                     self.on_tick,
@@ -685,19 +745,13 @@ class NHFeed:
                 )
 
             except Exception as e:
-
                 self.connected = False
-
                 self.error = (
                     str(e)[:300]
                 )
 
                 time.sleep(2)
 
-
-    # ====================================================
-    # MARKET INDEX
-    # ====================================================
 
     def _market_item(
         self,
@@ -707,12 +761,12 @@ class NHFeed:
         change_pct,
         status="NHPLUG",
     ):
-
         return {
             "label": label,
             "value": value,
             "change": change,
-            "change_pct": change_pct,
+            "change_pct":
+                change_pct,
             "status": status,
         }
 
@@ -722,7 +776,6 @@ class NHFeed:
         symbol,
         label,
     ):
-
         from nhplug import call
 
         today = datetime.now(
@@ -734,14 +787,29 @@ class NHFeed:
         data = call(
             "/gbstock/quote/v1/symbolIndexFxPeriod",
             {
-                "iem_cd": symbol,
-                "end_dt": today,
-                "array_cnt": "0002",
-                "maxavg": "020",
-                "gubun": "1",
-                "xtick": "001",
-                "today_cls": "0",
-                "scale_change": "0",
+                "iem_cd":
+                    symbol,
+
+                "end_dt":
+                    today,
+
+                "array_cnt":
+                    "0002",
+
+                "maxavg":
+                    "020",
+
+                "gubun":
+                    "1",
+
+                "xtick":
+                    "001",
+
+                "today_cls":
+                    "0",
+
+                "scale_change":
+                    "0",
             },
         )
 
@@ -769,60 +837,56 @@ class NHFeed:
             sign,
         )
 
-        change_pct = signed_value(
-            pick(
-                data,
-                (
-                    "prdy_ctrt",
+        change_pct = (
+            signed_value(
+                pick(
+                    data,
+                    (
+                        "prdy_ctrt",
+                    ),
                 ),
-            ),
-            sign,
+                sign,
+            )
         )
 
         if not value:
             return None
 
-        return self._market_item(
-            label,
-            value,
-            change,
-            change_pct,
-            "NHPLUG 해외지수",
+        return (
+            self._market_item(
+                label,
+                value,
+                change,
+                change_pct,
+                "NHPLUG 해외지수",
+            )
         )
 
 
     def market_loop(self):
-
         while True:
-
             try:
-
                 self.update_nxt_session()
 
                 new_market = {}
-
                 errors = {}
 
                 symbols = (
-
                     (
                         "nasdaq",
                         "NH_NASDAQ_SYMBOL",
                         "나스닥",
                     ),
-
                     (
                         "sox",
                         "NH_SOX_SYMBOL",
                         "필라델피아 반도체",
                     ),
-
                     (
                         "nasdaq_future",
                         "NH_NASDAQ_FUTURE_SYMBOL",
                         "나스닥 선물",
                     ),
-
                     (
                         "kospi_night",
                         "NH_KOSPI_NIGHT_SYMBOL",
@@ -835,7 +899,6 @@ class NHFeed:
                     env_key,
                     label,
                 ) in symbols:
-
                     symbol = (
                         os.getenv(
                             env_key,
@@ -848,9 +911,9 @@ class NHFeed:
                         continue
 
                     try:
-
                         item = (
-                            self._read_overseas_index(
+                            self
+                            ._read_overseas_index(
                                 symbol,
                                 label,
                             )
@@ -862,7 +925,6 @@ class NHFeed:
                             ] = item
 
                     except Exception as e:
-
                         errors[
                             key
                         ] = str(
@@ -882,7 +944,6 @@ class NHFeed:
                 )
 
             except Exception as e:
-
                 self.market_errors[
                     "market_loop"
                 ] = str(
@@ -893,7 +954,6 @@ class NHFeed:
 
 
     def market_state(self):
-
         self.update_nxt_session()
 
         nxt_status = (
@@ -906,7 +966,6 @@ class NHFeed:
         )
 
         return [
-
             self.market.get(
                 "kospi"
             )
@@ -980,22 +1039,15 @@ class NHFeed:
                 None,
                 "NHPLUG 선물 심볼 설정 필요",
             ),
-
         ]
 
 
-    # ====================================================
-    # START
-    # ====================================================
-
     def start(self):
-
         for target in (
             self.scanner,
             self.websocket,
             self.market_loop,
         ):
-
             threading.Thread(
                 target=target,
                 daemon=True,
