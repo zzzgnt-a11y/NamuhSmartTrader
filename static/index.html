@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Namuh Smart Trader</title>
-  <link rel="stylesheet" href="/static/styles.css?v=2">
+  <link rel="stylesheet" href="/static/styles.css?v=3">
 </head>
 
 <body>
@@ -29,11 +29,19 @@
 
   <div class="budget">
     <label>오늘 운용금액</label>
+
     <div>
       <input id="budget" inputmode="numeric" value="200000">
       <button id="saveBudgetBtn" type="button">저장</button>
     </div>
-    <small>보유 원가 합이 이 금액에 도달하면 신규매수 차단 · 매도 후 재사용</small>
+
+    <strong id="currentBudget" style="display:block;margin-top:10px;font-size:16px;">
+      현재 운용값: -
+    </strong>
+
+    <small>
+      보유 원가 합이 이 금액에 도달하면 신규매수 차단 · 매도 후 재사용
+    </small>
   </div>
 </section>
 
@@ -75,7 +83,7 @@
 <section id="smart" class="tab">
   <div class="panel">
     <div class="title-row">
-      <h2>스마트머니 + 저평가</h2>
+      <h2>스마트머니 + 저박가</h2>
       <span>PER · PBR · 외국인 · 기관</span>
     </div>
     <div id="smartList"></div>
@@ -101,7 +109,7 @@
   </div>
 </div>
 
-<script src="/static/app.js?v=2"></script>
+<script src="/static/app.js?v=3"></script>
 
 </body>
 </html>
