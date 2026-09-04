@@ -5,6 +5,103 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>GY 모의투자 시스템</title>
   <link rel="stylesheet" href="/static/styles.css?v=7">
+
+  <style>
+    .market-switch-wrap {
+      position: fixed;
+      top: 18px;
+      right: 18px;
+      z-index: 1600;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 8px 10px;
+      border-radius: 999px;
+      background: rgba(8, 14, 28, 0.92);
+      border: 1px solid rgba(105, 146, 229, 0.22);
+      box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+    }
+
+    .market-switch-label {
+      min-width: 27px;
+      text-align: center;
+      font-size: 11px;
+      font-weight: 800;
+      color: #91a8c8;
+      user-select: none;
+    }
+
+    .market-switch-label.active {
+      color: #ffffff;
+    }
+
+    #marketModeBtn {
+      position: relative;
+      width: 56px;
+      min-width: 56px;
+      height: 32px;
+      min-height: 32px;
+      padding: 0;
+      border: 0;
+      border-radius: 999px;
+      background: linear-gradient(135deg, #1f6fff, #00d4ff);
+      cursor: pointer;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12);
+    }
+
+    #marketModeBtn::after {
+      content: "";
+      position: absolute;
+      top: 4px;
+      left: 4px;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: #ffffff;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.3);
+      transition: transform 0.2s ease;
+    }
+
+    #marketModeBtn.us {
+      background: linear-gradient(135deg, #18a957, #39d98a);
+    }
+
+    #marketModeBtn.us::after {
+      transform: translateX(24px);
+    }
+
+    @media (max-width: 640px) {
+      .market-switch-wrap {
+        top: 12px;
+        right: 10px;
+        gap: 6px;
+        padding: 6px 8px;
+      }
+
+      .market-switch-label {
+        font-size: 10px;
+        min-width: 24px;
+      }
+
+      #marketModeBtn {
+        width: 50px;
+        min-width: 50px;
+        height: 30px;
+        min-height: 30px;
+      }
+
+      #marketModeBtn::after {
+        width: 22px;
+        height: 22px;
+      }
+
+      #marketModeBtn.us::after {
+        transform: translateX(20px);
+      }
+    }
+  </style>
 </head>
 
 <body>
@@ -48,26 +145,63 @@
 
 </aside>
 
+<div class="market-switch-wrap" aria-label="국장 미장 전환">
+  <span id="krModeLabel" class="market-switch-label active">국장</span>
+
+  <button
+    id="marketModeBtn"
+    type="button"
+    aria-pressed="false"
+    aria-label="국장과 미장 전환"
+  ></button>
+
+  <span id="usModeLabel" class="market-switch-label">
+    미장
+  </span>
+</div>
+
 <div class="app-shell">
 
 <header class="topbar">
+
   <div class="brand-wrap">
-    <div class="brand-badge">GY</div>
+
+    <div class="brand-badge">
+      GY
+    </div>
 
     <div>
-      <div class="eyebrow">AI PAPER TRADING SYSTEM</div>
-      <h1>GY 모의투자 시스템</h1>
-      <p class="subtitle">실시간 KRX 기반 AI 모의투자 대시보드</p>
+
+      <div class="eyebrow">
+        AI PAPER TRADING SYSTEM
+      </div>
+
+      <h1>
+        GY 모의투자 시스템
+      </h1>
+
+      <p class="subtitle">
+        실시간 KRX 기반 AI 모의투자 대시보드
+      </p>
+
     </div>
+
   </div>
+
 </header>
 
 <main class="page">
 
-<section id="homeSec" class="hero-panel">
+<section
+  id="homeSec"
+  class="hero-panel"
+>
 
   <div class="hero-left">
-    <div class="hero-chip">● LIVE SIGNAL ENGINE</div>
+
+    <div class="hero-chip">
+      ● LIVE SIGNAL ENGINE
+    </div>
 
     <h2>
       AI가 시장을 분석하고<br>
@@ -80,34 +214,69 @@
     </p>
 
     <div class="hero-stats">
+
       <div class="hero-stat">
-        <span>가상 총자산</span>
-        <strong id="equity">-</strong>
+
+        <span>
+          가상 총자산
+        </span>
+
+        <strong id="equity">
+          -
+        </strong>
+
       </div>
 
       <div class="hero-stat">
-        <span>연결 상태</span>
-        <strong id="health">연결 확인 중</strong>
+
+        <span>
+          연결 상태
+        </span>
+
+        <strong id="health">
+          연결 확인 중
+        </strong>
+
       </div>
+
     </div>
+
   </div>
 
   <div class="hero-right">
+
     <div class="ai-scene">
+
       <div class="ai-grid"></div>
+
       <div class="ai-ring ring-1"></div>
+
       <div class="ai-ring ring-2"></div>
+
       <div class="ai-ring ring-3"></div>
+
       <div class="ai-core"></div>
+
       <div class="ai-node node-1"></div>
+
       <div class="ai-node node-2"></div>
+
       <div class="ai-node node-3"></div>
 
       <div class="ai-label-box">
-        <b>NEURAL MARKET ENGINE</b>
-        <span>KRX · PAPER · AUTO SIGNAL</span>
+
+        <b>
+          NEURAL MARKET ENGINE
+        </b>
+
+        <span>
+          KRX · PAPER · AUTO SIGNAL
+        </span>
+
       </div>
+
     </div>
+
   </div>
 
 </section>
@@ -115,13 +284,21 @@
 <section class="budget-panel panel">
 
   <div class="title-row">
-    <h2>오늘 운용금액</h2>
-    <span>가상자금 기준</span>
+
+    <h2>
+      오늘 운용금액
+    </h2>
+
+    <span>
+      가상자금 기준
+    </span>
+
   </div>
 
   <div class="budget-box">
 
     <div class="budget-input-row">
+
       <input
         id="budget"
         inputmode="numeric"
@@ -129,12 +306,19 @@
         placeholder="오늘 운용금액"
       >
 
-      <button id="saveBudgetBtn" type="button">
+      <button
+        id="saveBudgetBtn"
+        type="button"
+      >
         저장
       </button>
+
     </div>
 
-    <strong id="currentBudget" class="current-budget">
+    <strong
+      id="currentBudget"
+      class="current-budget"
+    >
       현재 운용값: -
     </strong>
 
@@ -147,82 +331,174 @@
 
 </section>
 
-<section id="marketSec" class="panel">
+<section
+  id="marketSec"
+  class="panel"
+>
 
   <div class="title-row">
-    <h2>시장 지수</h2>
-    <span>국내 · 해외 시장</span>
+
+    <h2>
+      시장 지수
+    </h2>
+
+    <span id="marketModeCaption">
+      국장 주요 지수
+    </span>
+
   </div>
 
-  <div id="markets" class="market-grid"></div>
+  <div
+    id="markets"
+    class="market-grid"
+  ></div>
 
 </section>
 
-<section id="sectorSec" class="panel">
+<section
+  id="sectorSec"
+  class="panel"
+>
 
   <div class="title-row">
-    <h2>주도 섹터</h2>
-    <span>실시간 강도 순위</span>
+
+    <h2>
+      주도 섹터
+    </h2>
+
+    <span>
+      실시간 강도 순위
+    </span>
+
   </div>
 
-  <div id="sectors" class="sector-row"></div>
+  <div
+    id="sectors"
+    class="sector-row"
+  ></div>
 
 </section>
 
-<section id="scalpSec" class="panel">
+<section
+  id="scalpSec"
+  class="panel"
+>
 
   <div class="title-row">
-    <h2>수급 포착 후보</h2>
-    <span>KRX ONLY · NXT 제외</span>
+
+    <h2>
+      수급 포착 후보
+    </h2>
+
+    <span>
+      KRX ONLY · NXT 제외
+    </span>
+
   </div>
 
   <div class="sub-panel">
+
     <div class="sub-title-row">
-      <h3>실시간 후보 순위</h3>
-      <span>AI 점수 · 목표가(VI)</span>
+
+      <h3>
+        실시간 후보 순위
+      </h3>
+
+      <span>
+        AI 점수 · 목표가(VI)
+      </span>
+
     </div>
 
     <div id="scalpList"></div>
+
   </div>
 
 </section>
 
-<section id="smartSec" class="panel">
+<section
+  id="smartSec"
+  class="panel"
+>
 
   <div class="title-row">
-    <h2>스마트머니 + 저평가</h2>
-    <span>PER · PBR · 외국인 · 기관</span>
+
+    <h2>
+      스마트머니 + 저평가
+    </h2>
+
+    <span>
+      PER · PBR · 외국인 · 기관
+    </span>
+
   </div>
 
   <div id="smartList"></div>
 
 </section>
 
-<section id="holdingSec" class="panel holding-panel">
+<section
+  id="holdingSec"
+  class="panel holding-panel"
+>
 
   <div class="title-row">
-    <h2>현재 보유종목</h2>
+
+    <h2>
+      현재 보유종목
+    </h2>
+
     <span id="heldCost"></span>
+
   </div>
 
   <div id="positions"></div>
 
 </section>
 
-<section id="profitSec" class="panel">
+<section
+  id="profitSec"
+  class="panel"
+>
 
   <div class="title-row">
-    <h2>수익</h2>
-    <span>날짜별 실현손익</span>
+
+    <h2>
+      수익
+    </h2>
+
+    <span>
+      날짜별 실현손익
+    </span>
+
   </div>
 
   <div class="calendar-toolbar">
-    <button id="prevMonthBtn" class="month-btn" type="button">‹</button>
-    <strong id="profitMonthTitle">-</strong>
-    <button id="nextMonthBtn" class="month-btn" type="button">›</button>
+
+    <button
+      id="prevMonthBtn"
+      class="month-btn"
+      type="button"
+    >
+      ‹
+    </button>
+
+    <strong id="profitMonthTitle">
+      -
+    </strong>
+
+    <button
+      id="nextMonthBtn"
+      class="month-btn"
+      type="button"
+    >
+      ›
+    </button>
+
   </div>
 
   <div class="weekday-row">
+
     <div>일</div>
     <div>월</div>
     <div>화</div>
@@ -230,16 +506,25 @@
     <div>목</div>
     <div>금</div>
     <div>토</div>
+
   </div>
 
-  <div id="profitCalendar" class="calendar-grid"></div>
+  <div
+    id="profitCalendar"
+    class="calendar-grid"
+  ></div>
 
   <div class="profit-detail-box">
-    <div id="profitSummary" class="empty">
+
+    <div
+      id="profitSummary"
+      class="empty"
+    >
       날짜를 누르면 그날의 수익 내역이 표시됩니다.
     </div>
 
     <div id="profitDetailList"></div>
+
   </div>
 
 </section>
@@ -247,14 +532,460 @@
 </main>
 </div>
 
-<div id="modal" class="modal">
+<div
+  id="modal"
+  class="modal"
+>
+
   <div class="modal-card">
-    <button id="closeModalBtn" class="x" type="button">×</button>
+
+    <button
+      id="closeModalBtn"
+      class="x"
+      type="button"
+    >
+      ×
+    </button>
+
     <div id="detail"></div>
+
   </div>
+
 </div>
 
 <script src="/static/app.js?v=7"></script>
+
+<script>
+(() => {
+
+  const MODE_KEY =
+    'gy_market_mode';
+
+  const KR_LABELS = [
+    '코스피',
+    '코스닥',
+    '코스피 야간선물',
+    '나스닥 선물',
+    '필라델피아 반도체'
+  ];
+
+  const US_LABELS = [
+    'S&P500',
+    'S&P 500'
+  ];
+
+
+  const readSavedMode = () => {
+
+    try {
+
+      return localStorage.getItem(
+        MODE_KEY
+      );
+
+    } catch (_) {
+
+      return null;
+
+    }
+
+  };
+
+
+  const saveMode = (
+    value
+  ) => {
+
+    try {
+
+      localStorage.setItem(
+        MODE_KEY,
+        value
+      );
+
+    } catch (_) {
+
+    }
+
+  };
+
+
+  let mode =
+    readSavedMode() === 'US'
+      ? 'US'
+      : 'KR';
+
+
+  let applying = false;
+
+
+  const textOfCard = (
+    card
+  ) => {
+
+    const title =
+      card?.querySelector(
+        'b'
+      );
+
+    return String(
+      title?.textContent ||
+      ''
+    ).trim();
+
+  };
+
+
+  const ensureSp500Card = () => {
+
+    const wrap =
+      document.getElementById(
+        'markets'
+      );
+
+    if (!wrap) {
+      return;
+    }
+
+
+    const exists =
+      Array.from(
+        wrap.children
+      ).some(
+        (card) =>
+          US_LABELS.includes(
+            textOfCard(card)
+          )
+      );
+
+
+    if (exists) {
+      return;
+    }
+
+
+    const card =
+      document.createElement(
+        'div'
+      );
+
+
+    card.className =
+      'market';
+
+
+    card.dataset.syntheticMarket =
+      'sp500';
+
+
+    card.innerHTML = `
+      <b>S&P500</b>
+
+      <strong>
+        —
+      </strong>
+
+      <div class="delta">
+      </div>
+
+      <div class="pending">
+        NHPLUG S&P500 연동 대기
+      </div>
+    `;
+
+
+    wrap.appendChild(
+      card
+    );
+
+  };
+
+
+  const updateSwitch = () => {
+
+    const btn =
+      document.getElementById(
+        'marketModeBtn'
+      );
+
+
+    const kr =
+      document.getElementById(
+        'krModeLabel'
+      );
+
+
+    const us =
+      document.getElementById(
+        'usModeLabel'
+      );
+
+
+    const caption =
+      document.getElementById(
+        'marketModeCaption'
+      );
+
+
+    if (btn) {
+
+      btn.classList.toggle(
+        'us',
+        mode === 'US'
+      );
+
+
+      btn.setAttribute(
+        'aria-pressed',
+        mode === 'US'
+          ? 'true'
+          : 'false'
+      );
+
+    }
+
+
+    kr?.classList.toggle(
+      'active',
+      mode === 'KR'
+    );
+
+
+    us?.classList.toggle(
+      'active',
+      mode === 'US'
+    );
+
+
+    if (caption) {
+
+      caption.textContent =
+        mode === 'KR'
+          ? '국장 주요 지수'
+          : '미장 주요 지수';
+
+    }
+
+  };
+
+
+  const applyMarketMode = () => {
+
+    if (applying) {
+      return;
+    }
+
+
+    applying = true;
+
+
+    try {
+
+      const wrap =
+        document.getElementById(
+          'markets'
+        );
+
+
+      if (!wrap) {
+        return;
+      }
+
+
+      ensureSp500Card();
+
+
+      const order =
+        mode === 'KR'
+          ? KR_LABELS
+          : US_LABELS;
+
+
+      const cards =
+        Array.from(
+          wrap.children
+        );
+
+
+      cards.forEach(
+        (card) => {
+
+          const label =
+            textOfCard(
+              card
+            );
+
+
+          const show =
+            order.includes(
+              label
+            );
+
+
+          card.style.display =
+            show
+              ? ''
+              : 'none';
+
+        }
+      );
+
+
+      const desiredCards =
+        order
+          .map(
+            (label) =>
+              Array.from(
+                wrap.children
+              ).find(
+                (item) =>
+                  textOfCard(
+                    item
+                  ) === label
+              )
+          )
+          .filter(
+            Boolean
+          );
+
+
+      const currentDesiredCards =
+        Array.from(
+          wrap.children
+        ).filter(
+          (item) =>
+            order.includes(
+              textOfCard(
+                item
+              )
+            )
+        );
+
+
+      const sameOrder =
+
+        desiredCards.length ===
+          currentDesiredCards.length
+
+        &&
+
+        desiredCards.every(
+          (
+            card,
+            index
+          ) =>
+            card ===
+            currentDesiredCards[
+              index
+            ]
+        );
+
+
+      if (!sameOrder) {
+
+        desiredCards.forEach(
+          (card) =>
+            wrap.appendChild(
+              card
+            )
+        );
+
+      }
+
+
+      updateSwitch();
+
+
+    } finally {
+
+      applying = false;
+
+    }
+
+  };
+
+
+  const toggleMode = () => {
+
+    mode =
+      mode === 'KR'
+        ? 'US'
+        : 'KR';
+
+
+    saveMode(
+      mode
+    );
+
+
+    applyMarketMode();
+
+  };
+
+
+  const bindSwitch = () => {
+
+    document
+      .getElementById(
+        'marketModeBtn'
+      )
+      ?.addEventListener(
+        'click',
+        toggleMode
+      );
+
+
+    updateSwitch();
+
+    applyMarketMode();
+
+
+    const wrap =
+      document.getElementById(
+        'markets'
+      );
+
+
+    if (wrap) {
+
+      new MutationObserver(
+        () => {
+
+          queueMicrotask(
+            applyMarketMode
+          );
+
+        }
+      ).observe(
+        wrap,
+        {
+          childList: true
+        }
+      );
+
+    }
+
+  };
+
+
+  if (
+    document.readyState ===
+    'loading'
+  ) {
+
+    document.addEventListener(
+      'DOMContentLoaded',
+      bindSwitch
+    );
+
+  } else {
+
+    bindSwitch();
+
+  }
+
+})();
+</script>
 
 </body>
 </html>
