@@ -4,256 +4,249 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>GY 모의투자 시스템</title>
-  <link rel="stylesheet" href="/static/styles.css?v=5">
+  <link rel="stylesheet" href="/static/styles.css?v=6">
 </head>
 
 <body>
 
-<header class="topbar">
-  <div class="brand-wrap">
-    <div class="brand-badge">GY</div>
+<aside class="side-nav">
+  <button class="side-btn" data-scroll="homeSec" type="button">
+    <span class="side-icon">⌂</span>
+    <span class="side-label">홈</span>
+  </button>
 
-    <div>
-      <div class="eyebrow">AI PAPER TRADING</div>
-      <h1>GY 모의투자 시스템</h1>
-      <p class="subtitle">실시간 KRX 데이터를 활용한 AI 모의투자 대시보드</p>
-    </div>
-  </div>
-</header>
+  <button class="side-btn" data-scroll="marketSec" type="button">
+    <span class="side-icon">◎</span>
+    <span class="side-label">지수</span>
+  </button>
 
-<main class="page">
+  <button class="side-btn" data-scroll="sectorSec" type="button">
+    <span class="side-icon">◈</span>
+    <span class="side-label">섹터</span>
+  </button>
 
-  <section class="hero-panel">
-    <div class="hero-left">
+  <button class="side-btn" data-scroll="scalpSec" type="button">
+    <span class="side-icon">⇡</span>
+    <span class="side-label">수급</span>
+  </button>
 
-      <div class="hero-chip">● LIVE SIGNAL</div>
+  <button class="side-btn" data-scroll="smartSec" type="button">
+    <span class="side-icon">◉</span>
+    <span class="side-label">스마트</span>
+  </button>
 
-      <h2>
-        AI가 시장을 분석하고<br>
-        모의투자로 자동 운용
-      </h2>
+  <button class="side-btn" data-scroll="tradesSec" type="button">
+    <span class="side-icon">≡</span>
+    <span class="side-label">매매</span>
+  </button>
 
-      <p>
-        수급 · 기술적 지표 · 기관/외국인 흐름을 분석해
-        조건 충족 종목만 자동으로 모의매수합니다.
-      </p>
+  <button class="side-btn" data-scroll="profitSec" type="button">
+    <span class="side-icon">₩</span>
+    <span class="side-label">수익</span>
+  </button>
+</aside>
 
-      <div class="hero-stats">
+<div class="app-shell">
 
-        <div class="hero-stat">
-          <span>가상 총자산</span>
-          <strong id="equity">-</strong>
-        </div>
+  <header class="topbar">
+    <div class="brand-wrap">
+      <div class="brand-badge">GY</div>
 
-        <div class="hero-stat">
-          <span>연결 상태</span>
-          <strong id="health">연결 확인 중</strong>
-        </div>
-
+      <div>
+        <div class="eyebrow">AI PAPER TRADING SYSTEM</div>
+        <h1>GY 모의투자 시스템</h1>
+        <p class="subtitle">실시간 KRX 기반 AI 모의투자 대시보드</p>
       </div>
     </div>
+  </header>
 
-    <div class="hero-right">
-      <div class="robot-card">
+  <main class="page">
 
-        <div class="robot-glow"></div>
+    <section id="homeSec" class="hero-panel">
+      <div class="hero-left">
 
-        <div class="robot-core">
-          🤖
+        <div class="hero-chip">● LIVE SIGNAL ENGINE</div>
+
+        <h2>
+          AI가 시장을 분석하고<br>
+          조건 충족 종목만 모의운용
+        </h2>
+
+        <p>
+          수급, 기술적 지표, 기관/외국인 흐름을 종합해
+          실시간으로 후보를 선별하고 가상자금으로 자동매매합니다.
+        </p>
+
+        <div class="hero-stats">
+          <div class="hero-stat">
+            <span>가상 총자산</span>
+            <strong id="equity">-</strong>
+          </div>
+
+          <div class="hero-stat">
+            <span>연결 상태</span>
+            <strong id="health">연결 확인 중</strong>
+          </div>
         </div>
-
-        <div class="robot-text">
-          <b>AI SIGNAL ENGINE</b>
-          <span>KRX · PAPER · AUTO ANALYSIS</span>
-        </div>
-
-      </div>
-    </div>
-  </section>
-
-  <section class="budget-panel panel">
-
-    <div class="title-row">
-      <h2>오늘 운용금액</h2>
-      <span>가상자금 기준</span>
-    </div>
-
-    <div class="budget-box">
-
-      <div class="budget-input-row">
-        <input
-          id="budget"
-          inputmode="numeric"
-          value="200000"
-          placeholder="오늘 운용금액"
-        >
-
-        <button
-          id="saveBudgetBtn"
-          type="button"
-        >
-          저장
-        </button>
       </div>
 
-      <strong
-        id="currentBudget"
-        class="current-budget"
-      >
-        현재 운용값: -
-      </strong>
+      <div class="hero-right">
+        <div class="ai-scene">
+          <div class="ai-grid"></div>
+          <div class="ai-ring ring-1"></div>
+          <div class="ai-ring ring-2"></div>
+          <div class="ai-ring ring-3"></div>
+          <div class="ai-core"></div>
+          <div class="ai-node node-1"></div>
+          <div class="ai-node node-2"></div>
+          <div class="ai-node node-3"></div>
 
-      <small>
-        보유 원가 합이 설정 금액에 도달하면 신규매수를 차단하고,
-        매도한 금액만큼 다시 운용 가능합니다.
-      </small>
+          <div class="ai-label-box">
+            <b>NEURAL MARKET ENGINE</b>
+            <span>KRX · PAPER · AUTO SIGNAL</span>
+          </div>
+        </div>
+      </div>
+    </section>
 
-    </div>
-  </section>
-
-  <section class="panel">
-
-    <div class="title-row">
-      <h2>시장 지수</h2>
-      <span>국내 · 해외 시장 흐름</span>
-    </div>
-
-    <div
-      id="markets"
-      class="market-grid"
-    ></div>
-
-  </section>
-
-  <section class="panel">
-
-    <div class="title-row">
-      <h2>주도 섹터</h2>
-      <span>실시간 강도 순위</span>
-    </div>
-
-    <div
-      id="sectors"
-      class="sector-row"
-    ></div>
-
-  </section>
-
-  <nav class="main-tabs">
-
-    <button
-      class="active"
-      data-tab="scalp"
-      type="button"
-    >
-      1. 수급 포착
-    </button>
-
-    <button
-      data-tab="smart"
-      type="button"
-    >
-      2. 스마트머니
-    </button>
-
-    <button
-      data-tab="trades"
-      type="button"
-    >
-      3. 오늘 매매
-    </button>
-
-  </nav>
-
-  <section
-    id="scalp"
-    class="tab active"
-  >
-
-    <div class="panel">
-
+    <section class="budget-panel panel">
       <div class="title-row">
-        <h2>현재 AI 보유</h2>
-        <span id="heldCost"></span>
+        <h2>오늘 운용금액</h2>
+        <span>가상자금 기준</span>
       </div>
 
-      <div id="positions"></div>
+      <div class="budget-box">
+        <div class="budget-input-row">
+          <input
+            id="budget"
+            inputmode="numeric"
+            value="200000"
+            placeholder="오늘 운용금액"
+          >
 
-    </div>
+          <button
+            id="saveBudgetBtn"
+            type="button"
+          >
+            저장
+          </button>
+        </div>
 
-    <div class="panel">
+        <strong id="currentBudget" class="current-budget">
+          현재 운용값: -
+        </strong>
 
+        <small>
+          보유 원가 합이 설정 금액에 도달하면 신규매수를 차단하고,
+          매도한 금액만큼 다시 운용 가능합니다.
+        </small>
+      </div>
+    </section>
+
+    <section id="marketSec" class="panel">
+      <div class="title-row">
+        <h2>시장 지수</h2>
+        <span>코스피 · 코스닥 · 해외지수</span>
+      </div>
+
+      <div id="markets" class="market-grid"></div>
+    </section>
+
+    <section id="sectorSec" class="panel">
+      <div class="title-row">
+        <h2>주도 섹터</h2>
+        <span>실시간 강도 순위</span>
+      </div>
+
+      <div id="sectors" class="sector-row"></div>
+    </section>
+
+    <section id="scalpSec" class="panel">
       <div class="title-row">
         <h2>수급 포착 후보</h2>
         <span>KRX ONLY · NXT 제외</span>
       </div>
 
-      <div id="scalpList"></div>
+      <div class="sub-panel">
+        <div class="sub-title-row">
+          <h3>현재 AI 보유</h3>
+          <span id="heldCost"></span>
+        </div>
+        <div id="positions"></div>
+      </div>
 
-    </div>
+      <div class="sub-panel">
+        <div class="sub-title-row">
+          <h3>실시간 후보 순위</h3>
+          <span>AI 점수 · 목표가(VI)</span>
+        </div>
+        <div id="scalpList"></div>
+      </div>
+    </section>
 
-  </section>
-
-  <section
-    id="smart"
-    class="tab"
-  >
-
-    <div class="panel">
-
+    <section id="smartSec" class="panel">
       <div class="title-row">
         <h2>스마트머니 + 저평가</h2>
         <span>PER · PBR · 외국인 · 기관</span>
       </div>
 
       <div id="smartList"></div>
+    </section>
 
-    </div>
-
-  </section>
-
-  <section
-    id="trades"
-    class="tab"
-  >
-
-    <div class="panel">
-
+    <section id="tradesSec" class="panel">
       <div class="title-row">
         <h2>오늘 매수/매도</h2>
         <span id="cash"></span>
       </div>
 
       <div id="tradeList"></div>
+    </section>
 
-    </div>
+    <section id="profitSec" class="panel">
+      <div class="title-row">
+        <h2>수익</h2>
+        <span>날짜별 실현손익</span>
+      </div>
 
-  </section>
+      <div class="calendar-toolbar">
+        <button id="prevMonthBtn" class="month-btn" type="button">‹</button>
+        <strong id="profitMonthTitle">-</strong>
+        <button id="nextMonthBtn" class="month-btn" type="button">›</button>
+      </div>
 
-</main>
+      <div class="weekday-row">
+        <div>일</div>
+        <div>월</div>
+        <div>화</div>
+        <div>수</div>
+        <div>목</div>
+        <div>금</div>
+        <div>토</div>
+      </div>
 
-<div
-  id="modal"
-  class="modal"
->
+      <div id="profitCalendar" class="calendar-grid"></div>
 
-  <div class="modal-card">
+      <div class="profit-detail-box">
+        <div id="profitSummary" class="empty">
+          날짜를 누르면 그날의 수익 내역이 표시됩니다.
+        </div>
 
-    <button
-      id="closeModalBtn"
-      class="x"
-      type="button"
-    >
-      ×
-    </button>
+        <div id="profitDetailList"></div>
+      </div>
+    </section>
 
-    <div id="detail"></div>
-
-  </div>
+  </main>
 
 </div>
 
-<script src="/static/app.js?v=5"></script>
+<div id="modal" class="modal">
+  <div class="modal-card">
+    <button id="closeModalBtn" class="x" type="button">×</button>
+    <div id="detail"></div>
+  </div>
+</div>
+
+<script src="/static/app.js?v=6"></script>
 
 </body>
 </html>
