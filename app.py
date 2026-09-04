@@ -4,108 +4,44 @@ import os
 import re
 import threading
 import time
-
-from contextlib import (
-    asynccontextmanager,
-)
+from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
+from fastapi import FastAPI, Query
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
-from fastapi import (
-    FastAPI,
-    Query,
-)
-
-from fastapi.responses import (
-    FileResponse,
-)
-
-from fastapi.staticfiles import (
-    StaticFiles,
-)
-
-from pydantic import (
-    BaseModel,
-)
-
-from engine import (
-    PaperAccount,
-    scalp_score,
-    smart_score,
-)
-
-from nhfeed import (
-    NHFeed,
-)
-
+from engine import PaperAccount, scalp_score, smart_score
+from nhfeed import NHFeed
 
 load_dotenv()
 
-
-MARKETS = (
-    "KR",
-    "US",
-)
-
-
+MARKETS = ("KR", "US")
 feed = NHFeed()
-
-
-papers = {
-    market:
-        PaperAccount()
-
-    for market
-    in MARKETS
-}
-
+papers = {market: PaperAccount() for market in MARKETS}
 
 protected = {
     x.strip()
-
-    for x
-    in os.getenv(
+    for x in os.getenv(
         "PROTECTED_CODES",
         "",
-    ).split(
-        ","
-    )
-
+    ).split(",")
     if x.strip()
 }
 
-
 SECTOR_FALLBACK = {
-    "005930":
-        "반도체",
-
-    "000660":
-        "반도체",
-
-    "042700":
-        "반도체",
-
-    "035420":
-        "인터넷/AI",
-
-    "035720":
-        "인터넷/AI",
-
-    "068270":
-        "바이오",
-
-    "012450":
-        "방산",
-
-    "267260":
-        "전력기기",
+    "005930": "반도체",
+    "000660": "반도체",
+    "042700": "반도체",
+    "035420": "인터넷/AI",
+    "035720": "인터넷/AI",
+    "068270": "바이오",
+    "012450": "방산",
+    "267260": "전력기기",
 }
 
-
-cache_lock = (
-    threading.Lock()
-)
-
+cache_lock = threading.Lock()
 
 CACHE = {
     "KR": {
@@ -114,7 +50,6 @@ CACHE = {
         "smart": [],
         "updated_at": 0.0,
     },
-
     "US": {
         "sectors": [],
         "scalp": [],
@@ -123,49 +58,40 @@ CACHE = {
     },
 }
 
-
 _started = False
 
 
 def normalize_market(
     value: str | None,
 ) -> str:
-    value = (
-        str(
-            value
-            or "KR"
-        )
-        .upper()
-        .strip()
+    value = str(
+        value or "KR"
+    ).upper().strip()
+
+    return (
+        value
+        if value in MARKETS
+        else "KR"
     )
-
-    if value in MARKETS:
-        return value
-
-    return "KR"
 
 
 def number(
-    value
+    value,
 ):
     try:
         return float(
-            value
-            or 0
+            value or 0
         )
-
     except Exception:
         return 0.0
 
 
 def krw(
-    value
+    value,
 ):
     return int(
         round(
-            number(
-                value
-            )
+            number(value)
         )
     )
 
@@ -177,9 +103,7 @@ def build_sectors(
 
     for q in list(
         feed
-        .quotes_for(
-            market
-        )
+        .quotes_for(market)
         .values()
     ):
         if (
@@ -188,111 +112,69 @@ def build_sectors(
         ):
             continue
 
-        if market == "KR":
-            sector = (
-                q.sector
-                or SECTOR_FALLBACK.get(
+        sector = (
+            q.sector
+            or (
+                SECTOR_FALLBACK.get(
                     q.code,
                     "기타",
                 )
+                if market == "KR"
+                else "기타"
             )
-
-        else:
-            sector = (
-                q.sector
-                or "기타"
-            )
+        )
 
         item = agg.setdefault(
             sector,
             {
-                "sector":
-                    sector,
-
-                "sum":
-                    0.0,
-
-                "n":
-                    0,
-
-                "money":
-                    0.0,
-
-                "leader":
-                    "",
-
-                "best":
-                    -999.0,
+                "sector": sector,
+                "sum": 0.0,
+                "n": 0,
+                "money": 0.0,
+                "leader": "",
+                "best": -999.0,
             },
         )
 
         change = (
-            (
-                q.price
-                / q.open
-            )
+            q.price
+            / q.open
             - 1
         ) * 100
 
-        item[
-            "sum"
-        ] += change
-
-        item[
-            "n"
-        ] += 1
-
-        item[
-            "money"
-        ] += (
+        item["sum"] += change
+        item["n"] += 1
+        item["money"] += (
             q.price
             * q.volume
         )
 
         if (
             change
-            > item[
-                "best"
-            ]
+            > item["best"]
         ):
-            item[
-                "best"
-            ] = change
-
-            item[
-                "leader"
-            ] = q.name
+            item["best"] = change
+            item["leader"] = q.name
 
     output = []
 
-    for item in (
-        agg.values()
-    ):
-        if not item[
-            "n"
-        ]:
+    for item in agg.values():
+        if not item["n"]:
             continue
 
         average = (
-            item[
-                "sum"
-            ]
-            / item[
-                "n"
-            ]
+            item["sum"]
+            / item["n"]
         )
 
         score = max(
             0,
             min(
                 15,
-                average
-                * 2
+                average * 2
                 + (
                     2
-                    if item[
-                        "money"
-                    ] > 0
+                    if item["money"] > 0
                     else 0
                 ),
             ),
@@ -301,17 +183,13 @@ def build_sectors(
         output.append(
             {
                 "sector":
-                    item[
-                        "sector"
-                    ],
+                    item["sector"],
 
                 "change_pct":
                     average,
 
                 "leader":
-                    item[
-                        "leader"
-                    ],
+                    item["leader"],
 
                 "score":
                     score,
@@ -320,9 +198,8 @@ def build_sectors(
 
     return sorted(
         output,
-        key=lambda x: x[
-            "score"
-        ],
+        key=lambda x:
+            x["score"],
         reverse=True,
     )[:8]
 
@@ -333,43 +210,33 @@ def candidate(
     smart: bool = False,
     secmap=None,
 ):
-    if market == "KR":
-        sector = (
-            q.sector
-            or SECTOR_FALLBACK.get(
+    sector = (
+        q.sector
+        or (
+            SECTOR_FALLBACK.get(
                 q.code,
                 "기타",
             )
+            if market == "KR"
+            else "기타"
         )
-
-    else:
-        sector = (
-            q.sector
-            or "기타"
-        )
+    )
 
     if smart:
-        (
-            score,
-            why,
-        ) = smart_score(
-            q
+        score, why = (
+            smart_score(q)
         )
-
     else:
-        (
-            score,
-            why,
-        ) = scalp_score(
-            q,
-            (
+        score, why = (
+            scalp_score(
+                q,
                 secmap.get(
                     sector,
                     0,
                 )
                 if secmap
-                else 0
-            ),
+                else 0,
+            )
         )
 
     return {
@@ -389,37 +256,26 @@ def candidate(
         "currency":
             (
                 "KRW"
-                if market
-                == "KR"
+                if market == "KR"
                 else "USD"
             ),
 
         "price":
             (
-                krw(
-                    q.price
-                )
-                if market
-                == "KR"
+                krw(q.price)
+                if market == "KR"
                 else round(
-                    number(
-                        q.price
-                    ),
+                    number(q.price),
                     4,
                 )
             ),
 
         "open":
             (
-                krw(
-                    q.open
-                )
-                if market
-                == "KR"
+                krw(q.open)
+                if market == "KR"
                 else round(
-                    number(
-                        q.open
-                    ),
+                    number(q.open),
                     4,
                 )
             ),
@@ -439,16 +295,14 @@ def candidate(
         "foreign_net":
             (
                 q.foreign_net
-                if market
-                == "KR"
+                if market == "KR"
                 else None
             ),
 
         "institution_net":
             (
                 q.institution_net
-                if market
-                == "KR"
+                if market == "KR"
                 else None
             ),
 
@@ -460,8 +314,7 @@ def candidate(
                     * 0.997
                 )
                 if (
-                    market
-                    == "KR"
+                    market == "KR"
                     and q.open
                 )
                 else None
@@ -470,34 +323,31 @@ def candidate(
         "reasons":
             why,
 
-        "series": [
-            (
-                krw(
-                    x
+        "series":
+            [
+                (
+                    krw(x)
+                    if market == "KR"
+                    else round(
+                        number(x),
+                        4,
+                    )
                 )
-                if market
-                == "KR"
-                else round(
-                    number(
-                        x
-                    ),
-                    4,
-                )
-            )
-
-            for x
-            in list(
-                q.prices
-            )[-60:]
-        ],
+                for x
+                in list(
+                    q.prices
+                )[-60:]
+            ],
     }
 
 
 def rebuild_cache(
     market: str,
 ):
-    market = normalize_market(
-        market
+    market = (
+        normalize_market(
+            market
+        )
     )
 
     sectors = (
@@ -507,29 +357,18 @@ def rebuild_cache(
     )
 
     secmap = {
-        x[
-            "sector"
-        ]:
-            x[
-                "score"
-            ]
-
-        for x
-        in sectors
+        x["sector"]:
+            x["score"]
+        for x in sectors
     }
 
     quotes = [
         q
-
-        for q
-        in list(
+        for q in list(
             feed
-            .quotes_for(
-                market
-            )
+            .quotes_for(market)
             .values()
         )
-
         if q.price > 0
     ]
 
@@ -559,16 +398,14 @@ def rebuild_cache(
             continue
 
     scalp.sort(
-        key=lambda x: x[
-            "score"
-        ],
+        key=lambda x:
+            x["score"],
         reverse=True,
     )
 
     smart.sort(
-        key=lambda x: x[
-            "score"
-        ],
+        key=lambda x:
+            x["score"],
         reverse=True,
     )
 
@@ -583,17 +420,13 @@ def rebuild_cache(
             market
         ][
             "scalp"
-        ] = scalp[
-            :50
-        ]
+        ] = scalp[:50]
 
         CACHE[
             market
         ][
             "smart"
-        ] = smart[
-            :50
-        ]
+        ] = smart[:50]
 
         CACHE[
             market
@@ -611,35 +444,22 @@ def trade_from_candidates(
     국내 PAPER 계정만 자동운용한다.
 
     실제 증권사 주문 API는
-    이 함수에서 호출하지 않는다.
+    호출하지 않는다.
     """
 
-    paper = papers[
-        "KR"
-    ]
-
+    paper = papers["KR"]
     quotes = (
-        feed.quotes_for(
-            "KR"
-        )
+        feed.quotes_for("KR")
     )
 
     score_map = {
-        x[
-            "code"
-        ]:
-            x[
-                "score"
-            ]
-
-        for x
-        in candidates
+        x["code"]:
+            x["score"]
+        for x in candidates
     }
 
     for position in list(
-        paper
-        .positions
-        .values()
+        paper.positions.values()
     ):
         q = quotes.get(
             position.code
@@ -680,15 +500,11 @@ def trade_from_candidates(
             len(
                 paper.positions
             ) >= 3
-            or item[
-                "score"
-            ] < 72
+            or item["score"] < 72
         ):
             break
 
-        code = item[
-            "code"
-        ]
+        code = item["code"]
 
         if (
             code in protected
@@ -698,21 +514,13 @@ def trade_from_candidates(
             continue
 
         if (
-            item.get(
-                "vi_pre"
-            )
-            and item[
-                "price"
-            ]
-            >= item[
-                "vi_pre"
-            ]
+            item.get("vi_pre")
+            and item["price"]
+            >= item["vi_pre"]
         ):
             continue
 
-        q = quotes.get(
-            code
-        )
+        q = quotes.get(code)
 
         if (
             not q
@@ -722,10 +530,8 @@ def trade_from_candidates(
 
         remain = min(
             paper.cash,
-            (
-                paper.daily_budget
-                - paper.held_cost()
-            ),
+            paper.daily_budget
+            - paper.held_cost(),
         )
 
         if remain < q.price:
@@ -735,10 +541,8 @@ def trade_from_candidates(
             remain,
             max(
                 q.price,
-                (
-                    paper.daily_budget
-                    / 2
-                ),
+                paper.daily_budget
+                / 2,
             ),
         )
 
@@ -777,9 +581,63 @@ def ai_loop():
                 exc,
             )
 
-        time.sleep(
-            5
-        )
+        time.sleep(5)
+
+
+def nh_feed_bootstrap():
+    """
+    NHPLUG 토큰을 단 하나의 스레드에서만 발급한다.
+
+    IGW42903이 나오면 자동 백오프 후 다시 시도하고,
+    토큰 발급 성공 뒤에만 시세/지수/WebSocket 스레드를 시작한다.
+    """
+
+    from nhplug.auth import (
+        get_token,
+    )
+
+    delay = 2
+
+    while True:
+        try:
+            get_token()
+
+            print(
+                "NH AUTH READY - "
+                "starting market feeds"
+            )
+
+            feed.start()
+
+            return
+
+        except Exception as exc:
+            message = str(exc)
+
+            print(
+                "NH AUTH WAIT:",
+                message,
+            )
+
+            # AppKey / AppSecret 자체 오류는
+            # 고속 재시도하지 않는다.
+            if (
+                "IGW40031"
+                in message
+                or
+                "IGW40032"
+                in message
+            ):
+                delay = 60
+
+            time.sleep(
+                delay
+            )
+
+            delay = min(
+                delay * 2,
+                60,
+            )
 
 
 def start_background():
@@ -798,7 +656,11 @@ def start_background():
             "NHPLUG_APP_SECRET"
         )
     ):
-        feed.start()
+        threading.Thread(
+            target=
+                nh_feed_bootstrap,
+            daemon=True,
+        ).start()
 
     threading.Thread(
         target=ai_loop,
@@ -808,7 +670,7 @@ def start_background():
 
 @asynccontextmanager
 async def lifespan(
-    _app: FastAPI
+    _app: FastAPI,
 ):
     start_background()
 
@@ -816,9 +678,8 @@ async def lifespan(
 
 
 app = FastAPI(
-    title=(
-        "GY 모의투자 시스템"
-    ),
+    title=
+        "GY 모의투자 시스템",
     lifespan=lifespan,
 )
 
@@ -875,75 +736,76 @@ def health_payload():
                 feed.scan_index
             ),
 
-        "tracked": {
-            market:
-                len(
-                    feed.quotes_for(
-                        market
+        "tracked":
+            {
+                market:
+                    len(
+                        feed.quotes_for(
+                            market
+                        )
                     )
-                )
 
-            for market
-            in MARKETS
-        },
+                for market
+                in MARKETS
+            },
 
-        "priced": {
-            market:
-                sum(
-                    1
-
-                    for q
-                    in feed
-                    .quotes_for(
-                        market
+        "priced":
+            {
+                market:
+                    sum(
+                        1
+                        for q in
+                        feed
+                        .quotes_for(
+                            market
+                        )
+                        .values()
+                        if q.price > 0
                     )
-                    .values()
 
-                    if q.price > 0
-                )
+                for market
+                in MARKETS
+            },
 
-            for market
-            in MARKETS
-        },
+        "sample_prices":
+            {
+                market:
+                    [
+                        {
+                            "code":
+                                q.code,
 
-        "sample_prices": {
-            market: [
-                {
-                    "code":
-                        q.code,
+                            "name":
+                                q.name,
 
-                    "name":
-                        q.name,
+                            "price":
+                                (
+                                    krw(
+                                        q.price
+                                    )
+                                    if market
+                                    == "KR"
+                                    else round(
+                                        q.price,
+                                        4,
+                                    )
+                                ),
+                        }
 
-                    "price":
-                        (
-                            krw(
-                                q.price
+                        for q
+                        in list(
+                            feed
+                            .quotes_for(
+                                market
                             )
-                            if market
-                            == "KR"
-                            else round(
-                                q.price,
-                                4,
-                            )
-                        ),
-                }
+                            .values()
+                        )
+                        if q.price > 0
+                    ][:5]
 
-                for q
-                in list(
-                    feed
-                    .quotes_for(
-                        market
-                    )
-                    .values()
-                )
-
-                if q.price > 0
-            ][:5]
-
-            for market
-            in MARKETS
-        },
+                for market
+                in MARKETS
+            },
 
         "market_updated_at":
             feed.market_updated_at,
@@ -973,7 +835,7 @@ class Budget(
     "/api/budget"
 )
 def set_budget(
-    data: Budget
+    data: Budget,
 ):
     market = (
         normalize_market(
@@ -1054,8 +916,8 @@ def serialize_paper(
                 p.pnl_pct,
         }
 
-        for p
-        in paper.positions.values()
+        for p in
+        paper.positions.values()
     ]
 
     return {
@@ -1088,9 +950,7 @@ def serialize_paper(
             positions,
 
         "trades":
-            paper.trades[
-                :100
-            ],
+            paper.trades[:100],
 
         "auto_trade_enabled":
             market == "KR",
@@ -1125,9 +985,7 @@ def state(
                 market
             ][
                 "scalp"
-            ][
-                :30
-            ]
+            ][:30]
         )
 
         smart = list(
@@ -1135,9 +993,7 @@ def state(
                 market
             ][
                 "smart"
-            ][
-                :30
-            ]
+            ][:30]
         )
 
         updated_at = (
@@ -1187,8 +1043,7 @@ def state(
                 sorted(
                     protected
                 )
-                if market
-                == "KR"
+                if market == "KR"
                 else []
             ),
     }
@@ -1258,7 +1113,6 @@ def market_check():
         domestic_code.fullmatch(
             code
         )
-
         for code
         in us_codes
     )
@@ -1271,7 +1125,6 @@ def market_check():
                 code
             )
         )
-
         for code
         in kr_codes
     )
@@ -1280,7 +1133,6 @@ def market_check():
         item.get(
             "label"
         )
-
         for item
         in kr.get(
             "market",
@@ -1292,7 +1144,6 @@ def market_check():
         item.get(
             "label"
         )
-
         for item
         in us.get(
             "market",
@@ -1323,18 +1174,23 @@ def market_check():
             not us_has_domestic,
 
         "kr_index_order":
-            kr_labels
-            == expected_kr,
+            (
+                kr_labels
+                == expected_kr
+            ),
 
         "us_index_order":
-            us_labels
-            == expected_us,
+            (
+                us_labels
+                == expected_us
+            ),
 
         "nxt_not_in_index_cards":
             (
                 "NXT"
                 not in kr_labels
-                and "NXT"
+                and
+                "NXT"
                 not in us_labels
             ),
 
@@ -1380,4 +1236,4 @@ if __name__ == "__main__":
             )
         ),
         reload=False,
-            )
+                )
