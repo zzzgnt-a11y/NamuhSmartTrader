@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 from engine import PaperAccount, scalp_score, smart_score
 from nhfeed import NHFeed
 
+
 load_dotenv()
 
 app = FastAPI(title="Namuh Smart Trader WEB")
@@ -29,6 +30,7 @@ protected = {
 
 started = False
 
+
 SECTOR_FALLBACK = {
     "005930": "반도체",
     "000660": "반도체",
@@ -39,6 +41,7 @@ SECTOR_FALLBACK = {
     "012450": "방산",
     "267260": "전력기기",
 }
+
 
 cache_lock = threading.Lock()
 
@@ -170,9 +173,9 @@ def rebuild_cache():
                 candidate(
                     q,
                     smart=True,
-                    secmap=None,
                 )
             )
+
         except Exception:
             continue
 
@@ -209,10 +212,7 @@ def trade_from_candidates(xs):
 
         paper.mark(p.code, q.price)
 
-        score = score_map.get(
-            p.code,
-            50,
-        )
+        score = score_map.get(p.code, 50)
 
         if (
             p.pnl_pct >= 2.5
@@ -239,10 +239,7 @@ def trade_from_candidates(xs):
         if code in paper.positions:
             continue
 
-        if (
-            x["vi_pre"]
-            and x["price"] >= x["vi_pre"]
-        ):
+        if x["vi_pre"] and x["price"] >= x["vi_pre"]:
             continue
 
         q = feed.quotes.get(code)
@@ -271,7 +268,10 @@ def trade_from_candidates(xs):
         if qty < 1:
             continue
 
-        paper.buy(q, qty)
+        paper.buy(
+            q,
+            qty,
+        )
 
 
 def ai_loop():
@@ -279,6 +279,7 @@ def ai_loop():
         try:
             xs = rebuild_cache()
             trade_from_candidates(xs)
+
         except Exception as e:
             print("AI LOOP ERROR:", e)
 
@@ -317,4 +318,121 @@ def health():
         "ok": True,
         "nh_configured": bool(
             os.getenv("NHPLUG_APP_KEY")
-            and os.getenv("NHPLUG_APP
+            and os.getenv("NHPLUG_APP_SECRET")
+        ),
+        "nh_realtime": feed.connected,
+        "error": feed.error,
+        "orders_sent": 0,
+        "scan_index": feed.scan_index,
+        "tracked": len(feed.quotes),
+    }
+
+
+class Budget(BaseModel):
+    amount: int
+
+
+@app.post("/api/budget")
+def set_budget(x: Budget):
+    amount = max(
+        0,
+        min(
+            int(x.amount),
+            paper.initial_cash,
+        ),
+    )
+
+    paper.set_budget(amount)
+
+    return {
+        "ok": True,
+        "budget": paper.daily_budget,
+        "initial_cash": paper.initial_cash,
+    }
+
+
+@app.get("/api/state")
+def state():
+    with cache_lock:
+        sectors = list(CACHE["sectors"])
+        scalp = list(CACHE["scalp"][:30])
+        smart = list(CACHE["smart"][:30])
+        updated_at = CACHE["updated_at"]
+
+    positions = [
+        {
+            "code": p.code,
+            "name": p.name,
+            "qty": p.qty,
+            "avg_price": p.avg_price,
+            "current_price": p.current_price,
+            "pnl": p.pnl,
+            "pnl_pct": p.pnl_pct,
+        }
+        for p in paper.positions.values()
+    ]
+
+    return {
+        "health": health(),
+
+        "market": [
+            {
+                "label": "코스피",
+                "value": None,
+                "status": "NH 지수 연결 예정",
+            },
+            {
+                "label": "코스닥",
+                "value": None,
+                "status": "NH 지수 연결 예정",
+            },
+            {
+                "label": "코스피 야간선물",
+                "value": None,
+                "status": "NH 야간선물 연결 예정",
+            },
+            {
+                "label": "나스닥",
+                "value": None,
+                "status": "NH 해외지수 연결 예정",
+            },
+            {
+                "label": "필라델피아 반도체",
+                "value": None,
+                "status": "NH 해외지수 연결 예정",
+            },
+            {
+                "label": "나스닥 선물",
+                "value": None,
+                "status": "NH 해외파생 연결 예정",
+            },
+        ],
+
+        "sectors": sectors,
+        "scalp": scalp,
+        "smart": smart,
+        "cache_updated_at": updated_at,
+
+        "paper": {
+            "initial_cash": paper.initial_cash,
+            "cash": paper.cash,
+            "equity": paper.equity(),
+            "budget": paper.daily_budget,
+            "held_cost": paper.held_cost(),
+            "positions": positions,
+            "trades": paper.trades[:100],
+        },
+
+        "protected_codes": sorted(protected),
+    }
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(
+        "app:app",
+        host=os.getenv("HOST", "0.0.0.0"),
+        port=int(os.getenv("PORT", "8787")),
+        reload=False,
+    )
