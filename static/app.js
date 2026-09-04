@@ -1,8 +1,10 @@
 let STATE = null;
+
 let refreshing = false;
 
-let budgetInitializedFor =
-  null;
+let MODE = 'KR';
+
+let budgetInitialized = false;
 
 let profitCursor =
   new Date();
@@ -13,67 +15,67 @@ let selectedProfitDate =
   null;
 
 
-const MODE_KEY =
-  'gy_market_mode';
-
-
-let MARKET_MODE =
-  readMarketMode();
-
-
 const $ = (id) =>
   document.getElementById(
     id
   );
 
 
-function readMarketMode() {
-  try {
-    return (
-      localStorage.getItem(
-        MODE_KEY
-      ) === 'US'
-        ? 'US'
-        : 'KR'
-    );
+const setText = (
+  id,
+  text
+) => {
+  const el = $(
+    id
+  );
 
-  } catch (_) {
-    return 'KR';
+  if (el) {
+    el.textContent =
+      text;
   }
-}
+};
 
 
-function saveMarketMode(
-  mode
-) {
-  try {
-    localStorage.setItem(
-      MODE_KEY,
-      mode
-    );
+const setHtml = (
+  id,
+  html
+) => {
+  const el = $(
+    id
+  );
 
-  } catch (_) {
+  if (el) {
+    el.innerHTML =
+      html;
   }
-}
+};
 
 
 const won = (n) =>
   Number(
     n || 0
-  ).toLocaleString(
+  )
+  .toLocaleString(
     'ko-KR'
-  ) + '원';
+  )
+  +
+  '원';
 
 
 const usd = (n) =>
-  '$' +
+  '$'
+  +
   Number(
     n || 0
-  ).toLocaleString(
+  )
+  .toLocaleString(
     'en-US',
     {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 4
+      minimumFractionDigits:
+        2,
+
+      maximumFractionDigits:
+        4
     }
   );
 
@@ -96,196 +98,93 @@ const pct = (n) =>
   '%';
 
 
-const plain = (n) =>
-  Number(
-    n || 0
-  ).toLocaleString(
-    'en-US',
-    {
-      maximumFractionDigits: 4
-    }
-  );
-
-
-function priceText(
+const priceText = (
   value,
-  market = MARKET_MODE
-) {
-  return (
-    market === 'US'
-      ? usd(
-          value
-        )
-      : won(
-          value
-        )
-  );
-}
-
-
-function setText(
-  id,
-  text
-) {
-  const el = $(
-    id
-  );
-
-  if (el) {
-    el.textContent =
-      text;
-  }
-}
-
-
-function setHtml(
-  id,
-  html
-) {
-  const el = $(
-    id
-  );
-
-  if (el) {
-    el.innerHTML =
-      html;
-  }
-}
-
-
-function toDateKey(
-  date
-) {
-  const y =
-    date.getFullYear();
-
-  const m =
-    String(
-      date.getMonth()
-      + 1
-    ).padStart(
-      2,
-      '0'
-    );
-
-  const d =
-    String(
-      date.getDate()
-    ).padStart(
-      2,
-      '0'
-    );
-
-  return (
-    `${y}-${m}-${d}`
-  );
-}
-
-
-function todayKey() {
-  return toDateKey(
-    new Date()
-  );
-}
-
-
-function normalizeTradeDate(
-  raw
-) {
-  if (!raw) {
-    return todayKey();
-  }
-
-  const text =
-    String(
-      raw
-    );
-
-  const match =
-    text.match(
-      /(\d{4})[./-](\d{1,2})[./-](\d{1,2})/
-    );
-
-  if (match) {
-    return (
-      `${match[1]}-`
-      +
-      `${String(
-        match[2]
-      ).padStart(
-        2,
-        '0'
-      )}-`
-      +
-      `${String(
-        match[3]
-      ).padStart(
-        2,
-        '0'
-      )}`
-    );
-  }
-
-  const parsed =
-    new Date(
-      text
-    );
-
-  if (
-    Number.isNaN(
-      parsed.getTime()
-    )
-  ) {
-    return todayKey();
-  }
-
-  return toDateKey(
-    parsed
-  );
-}
-
-
-function viRemain(
-  x
-) {
-  const price =
-    Number(
-      x?.price || 0
-    );
-
-  const vi =
-    Number(
-      x?.vi_pre || 0
-    );
-
-  if (
-    MARKET_MODE !== 'KR'
-    ||
-    price <= 0
-    ||
-    vi <= 0
-  ) {
-    return '—';
-  }
-
-  return pct(
-    (
-      (
-        vi / price
+  market = MODE
+) =>
+  market === 'US'
+    ? usd(
+        value
       )
-      - 1
-    )
-    * 100
+    : won(
+        value
+      );
+
+
+function kstHour() {
+
+  const parts =
+    new Intl
+      .DateTimeFormat(
+        'en-US',
+        {
+          timeZone:
+            'Asia/Seoul',
+
+          hour:
+            '2-digit',
+
+          minute:
+            '2-digit',
+
+          hour12:
+            false
+        }
+      )
+      .formatToParts(
+        new Date()
+      );
+
+  const hour =
+    Number(
+      parts.find(
+        x =>
+          x.type
+          === 'hour'
+      )?.value
+      || 0
+    );
+
+  const minute =
+    Number(
+      parts.find(
+        x =>
+          x.type
+          === 'minute'
+      )?.value
+      || 0
+    );
+
+  return (
+    hour
+    + minute
+    / 60
   );
 }
 
 
-function updateModeUi() {
-  document.body.dataset.market =
-    MARKET_MODE;
+function autoViewMarket() {
+
+  const h =
+    kstHour();
+
+  return (
+    h >= 20
+    || h < 6
+  )
+    ? 'US'
+    : 'KR';
+}
+
+
+function applyModeUi() {
 
   const isUS =
-    MARKET_MODE === 'US';
+    MODE === 'US';
+
+  document.body.dataset.market =
+    MODE;
+
 
   $('marketModeBtn')
     ?.classList
@@ -294,13 +193,6 @@ function updateModeUi() {
       isUS
     );
 
-  $('marketModeBtn')
-    ?.setAttribute(
-      'aria-pressed',
-      isUS
-        ? 'true'
-        : 'false'
-    );
 
   $('krModeLabel')
     ?.classList
@@ -309,6 +201,7 @@ function updateModeUi() {
       !isUS
     );
 
+
   $('usModeLabel')
     ?.classList
     .toggle(
@@ -316,101 +209,102 @@ function updateModeUi() {
       isUS
     );
 
+
+  setText(
+    'subtitle',
+
+    isUS
+      ? 'NHPLUG 공식 데이터 기반 미장 모의투자'
+      : 'NHPLUG 공식 데이터 기반 국장 모의투자'
+  );
+
+
+  setText(
+    'heroText',
+
+    isUS
+      ? '미국 종목만 표시하며 원화 예산을 당일 환율로 환산해 PAPER 매매합니다.'
+      : '국내 종목만 표시하며 KRX/NXT 시간대에 맞춰 PAPER 매매합니다.'
+  );
+
+
+  setText(
+    'engineLabel',
+
+    isUS
+      ? 'US · PAPER · FX'
+      : 'KR · PAPER · NHPLUG'
+  );
+
+
   setText(
     'marketModeCaption',
+
     isUS
-      ? '미장 주요 지수'
-      : '국장 주요 지수'
+      ? '미장 주요 지수 · 그래프 포함'
+      : '국장 주요 지수 · 그래프 포함'
   );
+
 
   setText(
     'sectorCaption',
+
     isUS
-      ? '미국 종목 업종 강도'
-      : '국내 주도 섹터'
+      ? '미국 업종 강도'
+      : '국내 주도섹터'
   );
 
-  setText(
-    'flowTitle',
-    isUS
-      ? '미국 종목 분석 후보'
-      : '국내 수급 포착 후보'
-  );
 
   setText(
-    'flowCaption',
+    'scalpTitle',
+
     isUS
-      ? 'NHPLUG 미국주식 전용'
-      : 'KRX / NXT 공식 시세'
+      ? '미국 분석 후보'
+      : '국내 수급 후보'
   );
+
+
+  setText(
+    'scalpCaption',
+
+    isUS
+      ? 'AI 점수 · USD 현재가'
+      : 'AI 점수 · 목표가(VI)'
+  );
+
 
   setText(
     'smartTitle',
+
     isUS
       ? '미국 스마트 분석'
-      : '스마트머니 + 저평가'
+      : '국내 스마트머니 + 저평가'
   );
+
 
   setText(
     'smartCaption',
+
     isUS
-      ? 'PER · PBR · 기술 점수'
+      ? 'PER · PBR · 기술점수'
       : 'PER · PBR · 외국인 · 기관'
-  );
-
-  setText(
-    'holdingCaption',
-    isUS
-      ? '미장 PAPER 별도'
-      : '국장 PAPER'
-  );
-
-  setText(
-    'heroMarketText',
-    isUS
-      ? 'NHPLUG US · PAPER ANALYSIS'
-      : 'KRX / NXT · PAPER · AUTO SIGNAL'
-  );
-
-  setText(
-    'subtitleText',
-    isUS
-      ? 'NHPLUG 미국주식 기반 AI 분석 대시보드'
-      : 'NHPLUG/KRX 기반 AI 모의투자 대시보드'
   );
 }
 
 
-async function setMarketMode(
+async function setMode(
   mode
 ) {
-  const next =
+
+  MODE =
     mode === 'US'
       ? 'US'
       : 'KR';
 
-  if (
-    next === MARKET_MODE
-  ) {
-    return;
-  }
+  budgetInitialized =
+    false;
 
-  MARKET_MODE =
-    next;
-
-  saveMarketMode(
-    MARKET_MODE
-  );
-
-  budgetInitializedFor =
-    null;
-
-  selectedProfitDate =
-    null;
-
-  currentProfitMap = {};
-
-  updateModeUi();
+  applyModeUi();
 
   await refresh(
     true
@@ -418,290 +312,405 @@ async function setMarketMode(
 }
 
 
-async function toggleMarketMode() {
-  await setMarketMode(
-    MARKET_MODE === 'KR'
-      ? 'US'
-      : 'KR'
-  );
-}
-
-
 async function saveBudget() {
-  const input =
-    $('budget');
+
+  const raw =
+    String(
+      $('budget')?.value
+      || ''
+    )
+    .replace(
+      /,/g,
+      ''
+    )
+    .trim();
+
 
   const amount =
-    parseInt(
-      String(
-        input?.value || ''
-      ).replace(
-        /\D/g,
-        ''
-      ),
-      10
-    ) || 0;
+    raw === ''
+      ? null
+      : Number(
+          raw.replace(
+            /\D/g,
+            ''
+          )
+        );
+
 
   if (
-    amount <= 0
-  ) {
-    alert(
-      '운용금액을 입력해주세요.'
-    );
-
-    return;
-  }
-
-  const maxCash =
-    Number(
-      STATE?.paper
-        ?.initial_cash
-      || 1000000
-    );
-
-  if (
-    amount > maxCash
-  ) {
-    alert(
-      '운용금액은 가상 총자금 '
-      +
-      won(
-        maxCash
+    amount !== null
+    &&
+    (
+      !Number.isFinite(
+        amount
       )
-      +
-      '을 초과할 수 없습니다.'
+      ||
+      amount < 0
+      ||
+      amount > 1000000
+    )
+  ) {
+
+    alert(
+      '0~1,000,000원 범위로 입력하거나 비워주세요.'
     );
 
     return;
   }
 
-  const btn =
-    $('saveBudgetBtn');
 
-  if (btn) {
-    btn.disabled =
-      true;
+  const response =
+    await fetch(
+      '/api/budget',
+      {
+        method:
+          'POST',
 
-    btn.textContent =
-      '저장 중';
-  }
+        headers: {
+          'Content-Type':
+            'application/json'
+        },
 
-  try {
-    const response =
-      await fetch(
-        '/api/budget',
-        {
-          method:
-            'POST',
+        body:
+          JSON.stringify(
+            {
+              amount:
 
-          headers: {
-            'Content-Type':
-              'application/json'
-          },
-
-          body:
-            JSON.stringify(
-              {
                 amount,
-                market:
-                  MARKET_MODE
-              }
-            )
-        }
-      );
 
-    if (
-      !response.ok
-    ) {
-      throw new Error(
-        `budget HTTP ${response.status}`
-      );
-    }
-
-    const data =
-      await response.json();
-
-    if (
-      STATE?.paper
-    ) {
-      STATE.paper.budget =
-        data.budget;
-    }
-
-    setText(
-      'currentBudget',
-      '현재 운용값: '
-      +
-      won(
-        data.budget
-      )
+              auto_max_if_unset:
+                Boolean(
+                  $(
+                    'autoMaxIfUnset'
+                  )?.checked
+                )
+            }
+          )
+      }
     );
 
-    setText(
-      'heldCost',
-      '보유원가 '
-      +
-      won(
-        STATE?.paper
-          ?.held_cost || 0
-      )
-      +
-      ' / 한도 '
-      +
-      won(
-        data.budget
-      )
-    );
+
+  if (
+    !response.ok
+  ) {
 
     alert(
-      '오늘 운용금액이 '
-      +
-      won(
-        data.budget
-      )
-      +
-      '으로 설정되었습니다.'
+      '운용금액 저장 실패'
     );
 
-  } catch (error) {
-    console.error(
-      error
-    );
-
-    alert(
-      '운용금액 저장에 실패했습니다.'
-    );
-
-  } finally {
-    if (btn) {
-      btn.disabled =
-        false;
-
-      btn.textContent =
-        '저장';
-    }
+    return;
   }
+
+
+  const data =
+    await response.json();
+
+
+  setText(
+    'currentBudget',
+
+    data.explicit_budget
+    == null
+
+      ? (
+          '현재 운용값: 자동 최대 '
+          +
+          won(
+            data.effective_budget
+          )
+        )
+
+      : (
+          '현재 운용값: '
+          +
+          won(
+            data.effective_budget
+          )
+        )
+  );
+
+
+  await refresh(
+    true
+  );
 }
 
 
-function scrollToSection(
-  id
+function sparkline(
+  series
 ) {
-  const target =
-    $(id);
 
-  if (!target) {
-    return;
+  const values =
+    (
+      Array.isArray(
+        series
+      )
+        ? series
+        : []
+    )
+    .map(
+      Number
+    )
+    .filter(
+      Number.isFinite
+    );
+
+
+  if (
+    values.length < 2
+  ) {
+
+    return (
+      '<div class="pending">'
+      +
+      '그래프 데이터 축적 중'
+      +
+      '</div>'
+    );
   }
 
-  target.scrollIntoView(
-    {
-      behavior:
-        'smooth',
 
-      block:
-        'start'
-    }
-  );
+  const width =
+    240;
+
+  const height =
+    48;
+
+
+  const min =
+    Math.min(
+      ...values
+    );
+
+
+  const max =
+    Math.max(
+      ...values
+    );
+
+
+  const span =
+    max - min
+    || 1;
+
+
+  const points =
+    values.map(
+      (
+        value,
+        index
+      ) => {
+
+        const x =
+          (
+            index
+            /
+            (
+              values.length
+              - 1
+            )
+          )
+          * width;
+
+
+        const y =
+          height
+          - 4
+          -
+          (
+            (
+              value
+              - min
+            )
+            /
+            span
+          )
+          *
+          (
+            height
+            - 8
+          );
+
+
+        return (
+          `${x},${y}`
+        );
+      }
+    )
+    .join(
+      ' '
+    );
+
+
+  return `
+    <svg
+      class="index-spark"
+      viewBox="0 0 ${width} ${height}"
+      preserveAspectRatio="none"
+      aria-label="지수 추이 그래프"
+    >
+
+      <line
+        class="index-base"
+        x1="0"
+        y1="${height - 4}"
+        x2="${width}"
+        y2="${height - 4}"
+      ></line>
+
+      <polyline
+        points="${points}"
+      ></polyline>
+
+    </svg>
+  `;
+}
+
+
+function marketCards(
+  markets
+) {
+
+  return markets
+    .map(
+      (market) => {
+
+        const change =
+          market.change
+          == null
+            ? null
+            : Number(
+                market.change
+              );
+
+
+        const rate =
+          market.change_pct
+          == null
+            ? null
+            : Number(
+                market.change_pct
+              );
+
+
+        const cls =
+          rate == null
+            ? ''
+            : rate >= 0
+              ? 'pos'
+              : 'neg';
+
+
+        return `
+          <div class="market">
+
+            <b>
+              ${market.label}
+            </b>
+
+            <strong>
+              ${
+                market.value
+                == null
+                  ? '—'
+                  : Number(
+                      market.value
+                    )
+                    .toLocaleString(
+                      undefined,
+                      {
+                        maximumFractionDigits:
+                          4
+                      }
+                    )
+              }
+            </strong>
+
+            <div
+              class="
+                delta
+                ${cls}
+              "
+            >
+              ${
+                change == null
+                  ? ''
+                  : (
+                      `${
+                        change >= 0
+                          ? '+'
+                          : ''
+                      }`
+                      +
+                      change
+                        .toLocaleString(
+                          undefined,
+                          {
+                            maximumFractionDigits:
+                              2
+                          }
+                        )
+                      +
+                      ' · '
+                      +
+                      pct(
+                        rate
+                      )
+                    )
+              }
+            </div>
+
+            ${
+              sparkline(
+                market.series
+              )
+            }
+
+            <div class="pending">
+              ${
+                market.source
+                  ? market.source
+                    + ' · '
+                  : ''
+              }
+
+              ${
+                market.status
+                || ''
+              }
+            </div>
+
+          </div>
+        `;
+      }
+    )
+    .join(
+      ''
+    );
 }
 
 
 function candidateRow(
-  x,
+  item,
   smart = false,
   rank = 0
 ) {
+
   const payload =
     encodeURIComponent(
       JSON.stringify(
-        x
+        item
       )
     );
 
+
   const isUS =
-    MARKET_MODE === 'US';
+    (
+      item.market
+      || MODE
+    )
+    === 'US';
 
-  let metric3Title;
-  let metric3Value;
-  let metric4Title;
-  let metric4Value;
-
-  if (smart) {
-    if (isUS) {
-      metric3Title =
-        'AI 점수';
-
-      metric3Value =
-        Number(
-          x.score || 0
-        ).toFixed(
-          1
-        );
-
-      metric4Title =
-        '체결강도';
-
-      metric4Value =
-        Math.round(
-          x.execution_strength
-          || 0
-        );
-
-    } else {
-      metric3Title =
-        '외국인 / 기관';
-
-      metric3Value =
-        `${Math.round(
-          x.foreign_net || 0
-        )} / ${Math.round(
-          x.institution_net || 0
-        )}`;
-
-      metric4Title =
-        '체결강도';
-
-      metric4Value =
-        Math.round(
-          x.execution_strength
-          || 0
-        );
-    }
-
-  } else {
-    metric3Title =
-      isUS
-        ? 'VI'
-        : '목표가(VI)';
-
-    metric3Value =
-      isUS
-        ? 'KR 전용'
-        : priceText(
-            x.vi_pre,
-            'KR'
-          );
-
-    metric4Title =
-      isUS
-        ? 'PER / PBR'
-        : 'VI까지';
-
-    metric4Value =
-      isUS
-        ? `${Number(
-            x.per || 0
-          ).toFixed(
-            1
-          )} / ${Number(
-            x.pbr || 0
-          ).toFixed(
-            2
-          )}`
-        : viRemain(
-            x
-          );
-  }
 
   return `
     <div
@@ -714,14 +723,21 @@ function candidateRow(
         <div class="stock-left">
 
           <div class="name">
-            ${x.name || x.code || '-'}
+            ${
+              item.name
+              || item.code
+            }
           </div>
 
           <div class="code">
-            ${x.code || ''}
             ${
-              x.sector
-                ? ` · ${x.sector}`
+              item.code
+            }
+
+            ${
+              item.sector
+                ? ' · '
+                  + item.sector
                 : ''
             }
           </div>
@@ -729,7 +745,8 @@ function candidateRow(
           <span class="pill">
             ${
               (
-                x.reasons || []
+                item.reasons
+                || []
               )
               .slice(
                 0,
@@ -746,17 +763,14 @@ function candidateRow(
         </div>
 
         <div class="stock-rank">
-          ${
-            rank > 0
-              ? `${rank}위`
-              : ''
-          }
+          ${rank}위
         </div>
 
       </div>
 
 
       <div class="metric-grid">
+
 
         <div class="metric">
 
@@ -767,9 +781,34 @@ function candidateRow(
           <span class="metric-value">
             ${
               priceText(
-                x.price,
-                x.market
-                || MARKET_MODE
+                item.price,
+                item.market
+                || MODE
+              )
+            }
+          </span>
+
+        </div>
+
+
+        <div class="metric">
+
+          <span class="metric-title">
+            AI 점수
+          </span>
+
+          <span
+            class="
+              metric-value
+              score
+            "
+          >
+            ${
+              Number(
+                item.score
+                || 0
+              ).toFixed(
+                1
               )
             }
           </span>
@@ -781,39 +820,40 @@ function candidateRow(
 
           <span class="metric-title">
             ${
-              smart
+              isUS
                 ? 'PER / PBR'
-                : 'AI 점수'
+                : '목표가(VI)'
             }
           </span>
 
-          <span
-            class="
-              metric-value
-              ${
-                smart
-                  ? ''
-                  : 'score'
-              }
-            "
-          >
+          <span class="metric-value">
+
             ${
-              smart
-                ? `${Number(
-                    x.per || 0
-                  ).toFixed(
-                    1
-                  )} / ${Number(
-                    x.pbr || 0
-                  ).toFixed(
-                    2
-                  )}`
-                : Number(
-                    x.score || 0
-                  ).toFixed(
-                    1
+              isUS
+                ? (
+                    Number(
+                      item.per
+                      || 0
+                    ).toFixed(
+                      1
+                    )
+                    +
+                    ' / '
+                    +
+                    Number(
+                      item.pbr
+                      || 0
+                    ).toFixed(
+                      2
+                    )
+                  )
+
+                : priceText(
+                    item.vi_pre,
+                    'KR'
                   )
             }
+
           </span>
 
         </div>
@@ -822,27 +862,38 @@ function candidateRow(
         <div class="metric">
 
           <span class="metric-title">
-            ${metric3Title}
+            ${
+              isUS
+                ? '통화'
+                : '외국인 / 기관'
+            }
           </span>
 
           <span class="metric-value">
-            ${metric3Value}
+
+            ${
+              isUS
+                ? 'USD'
+
+                : (
+                    Math.round(
+                      item.foreign_net
+                      || 0
+                    )
+                    +
+                    ' / '
+                    +
+                    Math.round(
+                      item.institution_net
+                      || 0
+                    )
+                  )
+            }
+
           </span>
 
         </div>
 
-
-        <div class="metric">
-
-          <span class="metric-title">
-            ${metric4Title}
-          </span>
-
-          <span class="metric-value">
-            ${metric4Value}
-          </span>
-
-        </div>
 
       </div>
 
@@ -852,8 +903,14 @@ function candidateRow(
 
 
 function positionRow(
-  x
+  position
 ) {
+
+  const isUS =
+    position.market
+    === 'US';
+
+
   return `
     <div class="row">
 
@@ -862,11 +919,38 @@ function positionRow(
         <div class="stock-left">
 
           <div class="name">
-            ● ${x.name || x.code}
+            ● ${
+              position.name
+              || position.code
+            }
           </div>
 
           <div class="code">
-            ${x.code} · ${x.qty}주
+            ${
+              position.code
+            }
+            ·
+            ${
+              position.qty
+            }주
+
+            ${
+              isUS
+              &&
+              position.fx_buy
+                ? (
+                    ' · 매수환율 '
+                    +
+                    Number(
+                      position.fx_buy
+                    )
+                    .toLocaleString()
+                    +
+                    '원'
+                  )
+                : ''
+            }
+
           </div>
 
         </div>
@@ -876,6 +960,7 @@ function positionRow(
 
       <div class="metric-grid">
 
+
         <div class="metric">
 
           <span class="metric-title">
@@ -883,7 +968,12 @@ function positionRow(
           </span>
 
           <span class="metric-value">
-            ${won(x.avg_price)}
+            ${
+              priceText(
+                position.avg_price,
+                position.market
+              )
+            }
           </span>
 
         </div>
@@ -896,430 +986,70 @@ function positionRow(
           </span>
 
           <span class="metric-value">
-            ${won(x.current_price)}
-          </span>
-
-        </div>
-
-
-        <div class="metric">
-
-          <span class="metric-title">
-            손익률
-          </span>
-
-          <span
-            class="
-              metric-value
-              ${
-                Number(
-                  x.pnl || 0
-                ) >= 0
-                  ? 'pos'
-                  : 'neg'
-              }
-            "
-          >
-            ${pct(x.pnl_pct)}
-          </span>
-
-        </div>
-
-
-        <div class="metric">
-
-          <span class="metric-title">
-            손익금액
-          </span>
-
-          <span
-            class="
-              metric-value
-              ${
-                Number(
-                  x.pnl || 0
-                ) >= 0
-                  ? 'pos'
-                  : 'neg'
-              }
-            "
-          >
-            ${won(x.pnl)}
-          </span>
-
-        </div>
-
-      </div>
-
-    </div>
-  `;
-}
-
-
-function tradeRow(
-  t
-) {
-  return `
-    <div class="row">
-
-      <div class="stock-top">
-
-        <div class="stock-left">
-
-          <div class="name">
             ${
-              t.side === 'BUY'
-                ? '매수'
-                : '매도'
+              priceText(
+                position.current_price,
+                position.market
+              )
             }
-            ·
-            ${t.name || t.code}
-          </div>
-
-          <div class="code">
-            ${t.date || ''}
-            ${t.time || ''}
-            ·
-            ${t.qty || 0}주
-            ·
-            ${t.code || ''}
-          </div>
-
-        </div>
-
-      </div>
-
-
-      <div class="metric-grid">
-
-        <div class="metric">
-          <span class="metric-title">
-            체결가
           </span>
 
-          <span class="metric-value">
-            ${won(t.price)}
-          </span>
         </div>
 
 
         <div class="metric">
+
           <span class="metric-title">
-            실현손익
+            원화 손익률
           </span>
 
           <span
             class="
               metric-value
               ${
-                Number(
-                  t.pnl || 0
-                ) >= 0
+                position.pnl >= 0
                   ? 'pos'
                   : 'neg'
               }
             "
           >
-            ${won(t.pnl)}
+            ${
+              pct(
+                position.pnl_pct
+              )
+            }
           </span>
+
         </div>
 
 
         <div class="metric">
+
           <span class="metric-title">
-            수익률
+            원화 손익
           </span>
 
           <span
             class="
               metric-value
               ${
-                Number(
-                  t.pnl || 0
-                ) >= 0
+                position.pnl >= 0
                   ? 'pos'
                   : 'neg'
               }
             "
           >
-            ${pct(t.pnl_pct)}
+            ${
+              won(
+                position.pnl
+              )
+            }
           </span>
+
         </div>
 
-
-        <div class="metric">
-          <span class="metric-title">
-            구분
-          </span>
-
-          <span class="metric-value">
-            ${t.side || ''}
-          </span>
-        </div>
 
       </div>
-
-    </div>
-  `;
-}
-
-
-function miniChart(
-  series
-) {
-  const values =
-    Array.isArray(
-      series
-    )
-      ? series
-          .map(
-            Number
-          )
-          .filter(
-            Number.isFinite
-          )
-      : [];
-
-  if (
-    values.length < 2
-  ) {
-    return '';
-  }
-
-  const min =
-    Math.min(
-      ...values
-    );
-
-  const max =
-    Math.max(
-      ...values
-    );
-
-  return `
-    <div
-      style="
-        display:flex;
-        align-items:end;
-        gap:2px;
-        height:30px;
-        margin-top:8px
-      "
-    >
-
-      ${
-        values
-          .slice(
-            -12
-          )
-          .map(
-            (v) => {
-              const h =
-                Math.max(
-                  4,
-                  (
-                    (
-                      v - min
-                    )
-                    /
-                    (
-                      max - min
-                      || 1
-                    )
-                  )
-                  * 26
-                  + 4
-                );
-
-              return `
-                <i
-                  style="
-                    display:block;
-                    flex:1;
-                    height:${h}px;
-                    border-radius:3px 3px 0 0;
-                    background:rgba(126,231,255,.65)
-                  "
-                ></i>
-              `;
-            }
-          )
-          .join('')
-      }
-
-    </div>
-  `;
-}
-
-
-function renderMarkets(
-  markets
-) {
-  setHtml(
-    'markets',
-
-    markets.length
-
-      ? markets
-          .map(
-            (m) => {
-              const change =
-                m.change == null
-                  ? null
-                  : Number(
-                      m.change
-                    );
-
-              const rate =
-                m.change_pct == null
-                  ? null
-                  : Number(
-                      m.change_pct
-                    );
-
-              const cls =
-                rate == null
-                  ? ''
-                  : rate >= 0
-                    ? 'pos'
-                    : 'neg';
-
-              return `
-                <div class="market">
-
-                  <b>
-                    ${m.label || '-'}
-                  </b>
-
-                  <strong>
-                    ${
-                      m.value == null
-                        ? '—'
-                        : plain(
-                            m.value
-                          )
-                    }
-                  </strong>
-
-                  <div
-                    class="
-                      delta
-                      ${cls}
-                    "
-                  >
-                    ${
-                      change == null
-                        ? ''
-                        : `${
-                            change >= 0
-                              ? '+'
-                              : ''
-                          }${plain(
-                            change
-                          )} · ${pct(
-                            rate
-                          )}`
-                    }
-                  </div>
-
-                  ${
-                    miniChart(
-                      m.series
-                    )
-                  }
-
-                  <div class="pending">
-                    ${
-                      m.source
-                        ? `${m.source} · `
-                        : ''
-                    }
-                    ${m.status || ''}
-                  </div>
-
-                </div>
-              `;
-            }
-          )
-          .join('')
-
-      : `
-          <div class="empty">
-            시장 지수 데이터를
-            불러오는 중입니다.
-          </div>
-        `
-  );
-}
-
-
-function renderSession(
-  session
-) {
-  const panel =
-    $('sessionPanel');
-
-  if (!panel) {
-    return;
-  }
-
-  if (
-    MARKET_MODE !== 'KR'
-    ||
-    !session
-  ) {
-    panel.style.display =
-      'none';
-
-    panel.innerHTML =
-      '';
-
-    return;
-  }
-
-  panel.style.display =
-    '';
-
-  panel.innerHTML = `
-    <div
-      class="sub-title-row"
-      style="margin-bottom:0"
-    >
-
-      <div>
-
-        <b>
-          NXT 거래세션
-        </b>
-
-        <div
-          class="pending"
-          style="margin-top:6px"
-        >
-          프리 08:00~08:50
-          · 메인 09:00:30~15:20
-          · 애프터 15:40~20:00
-        </div>
-
-      </div>
-
-      <span
-        class="${
-          session.open
-            ? 'pos'
-            : ''
-        }"
-      >
-        ${
-          session.label
-          || session.session
-        }
-        ·
-        ${
-          session.status
-          || ''
-        }
-      </span>
 
     </div>
   `;
@@ -1327,158 +1057,38 @@ function renderSession(
 
 
 function detail(
-  x
+  item
 ) {
-  const series =
-    Array.isArray(
-      x?.series
-    )
-      ? x.series
-          .map(
-            Number
-          )
-          .filter(
-            Number.isFinite
-          )
-      : [];
-
-  const min =
-    series.length
-      ? Math.min(
-          ...series
-        )
-      : 0;
-
-  const max =
-    series.length
-      ? Math.max(
-          ...series
-        )
-      : 1;
-
-  const bars =
-    series
-      .map(
-        (v) => `
-          <div
-            class="bar"
-            style="
-              height:${
-                Math.max(
-                  2,
-                  (
-                    (
-                      v - min
-                    )
-                    /
-                    (
-                      max - min
-                      || 1
-                    )
-                  )
-                  * 100
-                )
-              }%
-            "
-          ></div>
-        `
-      )
-      .join('');
-
-  const isUS =
-    (
-      x?.market
-      || MARKET_MODE
-    ) === 'US';
 
   setHtml(
     'detail',
     `
       <h2>
-        ${x?.name || x?.code || '-'}
+        ${
+          item.name
+          || item.code
+        }
 
         <small>
-          ${x?.code || ''}
+          ${item.code}
         </small>
       </h2>
-
 
       <h1>
         ${
           priceText(
-            x?.price,
-            x?.market
-            || MARKET_MODE
+            item.price,
+            item.market
+            || MODE
           )
         }
       </h1>
 
-
-      <div class="chart">
-        ${bars}
-      </div>
-
-
-      <p>
-        <b>
-          PER
-        </b>
-
-        ${
-          Number(
-            x?.per || 0
-          ).toFixed(
-            2
-          )
-        }
-
-        &nbsp;
-
-        <b>
-          PBR
-        </b>
-
-        ${
-          Number(
-            x?.pbr || 0
-          ).toFixed(
-            2
-          )
-        }
-      </p>
-
-
       ${
-        isUS
-          ? ''
-          : `
-              <p>
-                <b>
-                  목표가(VI)
-                </b>
-
-                ${
-                  priceText(
-                    x?.vi_pre,
-                    'KR'
-                  )
-                }
-              </p>
-
-              <p>
-                <b>
-                  VI까지
-                </b>
-
-                ${
-                  viRemain(
-                    x
-                  )
-                }
-              </p>
-            `
+        sparkline(
+          item.series
+        )
       }
-
 
       <p>
         <b>
@@ -1487,45 +1097,42 @@ function detail(
 
         ${
           Number(
-            x?.score || 0
+            item.score
+            || 0
           ).toFixed(
             1
           )
         }
       </p>
 
+      <p>
+        <b>
+          PER / PBR
+        </b>
 
-      ${
-        !isUS
-          ? `
-              <p>
-                <b>
-                  외국인 / 기관
-                </b>
-
-                ${
-                  Math.round(
-                    x?.foreign_net
-                    || 0
-                  )
-                }
-                /
-                ${
-                  Math.round(
-                    x?.institution_net
-                    || 0
-                  )
-                }
-              </p>
-            `
-          : ''
-      }
-
+        ${
+          Number(
+            item.per
+            || 0
+          ).toFixed(
+            2
+          )
+        }
+        /
+        ${
+          Number(
+            item.pbr
+            || 0
+          ).toFixed(
+            2
+          )
+        }
+      </p>
 
       <p>
         ${
           (
-            x?.reasons
+            item.reasons
             || []
           ).join(
             ' · '
@@ -1537,6 +1144,7 @@ function detail(
     `
   );
 
+
   $('modal')
     ?.classList
     .add(
@@ -1545,221 +1153,106 @@ function detail(
 }
 
 
-function closeModal() {
-  $('modal')
-    ?.classList
-    .remove(
-      'show'
-    );
+function dateKey(
+  date
+) {
+
+  return (
+    `${date.getFullYear()}-`
+    +
+    `${String(
+      date.getMonth()
+      + 1
+    ).padStart(
+      2,
+      '0'
+    )}-`
+    +
+    `${String(
+      date.getDate()
+    ).padStart(
+      2,
+      '0'
+    )}`
+  );
 }
 
 
 function buildProfitMap(
   trades
 ) {
+
   const map = {};
 
-  (
-    trades || []
-  ).forEach(
-    (t) => {
-      const realized =
-        Number(
-          t.pnl || 0
-        );
 
-      if (
-        realized === 0
-        &&
-        t.side !== 'SELL'
-      ) {
-        return;
-      }
+  for (
+    const trade
+    of trades
+    || []
+  ) {
 
-      const key =
-        normalizeTradeDate(
-          t.date
-          || t.time
-        );
-
-      if (!map[key]) {
-        map[key] = {
-          total: 0,
-          items: []
-        };
-      }
-
-      map[key].total +=
-        realized;
-
-      map[key].items.push(
-        {
-          name:
-            t.name
-            || t.code
-            || '-',
-
-          code:
-            t.code
-            || '',
-
-          pnl:
-            realized,
-
-          pnl_pct:
-            Number(
-              t.pnl_pct || 0
-            ),
-
-          time:
-            t.time
-            || '',
-
-          side:
-            t.side
-            || ''
-        }
-      );
+    if (
+      trade.side
+      !== 'SELL'
+    ) {
+      continue;
     }
-  );
+
+
+    const key =
+      trade.date
+      ||
+      dateKey(
+        new Date()
+      );
+
+
+    if (!map[key]) {
+
+      map[key] = {
+        total:
+          0,
+
+        items:
+          []
+      };
+
+    }
+
+
+    map[
+      key
+    ].total +=
+      Number(
+        trade.pnl
+        || 0
+      );
+
+
+    map[
+      key
+    ].items.push(
+      trade
+    );
+
+  }
+
 
   return map;
 }
 
 
-function renderProfitDetail(
-  dateKey
-) {
-  selectedProfitDate =
-    dateKey;
-
-  const box =
-    currentProfitMap[
-      dateKey
-    ];
-
-  if (!box) {
-    setHtml(
-      'profitSummary',
-      `${dateKey} 실현손익: 0원`
-    );
-
-    setHtml(
-      'profitDetailList',
-      `
-        <div class="empty">
-          선택한 날짜의
-          수익 내역이 없습니다.
-        </div>
-      `
-    );
-
-    drawProfitCalendar();
-
-    return;
-  }
-
-  setHtml(
-    'profitSummary',
-    `
-      ${dateKey} 실현손익:
-
-      <b
-        class="${
-          box.total >= 0
-            ? 'pos'
-            : 'neg'
-        }"
-      >
-        ${won(box.total)}
-      </b>
-    `
-  );
-
-  setHtml(
-    'profitDetailList',
-
-    box.items
-      .map(
-        (item) => `
-          <div class="profit-row">
-
-            <div class="profit-left">
-
-              <b>
-                ${item.name}
-              </b>
-
-              <span>
-                ${item.code}
-                ·
-                ${item.time}
-                ·
-                ${item.side}
-              </span>
-
-            </div>
-
-
-            <div class="profit-right">
-
-              <b
-                class="${
-                  item.pnl >= 0
-                    ? 'pos'
-                    : 'neg'
-                }"
-              >
-                ${won(item.pnl)}
-              </b>
-
-              <span>
-                ${pct(item.pnl_pct)}
-              </span>
-
-            </div>
-
-          </div>
-        `
-      )
-      .join('')
-      ||
-      `
-        <div class="empty">
-          상세 수익 내역이 없습니다.
-        </div>
-      `
-  );
-
-  drawProfitCalendar();
-}
-
-
 function drawProfitCalendar() {
-  const cal =
-    $('profitCalendar');
-
-  const title =
-    $('profitMonthTitle');
-
-  if (
-    !cal
-    ||
-    !title
-  ) {
-    return;
-  }
 
   const year =
     profitCursor
       .getFullYear();
 
+
   const month =
     profitCursor
       .getMonth();
 
-  title.textContent =
-    `${year}년 ${month + 1}월`;
 
   const first =
     new Date(
@@ -1768,6 +1261,7 @@ function drawProfitCalendar() {
       1
     );
 
+
   const last =
     new Date(
       year,
@@ -1775,180 +1269,117 @@ function drawProfitCalendar() {
       0
     );
 
-  const startWeekday =
-    first.getDay();
 
-  const daysInMonth =
-    last.getDate();
+  setText(
+    'profitMonthTitle',
+    `${year}년 ${month + 1}월`
+  );
 
-  const prevLast =
-    new Date(
-      year,
-      month,
-      0
-    ).getDate();
 
   const cells = [];
 
 
   for (
-    let i =
-      startWeekday - 1;
+    let i = 0;
 
-    i >= 0;
+    i < first.getDay();
 
-    i -= 1
+    i += 1
   ) {
-    const dayNum =
-      prevLast - i;
-
-    const d =
-      new Date(
-        year,
-        month - 1,
-        dayNum
-      );
 
     cells.push(
-      {
-        key:
-          toDateKey(
-            d
-          ),
-
-        day:
-          dayNum,
-
-        other:
-          true
-      }
+      null
     );
+
   }
 
 
   for (
     let day = 1;
 
-    day <= daysInMonth;
+    day <= last.getDate();
 
     day += 1
   ) {
-    const d =
+
+    cells.push(
       new Date(
         year,
         month,
         day
-      );
-
-    cells.push(
-      {
-        key:
-          toDateKey(
-            d
-          ),
-
-        day,
-
-        other:
-          false
-      }
-    );
-  }
-
-
-  while (
-    cells.length % 7
-    !== 0
-  ) {
-    const dayNum =
-      cells.length
-      -
-      (
-        startWeekday
-        +
-        daysInMonth
       )
-      +
-      1;
-
-    const d =
-      new Date(
-        year,
-        month + 1,
-        dayNum
-      );
-
-    cells.push(
-      {
-        key:
-          toDateKey(
-            d
-          ),
-
-        day:
-          dayNum,
-
-        other:
-          true
-      }
     );
+
   }
 
 
-  cal.innerHTML =
+  setHtml(
+    'profitCalendar',
+
     cells
       .map(
-        (cell) => {
-          const data =
-            currentProfitMap[
-              cell.key
-            ];
+        (date) => {
 
-          const total =
-            Number(
-              data?.total || 0
+          if (!date) {
+
+            return (
+              '<div class="day-cell is-other"></div>'
             );
+
+          }
+
+
+          const key =
+            dateKey(
+              date
+            );
+
+
+          const value =
+            currentProfitMap[
+              key
+            ]?.total;
+
 
           return `
             <button
               class="
                 day-cell
                 ${
-                  cell.other
-                    ? 'is-other'
-                    : ''
-                }
-                ${
                   selectedProfitDate
-                  === cell.key
+                  === key
                     ? 'is-active'
                     : ''
                 }
               "
-              type="button"
-              data-date="${cell.key}"
+              data-date="${key}"
             >
 
               <div class="day-head">
-                ${cell.day}
+                ${
+                  date.getDate()
+                }
               </div>
 
               <div
                 class="
                   day-profit
                   ${
-                    total >= 0
+                    Number(
+                      value
+                      || 0
+                    ) >= 0
                       ? 'pos'
                       : 'neg'
                   }
                 "
               >
                 ${
-                  data
-                    ? won(
-                        total
+                  value == null
+                    ? ''
+                    : won(
+                        value
                       )
-                    : ''
                 }
               </div>
 
@@ -1956,165 +1387,401 @@ function drawProfitCalendar() {
           `;
         }
       )
-      .join('');
+      .join(
+        ''
+      )
+  );
+}
+
+
+function renderProfitDetail(
+  key
+) {
+
+  selectedProfitDate =
+    key;
+
+
+  const data =
+    currentProfitMap[
+      key
+    ];
+
+
+  setHtml(
+    'profitSummary',
+    `
+      ${key} 실현손익:
+
+      <b
+        class="${
+          Number(
+            data?.total
+            || 0
+          ) >= 0
+            ? 'pos'
+            : 'neg'
+        }"
+      >
+        ${
+          won(
+            data?.total
+            || 0
+          )
+        }
+      </b>
+    `
+  );
+
+
+  setHtml(
+    'profitDetailList',
+
+    data
+      ? data.items
+          .map(
+            trade => `
+              <div class="profit-row">
+
+                <div class="profit-left">
+
+                  <b>
+                    ${
+                      trade.name
+                      || trade.code
+                    }
+                  </b>
+
+                  <span>
+                    ${trade.code}
+                    ·
+                    ${trade.time}
+                  </span>
+
+                </div>
+
+                <div class="profit-right">
+
+                  <b
+                    class="${
+                      trade.pnl >= 0
+                        ? 'pos'
+                        : 'neg'
+                    }"
+                  >
+                    ${
+                      won(
+                        trade.pnl
+                      )
+                    }
+                  </b>
+
+                  <span>
+                    ${
+                      pct(
+                        trade.pnl_pct
+                      )
+                    }
+                  </span>
+
+                </div>
+
+              </div>
+            `
+          )
+          .join(
+            ''
+          )
+
+      : (
+          '<div class="empty">'
+          +
+          '선택한 날짜의 매매내역이 없습니다.'
+          +
+          '</div>'
+        )
+  );
+
+
+  drawProfitCalendar();
 }
 
 
 function render(
-  s
+  state
 ) {
+
   if (
-    !s
+    !state
     ||
-    !s.paper
-    ||
-    s.market_mode
-    !== MARKET_MODE
+    state.mode
+    !== MODE
   ) {
+
     throw new Error(
-      'invalid or stale state payload'
+      'market state mismatch'
     );
+
   }
 
-  STATE = s;
 
-  const p =
-    s.paper;
+  STATE =
+    state;
+
+
+  const paper =
+    state.paper
+    || {};
+
+
+  const schedule =
+    state.schedule
+    || {};
 
 
   setText(
     'equity',
     won(
-      p.equity
-    )
-  );
-
-
-  setText(
-    'cash',
-    '가상현금 '
-    +
-    won(
-      p.cash
-    )
-  );
-
-
-  const budgetInput =
-    $('budget');
-
-  if (
-    budgetInput
-    &&
-    budgetInitializedFor
-    !== MARKET_MODE
-  ) {
-    budgetInput.value =
-      p.budget;
-
-    budgetInitializedFor =
-      MARKET_MODE;
-  }
-
-
-  setText(
-    'currentBudget',
-    '현재 운용값: '
-    +
-    won(
-      p.budget
+      paper.equity
     )
   );
 
 
   setText(
     'heldCost',
-    '보유원가 '
-    +
-    won(
-      p.held_cost
-    )
-    +
-    ' / 한도 '
-    +
-    won(
-      p.budget
+    (
+      '보유원가 '
+      +
+      won(
+        paper.held_cost
+      )
+      +
+      ' / 한도 '
+      +
+      won(
+        paper.effective_budget
+      )
     )
   );
 
 
-  const h =
-    s.health
-    || {};
+  if (
+    !budgetInitialized
+  ) {
+
+    $('budget').value =
+      paper.explicit_budget
+      == null
+        ? ''
+        : paper.explicit_budget;
 
 
-  const marketConnected =
-    Boolean(
-      h.realtime?.[
-        MARKET_MODE
-      ]
+    $('autoMaxIfUnset').checked =
+      Boolean(
+        paper.auto_max_if_unset
+      );
+
+
+    budgetInitialized =
+      true;
+
+  }
+
+
+  setText(
+    'currentBudget',
+
+    paper.explicit_budget
+    == null
+
+      ? (
+          '현재 운용값: '
+          +
+          (
+            paper.auto_max_if_unset
+
+              ? (
+                  '자동 최대 '
+                  +
+                  won(
+                    paper.effective_budget
+                  )
+                )
+
+              : '미설정(매수 중지)'
+          )
+        )
+
+      : (
+          '현재 운용값: '
+          +
+          won(
+            paper.effective_budget
+          )
+        )
+  );
+
+
+  setText(
+    'scheduleCard',
+
+    (
+      '자동매매 · 국장 '
+      +
+      (
+        schedule.kr_hours
+        || '08:00~20:00 KST'
+      )
+      +
+      ' / 미장 '
+      +
+      (
+        schedule.us_hours
+        || '20:00~06:00 KST'
+      )
+      +
+      ' · 현재 '
+      +
+      (
+        schedule.label
+        || '-'
+      )
     )
-    ||
-    Number(
-      h.priced?.[
-        MARKET_MODE
-      ]
-      || 0
-    ) > 0;
+  );
+
+
+  setText(
+    'fxNote',
+
+    paper.usdkrw > 0
+
+      ? (
+          'USD/KRW '
+          +
+          Number(
+            paper.usdkrw
+          )
+          .toLocaleString(
+            undefined,
+            {
+              maximumFractionDigits:
+                2
+            }
+          )
+          +
+          '원 · '
+          +
+          (
+            paper.usdkrw_asof
+            || '최근 공식값'
+          )
+        )
+
+      : (
+          'USD/KRW 공식 환율 수신 대기'
+          +
+          ' · 수신 전 미장 신규매수 차단'
+        )
+  );
+
+
+  const health =
+    state.health
+    || {};
 
 
   setText(
     'health',
 
-    marketConnected
+    health.nh_configured
 
       ? (
-          '● NH '
+          '● NH 연결 · KR '
           +
           (
-            MARKET_MODE
-            === 'KR'
-              ? '국내'
-              : '미국'
+            health.kr_priced
+            || 0
           )
           +
-          ' 시세 수신'
+          '/'
+          +
+          (
+            health.kr_tracked
+            || 0
+          )
+          +
+          ' · US '
+          +
+          (
+            health.us_priced
+            || 0
+          )
+          +
+          '/'
+          +
+          (
+            health.us_tracked
+            || 0
+          )
         )
 
-      : (
-          '○ '
-          +
-          (
-            h.nh_configured
-              ? 'NH 시세 수신 대기'
-              : 'NH API 키 미설정'
-          )
-        )
+      : '○ NH API 키 미설정'
   );
 
 
-  renderMarkets(
-    Array.isArray(
-      s.market
+  const session =
+    state.session;
+
+
+  if (
+    MODE === 'KR'
+    &&
+    session
+  ) {
+
+    setText(
+      'sessionStatus',
+      (
+        session.label
+        +
+        ' · '
+        +
+        session.status
+      )
+    );
+
+
+    $('sessionStatus').hidden =
+      false;
+
+  }
+
+  else {
+
+    $('sessionStatus').hidden =
+      true;
+
+  }
+
+
+  setHtml(
+    'markets',
+
+    marketCards(
+      Array.isArray(
+        state.market
+      )
+        ? state.market
+        : []
     )
-      ? s.market
-          .filter(
-            Boolean
-          )
-      : []
-  );
-
-
-  renderSession(
-    s.session
   );
 
 
   const sectors =
     Array.isArray(
-      s.sectors
+      state.sectors
     )
-      ? s.sectors
+      ? state.sectors
       : [];
 
 
@@ -2125,41 +1792,121 @@ function render(
 
       ? sectors
           .map(
-            (x, i) => `
+            (
+              item,
+              index
+            ) => `
               <div class="sector">
-                ${i + 1}위
+                ${index + 1}위
                 ·
-                ${x.sector || '기타'}
-                ${pct(x.change_pct)}
+                ${item.sector}
+                ${pct(item.change_pct)}
                 ${
-                  x.leader
-                    ? ` · ${x.leader}`
+                  item.leader
+                    ? ' · '
+                      + item.leader
                     : ''
                 }
               </div>
             `
           )
-          .join('')
+          .join(
+            ''
+          )
 
-      : `
-          <div class="empty">
-            ${
-              MARKET_MODE === 'KR'
-                ? '국내'
-                : '미국'
-            }
-            시세가 쌓이면
-            섹터 강도가 표시됩니다.
-          </div>
-        `
+      : (
+          '<div class="empty">'
+          +
+          '섹터 데이터 축적 중'
+          +
+          '</div>'
+        )
+  );
+
+
+  const scalp =
+    Array.isArray(
+      state.scalp
+    )
+      ? state.scalp
+      : [];
+
+
+  const smart =
+    Array.isArray(
+      state.smart
+    )
+      ? state.smart
+      : [];
+
+
+  setHtml(
+    'scalpList',
+
+    scalp.length
+
+      ? scalp
+          .map(
+            (
+              item,
+              index
+            ) =>
+              candidateRow(
+                item,
+                false,
+                index + 1
+              )
+          )
+          .join(
+            ''
+          )
+
+      : (
+          '<div class="empty">'
+          +
+          '후보 데이터 축적 중'
+          +
+          '</div>'
+        )
+  );
+
+
+  setHtml(
+    'smartList',
+
+    smart.length
+
+      ? smart
+          .map(
+            (
+              item,
+              index
+            ) =>
+              candidateRow(
+                item,
+                true,
+                index + 1
+              )
+          )
+          .join(
+            ''
+          )
+
+      : (
+          '<div class="empty">'
+          +
+          '스마트 후보 데이터 축적 중'
+          +
+          '</div>'
+        )
   );
 
 
   const positions =
     Array.isArray(
-      p.positions
+      paper.positions
     )
-      ? p.positions
+      ? paper.positions
       : [];
 
 
@@ -2172,116 +1919,24 @@ function render(
           .map(
             positionRow
           )
-          .join('')
-
-      : `
-          <div class="empty">
-            현재 보유종목이 없습니다.
-          </div>
-        `
-  );
-
-
-  const scalp =
-    Array.isArray(
-      s.scalp
-    )
-      ? s.scalp
-      : [];
-
-
-  setHtml(
-    'scalpList',
-
-    scalp.length
-
-      ? scalp
-          .map(
-            (x, i) =>
-              candidateRow(
-                x,
-                false,
-                i + 1
-              )
+          .join(
+            ''
           )
-          .join('')
 
-      : `
-          <div class="empty">
-            ${
-              MARKET_MODE === 'KR'
-                ? '국내'
-                : '미국'
-            }
-            후보를 수집 중입니다.
-          </div>
-        `
-  );
-
-
-  const smart =
-    Array.isArray(
-      s.smart
-    )
-      ? s.smart
-      : [];
-
-
-  setHtml(
-    'smartList',
-
-    smart.length
-
-      ? smart
-          .map(
-            (x, i) =>
-              candidateRow(
-                x,
-                true,
-                i + 1
-              )
-          )
-          .join('')
-
-      : `
-          <div class="empty">
-            스마트 분석 후보를
-            수집 중입니다.
-          </div>
-        `
-  );
-
-
-  const trades =
-    Array.isArray(
-      p.trades
-    )
-      ? p.trades
-      : [];
-
-
-  setHtml(
-    'tradeList',
-
-    trades.length
-
-      ? trades
-          .map(
-            tradeRow
-          )
-          .join('')
-
-      : `
-          <div class="empty">
-            오늘 PAPER 거래가 없습니다.
-          </div>
-        `
+      : (
+          '<div class="empty">'
+          +
+          '현재 보유종목이 없습니다.'
+          +
+          '</div>'
+        )
   );
 
 
   currentProfitMap =
     buildProfitMap(
-      trades
+      paper.trades
+      || []
     );
 
 
@@ -2291,47 +1946,48 @@ function render(
   if (
     selectedProfitDate
   ) {
+
     renderProfitDetail(
       selectedProfitDate
     );
 
-  } else {
-    const keys =
-      Object.keys(
-        currentProfitMap
-      )
-      .sort()
-      .reverse();
-
-    if (
-      keys.length
-    ) {
-      renderProfitDetail(
-        keys[0]
-      );
-
-    } else {
-      setHtml(
-        'profitSummary',
-        '날짜를 누르면 그날의 수익 내역이 표시됩니다.'
-      );
-
-      setHtml(
-        'profitDetailList',
-        `
-          <div class="empty">
-            아직 실현손익 데이터가 없습니다.
-          </div>
-        `
-      );
-    }
   }
+
+  else {
+
+    setHtml(
+      'profitSummary',
+      '날짜를 누르면 그날의 수익 내역이 표시됩니다.'
+    );
+
+
+    setHtml(
+      'profitDetailList',
+      '<div class="empty">아직 실현손익 데이터가 없습니다.</div>'
+    );
+
+  }
+
+
+  if (
+    state.market_separation
+    &&
+    !state.market_separation.ok
+  ) {
+
+    throw new Error(
+      'market separation violation'
+    );
+
+  }
+
 }
 
 
 async function refresh(
   force = false
 ) {
+
   if (
     refreshing
     &&
@@ -2340,70 +1996,68 @@ async function refresh(
     return;
   }
 
+
   refreshing =
     true;
 
-  const requestedMode =
-    MARKET_MODE;
 
   try {
+
     const response =
       await fetch(
-        `/api/state?market=${encodeURIComponent(
-          requestedMode
-        )}`,
+        `/api/state?market=${MODE}`,
         {
           cache:
             'no-store'
         }
       );
 
+
     if (
       !response.ok
     ) {
+
       throw new Error(
-        `state HTTP ${response.status}`
+        `state ${response.status}`
       );
+
     }
 
-    const data =
-      await response.json();
-
-    if (
-      requestedMode
-      !== MARKET_MODE
-    ) {
-      return;
-    }
 
     render(
-      data
+      await response.json()
     );
 
-  } catch (error) {
-    setText(
-      'health',
-      '○ 서버/화면 데이터 연결 오류'
-    );
+  }
+
+  catch (
+    error
+  ) {
 
     console.error(
       error
     );
 
-  } finally {
+
+    setText(
+      'health',
+      '○ 서버/데이터 연결 오류'
+    );
+
+  }
+
+  finally {
+
     refreshing =
       false;
+
   }
+
 }
 
 
-function bindUi() {
-  $('marketModeBtn')
-    ?.addEventListener(
-      'click',
-      toggleMarketMode
-    );
-
+function bind(
+) {
 
   $('saveBudgetBtn')
     ?.addEventListener(
@@ -2412,34 +2066,125 @@ function bindUi() {
     );
 
 
+  $('marketModeBtn')
+    ?.addEventListener(
+      'click',
+      () =>
+        setMode(
+          MODE === 'KR'
+            ? 'US'
+            : 'KR'
+        )
+    );
+
+
+  $('krModeLabel')
+    ?.addEventListener(
+      'click',
+      () =>
+        setMode(
+          'KR'
+        )
+    );
+
+
+  $('usModeLabel')
+    ?.addEventListener(
+      'click',
+      () =>
+        setMode(
+          'US'
+        )
+    );
+
+
   document
     .querySelectorAll(
       '[data-scroll]'
     )
     .forEach(
-      (button) => {
-        button.addEventListener(
-          'click',
-          () => {
-            scrollToSection(
-              button.dataset.scroll
-            );
-          }
-        );
-      }
+      button =>
+
+        button
+          .addEventListener(
+            'click',
+            () =>
+              $(
+                button.dataset.scroll
+              )
+              ?.scrollIntoView(
+                {
+                  behavior:
+                    'smooth',
+
+                  block:
+                    'start'
+                }
+              )
+          )
     );
 
 
-  $('modal')
-    ?.addEventListener(
+  document
+    .addEventListener(
       'click',
-      (event) => {
-        if (
+      event => {
+
+        const detailElement =
           event.target
-          === event.currentTarget
+            .closest?.(
+              '[data-detail]'
+            );
+
+
+        if (
+          detailElement
         ) {
-          closeModal();
+
+          try {
+
+            detail(
+              JSON.parse(
+                decodeURIComponent(
+                  detailElement
+                    .dataset
+                    .detail
+                )
+              )
+            );
+
+          }
+
+          catch (
+            error
+          ) {
+
+            console.error(
+              error
+            );
+
+          }
+
+          return;
+
         }
+
+
+        const day =
+          event.target
+            .closest?.(
+              '[data-date]'
+            );
+
+
+        if (day) {
+
+          renderProfitDetail(
+            day.dataset.date
+          );
+
+        }
+
       }
     );
 
@@ -2447,53 +2192,33 @@ function bindUi() {
   $('closeModalBtn')
     ?.addEventListener(
       'click',
-      closeModal
+      () =>
+        $('modal')
+          ?.classList
+          .remove(
+            'show'
+          )
     );
 
 
-  document
-    .addEventListener(
+  $('modal')
+    ?.addEventListener(
       'click',
-      (event) => {
-        const detailEl =
+      event => {
+
+        if (
           event.target
-            .closest?.(
-              '[data-detail]'
+          === event.currentTarget
+        ) {
+
+          event.currentTarget
+            .classList
+            .remove(
+              'show'
             );
 
-        if (detailEl) {
-          try {
-            detail(
-              JSON.parse(
-                decodeURIComponent(
-                  detailEl
-                    .dataset
-                    .detail
-                )
-              )
-            );
-
-          } catch (error) {
-            console.error(
-              error
-            );
-          }
-
-          return;
         }
 
-
-        const dayEl =
-          event.target
-            .closest?.(
-              '[data-date]'
-            );
-
-        if (dayEl) {
-          renderProfitDetail(
-            dayEl.dataset.date
-          );
-        }
       }
     );
 
@@ -2502,6 +2227,7 @@ function bindUi() {
     ?.addEventListener(
       'click',
       () => {
+
         profitCursor =
           new Date(
             profitCursor
@@ -2514,7 +2240,9 @@ function bindUi() {
             1
           );
 
+
         drawProfitCalendar();
+
       }
     );
 
@@ -2523,6 +2251,7 @@ function bindUi() {
     ?.addEventListener(
       'click',
       () => {
+
         profitCursor =
           new Date(
             profitCursor
@@ -2535,24 +2264,37 @@ function bindUi() {
             1
           );
 
+
         drawProfitCalendar();
+
       }
     );
+
 }
 
 
-document.addEventListener(
-  'DOMContentLoaded',
-  () => {
-    updateModeUi();
+document
+  .addEventListener(
+    'DOMContentLoaded',
+    () => {
 
-    bindUi();
+      MODE =
+        autoViewMarket();
 
-    refresh();
 
-    setInterval(
-      refresh,
-      5000
-    );
-  }
-);
+      applyModeUi();
+
+
+      bind();
+
+
+      refresh();
+
+
+      setInterval(
+        refresh,
+        5000
+      );
+
+    }
+  );
