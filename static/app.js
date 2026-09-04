@@ -10,7 +10,6 @@ const pct = (n) =>
   Number(n || 0).toFixed(2) +
   '%';
 
-
 function tab(id, button) {
   document.querySelectorAll('.tab').forEach((x) => {
     x.classList.remove('active');
@@ -30,7 +29,6 @@ function tab(id, button) {
     button.classList.add('active');
   }
 }
-
 
 async function saveBudget() {
   const input = document.getElementById('budget');
@@ -58,7 +56,8 @@ async function saveBudget() {
     return;
   }
 
-  const btn = document.getElementById('saveBudgetBtn');
+  const btn =
+    document.getElementById('saveBudgetBtn');
 
   if (btn) {
     btn.disabled = true;
@@ -111,28 +110,53 @@ async function saveBudget() {
   }
 }
 
+function viRemain(x) {
+  const price = Number(x.price || 0);
+  const vi = Number(x.vi_pre || 0);
 
-function row(x, smart = false) {
-  const payload = encodeURIComponent(JSON.stringify(x));
+  if (price <= 0 || vi <= 0) {
+    return '—';
+  }
+
+  const remain =
+    ((vi / price) - 1) * 100;
+
+  return pct(remain);
+}
+
+function row(x, smart = false, rank = 0) {
+  const payload =
+    encodeURIComponent(JSON.stringify(x));
 
   return `
     <div class="row" data-detail="${payload}">
       <div>
-        <div class="name">${x.name || x.code}</div>
-        <div class="code">${x.code}</div>
+        <div class="name">
+          ${rank > 0 ? `${rank}위 · ` : ''}${x.name || x.code}
+        </div>
+
+        <div class="code">
+          ${x.code}
+        </div>
+
         <span class="pill">
           ${(x.reasons || []).slice(0, 2).join(' · ') || '분석중'}
         </span>
       </div>
 
       <div>
-        <div class="sub">현재가</div>
-        <b>${won(x.price)}</b>
+        <div class="sub">
+          현재가
+        </div>
+
+        <b>
+          ${won(x.price)}
+        </b>
       </div>
 
       <div>
         <div class="sub">
-          ${smart ? 'PER/PBR' : '점수'}
+          ${smart ? 'PER/PBR' : 'AI 점수'}
         </div>
 
         <b class="score">
@@ -146,7 +170,7 @@ function row(x, smart = false) {
 
       <div class="hide-sm">
         <div class="sub">
-          ${smart ? '외국인/기관' : 'VI 직전'}
+          ${smart ? '외국인/기관' : '목표값(VI)'}
         </div>
 
         <b>
@@ -156,24 +180,36 @@ function row(x, smart = false) {
               : won(x.vi_pre)
           }
         </b>
+
+        ${
+          smart
+            ? ''
+            : `<div class="sub">VI까지 ${viRemain(x)}</div>`
+        }
       </div>
     </div>
   `;
 }
 
-
 function detail(x) {
   const s = x.series || [];
-  const min = Math.min(...s, 0);
-  const max = Math.max(...s, 1);
+
+  const min =
+    Math.min(...s, 0);
+
+  const max =
+    Math.max(...s, 1);
 
   const bars = s
     .map(
       (v) =>
-        `<div class="bar" style="height:${Math.max(
-          2,
-          ((v - min) / (max - min || 1)) * 100
-        )}%"></div>`
+        `<div
+          class="bar"
+          style="height:${Math.max(
+            2,
+            ((v - min) / (max - min || 1)) * 100
+          )}%"
+        ></div>`
     )
     .join('');
 
@@ -183,20 +219,30 @@ function detail(x) {
       <small>${x.code}</small>
     </h2>
 
-    <h1>${won(x.price)}</h1>
+    <h1>
+      ${won(x.price)}
+    </h1>
 
     <div class="chart">
       ${bars}
     </div>
 
     <p>
-      <b>PER</b> ${Number(x.per || 0).toFixed(2)}
-      <b>PBR</b> ${Number(x.pbr || 0).toFixed(2)}
+      <b>PER</b>
+      ${Number(x.per || 0).toFixed(2)}
+      　
+      <b>PBR</b>
+      ${Number(x.pbr || 0).toFixed(2)}
     </p>
 
     <p>
-      <b>상승 VI 직전 참고가</b>
+      <b>목표값(VI)</b>
       ${won(x.vi_pre)}
+    </p>
+
+    <p>
+      <b>VI까지</b>
+      ${viRemain(x)}
     </p>
 
     <p>
@@ -209,17 +255,20 @@ function detail(x) {
     </p>
   `;
 
-  document.getElementById('modal').classList.add('show');
+  document
+    .getElementById('modal')
+    .classList.add('show');
 }
-
 
 function closeModal() {
-  document.getElementById('modal').classList.remove('show');
+  document
+    .getElementById('modal')
+    .classList.remove('show');
 }
-
 
 function render(s) {
   STATE = s;
+
   const p = s.paper;
 
   document.getElementById('equity').textContent =
@@ -234,7 +283,8 @@ function render(s) {
   }
 
   document.getElementById('currentBudget').textContent =
-    '현재 운용값: ' + won(p.budget);
+    '현재 운용값: ' +
+    won(p.budget);
 
   document.getElementById('heldCost').textContent =
     '보유원가 ' +
@@ -243,7 +293,8 @@ function render(s) {
     won(p.budget);
 
   document.getElementById('cash').textContent =
-    '가상현금 ' + won(p.cash);
+    '가상현금 ' +
+    won(p.cash);
 
   const h = s.health;
 
@@ -263,9 +314,11 @@ function render(s) {
         (m) => `
           <div class="market">
             <b>${m.label}</b>
+
             <strong>
               ${m.value == null ? '—' : m.value}
             </strong>
+
             <div class="pending">
               ${m.status || ''}
             </div>
@@ -280,7 +333,9 @@ function render(s) {
           .map(
             (x, i) =>
               `<div class="sector">
-                ${i + 1}. ${x.sector} ${pct(x.change_pct)}
+                ${i + 1}위 ·
+                ${x.sector}
+                ${pct(x.change_pct)}
               </div>`
           )
           .join('')
@@ -295,24 +350,43 @@ function render(s) {
             (x) => `
               <div class="row">
                 <div>
-                  <div class="name">● ${x.name}</div>
-                  <div class="code">${x.code} · ${x.qty}주</div>
+                  <div class="name">
+                    ● ${x.name}
+                  </div>
+
+                  <div class="code">
+                    ${x.code} · ${x.qty}주
+                  </div>
                 </div>
 
                 <div>
-                  <div class="sub">평단</div>
-                  <b>${won(x.avg_price)}</b>
+                  <div class="sub">
+                    평단
+                  </div>
+
+                  <b>
+                    ${won(x.avg_price)}
+                  </b>
                 </div>
 
                 <div>
-                  <div class="sub">현재가</div>
-                  <b>${won(x.current_price)}</b>
+                  <div class="sub">
+                    현재가
+                  </div>
+
+                  <b>
+                    ${won(x.current_price)}
+                  </b>
                 </div>
 
                 <div>
-                  <div class="sub">손익</div>
+                  <div class="sub">
+                    손익
+                  </div>
+
                   <b class="${x.pnl >= 0 ? 'pos' : 'neg'}">
-                    ${pct(x.pnl_pct)}<br>
+                    ${pct(x.pnl_pct)}
+                    <br>
                     ${won(x.pnl)}
                   </b>
                 </div>
@@ -326,14 +400,24 @@ function render(s) {
 
   document.getElementById('scalpList').innerHTML =
     s.scalp.length
-      ? s.scalp.map((x) => row(x, false)).join('')
+      ? s.scalp
+          .map(
+            (x, i) =>
+              row(x, false, i + 1)
+          )
+          .join('')
       : `<div class="empty">
           실시간 후보를 수집 중입니다.
         </div>`;
 
   document.getElementById('smartList').innerHTML =
     s.smart.length
-      ? s.smart.map((x) => row(x, true)).join('')
+      ? s.smart
+          .map(
+            (x, i) =>
+              row(x, true, i + 1)
+          )
+          .join('')
       : `<div class="empty">
           스마트머니 후보를 수집 중입니다.
         </div>`;
@@ -346,28 +430,44 @@ function render(s) {
               <div class="row">
                 <div>
                   <div class="name">
-                    ${t.side === 'BUY' ? '매수' : '매도'} · ${t.name}
+                    ${t.side === 'BUY' ? '매수' : '매도'}
+                    · ${t.name}
                   </div>
+
                   <div class="code">
-                    ${t.time} · ${t.qty}주
+                    ${t.time}
+                    · ${t.qty}주
                   </div>
                 </div>
 
                 <div>
-                  <div class="sub">체결가</div>
-                  <b>${won(t.price)}</b>
+                  <div class="sub">
+                    체결가
+                  </div>
+
+                  <b>
+                    ${won(t.price)}
+                  </b>
                 </div>
 
                 <div>
-                  <div class="sub">실현손익</div>
+                  <div class="sub">
+                    실현손익
+                  </div>
+
                   <b class="${t.pnl >= 0 ? 'pos' : 'neg'}">
                     ${won(t.pnl)}
                   </b>
                 </div>
 
                 <div class="hide-sm">
-                  <div class="sub">수익률</div>
-                  <b>${pct(t.pnl_pct)}</b>
+                  <div class="sub">
+                    수익률
+                  </div>
+
+                  <b>
+                    ${pct(t.pnl_pct)}
+                  </b>
                 </div>
               </div>
             `
@@ -378,7 +478,6 @@ function render(s) {
         </div>`;
 }
 
-
 async function refresh() {
   if (refreshing) {
     return;
@@ -387,22 +486,32 @@ async function refresh() {
   refreshing = true;
 
   try {
-    const r = await fetch('/api/state', {
-      cache: 'no-store'
-    });
+    const r =
+      await fetch(
+        '/api/state',
+        {
+          cache: 'no-store'
+        }
+      );
 
     if (!r.ok) {
-      throw new Error(`state HTTP ${r.status}`);
+      throw new Error(
+        `state HTTP ${r.status}`
+      );
     }
 
-    const data = await r.json();
+    const data =
+      await r.json();
+
     render(data);
 
   } catch (e) {
-    const health = document.getElementById('health');
+    const health =
+      document.getElementById('health');
 
     if (health) {
-      health.textContent = '○ 서버 연결 끊김';
+      health.textContent =
+        '○ 서버 연결 끊김';
     }
 
     console.error(e);
@@ -412,58 +521,87 @@ async function refresh() {
   }
 }
 
-
 function bindUi() {
   document
     .getElementById('saveBudgetBtn')
-    ?.addEventListener('click', saveBudget);
+    ?.addEventListener(
+      'click',
+      saveBudget
+    );
 
   document
-    .querySelectorAll('nav button[data-tab]')
+    .querySelectorAll(
+      'nav button[data-tab]'
+    )
     .forEach((button) => {
-      button.addEventListener('click', () => {
-        tab(button.dataset.tab, button);
-      });
+      button.addEventListener(
+        'click',
+        () => {
+          tab(
+            button.dataset.tab,
+            button
+          );
+        }
+      );
     });
 
   document
     .getElementById('modal')
-    ?.addEventListener('click', (event) => {
-      if (event.target === event.currentTarget) {
-        closeModal();
+    ?.addEventListener(
+      'click',
+      (event) => {
+        if (
+          event.target ===
+          event.currentTarget
+        ) {
+          closeModal();
+        }
       }
-    });
+    );
 
   document
     .getElementById('closeModalBtn')
-    ?.addEventListener('click', closeModal);
+    ?.addEventListener(
+      'click',
+      closeModal
+    );
 
-  document.addEventListener('click', (event) => {
-    const el = event.target.closest('[data-detail]');
+  document.addEventListener(
+    'click',
+    (event) => {
+      const el =
+        event.target.closest(
+          '[data-detail]'
+        );
 
-    if (!el) {
-      return;
+      if (!el) {
+        return;
+      }
+
+      try {
+        detail(
+          JSON.parse(
+            decodeURIComponent(
+              el.dataset.detail
+            )
+          )
+        );
+      } catch (e) {
+        console.error(e);
+      }
     }
-
-    try {
-      detail(
-        JSON.parse(
-          decodeURIComponent(el.dataset.detail)
-        )
-      );
-    } catch (e) {
-      console.error(e);
-    }
-  });
+  );
 }
 
+document.addEventListener(
+  'DOMContentLoaded',
+  () => {
+    bindUi();
+    refresh();
 
-document.addEventListener('DOMContentLoaded', () => {
-  bindUi();
-  refresh();
-
-  setInterval(
-    refresh,
-    5000
-  );
-});
+    setInterval(
+      refresh,
+      5000
+    );
+  }
+);
