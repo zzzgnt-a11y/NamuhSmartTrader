@@ -16,7 +16,7 @@ from nhfeed import NHFeed
 
 load_dotenv()
 
-app = FastAPI(title="Namuh Smart Trader WEB")
+app = FastAPI(title="GY 모의투자 시스템")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 feed = NHFeed()
@@ -316,15 +316,25 @@ def home():
 def health():
     return {
         "ok": True,
+
         "nh_configured": bool(
             os.getenv("NHPLUG_APP_KEY")
             and os.getenv("NHPLUG_APP_SECRET")
         ),
+
         "nh_realtime": feed.connected,
+
         "error": feed.error,
+
         "orders_sent": 0,
+
         "scan_index": feed.scan_index,
+
         "tracked": len(feed.quotes),
+
+        "market_updated_at": feed.market_updated_at,
+
+        "market_errors": feed.market_errors,
     }
 
 
@@ -375,51 +385,29 @@ def state():
     return {
         "health": health(),
 
-        "market": [
-            {
-                "label": "코스피",
-                "value": None,
-                "status": "NH 지수 연결 예정",
-            },
-            {
-                "label": "코스닥",
-                "value": None,
-                "status": "NH 지수 연결 예정",
-            },
-            {
-                "label": "코스피 야간선물",
-                "value": None,
-                "status": "NH 야간선물 연결 예정",
-            },
-            {
-                "label": "나스닥",
-                "value": None,
-                "status": "NH 해외지수 연결 예정",
-            },
-            {
-                "label": "필라델피아 반도체",
-                "value": None,
-                "status": "NH 해외지수 연결 예정",
-            },
-            {
-                "label": "나스닥 선물",
-                "value": None,
-                "status": "NH 해외파생 연결 예정",
-            },
-        ],
+        "market": feed.market_state(),
 
         "sectors": sectors,
+
         "scalp": scalp,
+
         "smart": smart,
+
         "cache_updated_at": updated_at,
 
         "paper": {
             "initial_cash": paper.initial_cash,
+
             "cash": paper.cash,
+
             "equity": paper.equity(),
+
             "budget": paper.daily_budget,
+
             "held_cost": paper.held_cost(),
+
             "positions": positions,
+
             "trades": paper.trades[:100],
         },
 
@@ -435,4 +423,4 @@ if __name__ == "__main__":
         host=os.getenv("HOST", "0.0.0.0"),
         port=int(os.getenv("PORT", "8787")),
         reload=False,
-    )
+                     )
