@@ -1,35 +1,25 @@
 from __future__ import annotations
 
 import os
-import time
 import threading
+import time
 
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from dotenv import load_dotenv
 
 from engine import PaperAccount, scalp_score, smart_score
 from nhfeed import NHFeed
 
-
 load_dotenv()
-
 app = FastAPI(title="GY 모의투자 시스템")
 app.mount("/static", StaticFiles(directory="static"), name="static")
-
 feed = NHFeed()
 paper = PaperAccount()
-
-protected = {
-    x.strip()
-    for x in os.getenv("PROTECTED_CODES", "").split(",")
-    if x.strip()
-}
-
+protected = {x.strip() for x in os.getenv("PROTECTED_CODES", "").split(",") if x.strip()}
 started = False
-
 
 SECTOR_FALLBACK = {
     "005930": "반도체",
@@ -42,26 +32,20 @@ SECTOR_FALLBACK = {
     "267260": "전력기기",
 }
 
-
 cache_lock = threading.Lock()
+CACHE = {"sectors": [], "scalp": [], "smart": [], "updated_at": 0}
 
-CACHE = {
-    "sectors": [],
-    "scalp": [],
-    "smart": [],
-    "updated_at": 0,
-}
+
+def krw(v):
+    return int(round(float(v or 0)))
 
 
 def build_sectors():
     agg = {}
-
     for q in list(feed.quotes.values()):
         if q.price <= 0 or q.open <= 0:
             continue
-
         sector = q.sector or SECTOR_FALLBACK.get(q.code, "기타")
-
         a = agg.setdefault(
             sector,
             {
@@ -73,13 +57,10 @@ def build_sectors():
                 "best": -999,
             },
         )
-
         change = (q.price / q.open - 1) * 100
-
         a["sum"] += change
         a["n"] += 1
         a["money"] += q.price * q.volume
-
         if change > a["best"]:
             a["best"] = change
             a["leader"] = q.name
@@ -122,23 +103,25 @@ def candidate(q, smart=False, secmap=None):
     if smart:
         score, why = smart_score(q)
     else:
-        sector_score = secmap.get(sector, 0) if secmap else 0
-        score, why = scalp_score(q, sector_score)
+        score, why = scalp_score(
+            q,
+            secmap.get(sector, 0) if secmap else 0,
+        )
 
     return {
         "code": q.code,
         "name": q.name,
-        "price": q.price,
-        "open": q.open,
+        "price": krw(q.price),
+        "open": krw(q.open),
         "score": score,
         "execution_strength": q.execution_strength,
         "per": q.per,
         "pbr": q.pbr,
         "foreign_net": q.foreign_net,
         "institution_net": q.institution_net,
-        "vi_pre": q.open * 1.10 * 0.997 if q.open else 0,
+        "vi_pre": krw(q.open * 1.10 * 0.997) if q.open else 0,
         "reasons": why,
-        "series": list(q.prices)[-60:],
+        "series": [krw(x) for x in list(q.prices)[-60:]],
     }
 
 
@@ -164,15 +147,15 @@ def rebuild_cache():
             scalp.append(
                 candidate(
                     q,
-                    smart=False,
-                    secmap=secmap,
+                    False,
+                    secmap,
                 )
             )
 
             smart.append(
                 candidate(
                     q,
-                    smart=True,
+                    True,
                 )
             )
 
@@ -210,9 +193,15 @@ def trade_from_candidates(xs):
         if not q or q.price <= 0:
             continue
 
-        paper.mark(p.code, q.price)
+        paper.mark(
+            p.code,
+            q.price,
+        )
 
-        score = score_map.get(p.code, 50)
+        score = score_map.get(
+            p.code,
+            50,
+        )
 
         if (
             p.pnl_pct >= 2.5
@@ -263,25 +252,29 @@ def trade_from_candidates(xs):
             ),
         )
 
-        qty = int(target // q.price)
-
-        if qty < 1:
-            continue
-
-        paper.buy(
-            q,
-            qty,
+        qty = int(
+            target // q.price
         )
+
+        if qty >= 1:
+            paper.buy(
+                q,
+                qty,
+            )
 
 
 def ai_loop():
     while True:
         try:
-            xs = rebuild_cache()
-            trade_from_candidates(xs)
+            trade_from_candidates(
+                rebuild_cache()
+            )
 
         except Exception as e:
-            print("AI LOOP ERROR:", e)
+            print(
+                "AI LOOP ERROR:",
+                e,
+            )
 
         time.sleep(5)
 
@@ -309,7 +302,9 @@ def startup():
 
 @app.get("/")
 def home():
-    return FileResponse("static/index.html")
+    return FileResponse(
+        "static/index.html"
+    )
 
 
 @app.get("/api/health")
@@ -332,9 +327,27 @@ def health():
 
         "tracked": len(feed.quotes),
 
-        "market_updated_at": feed.market_updated_at,
+        "priced": sum(
+            1
+            for q in feed.quotes.values()
+            if q.price > 0
+        ),
 
-        "market_errors": feed.market_errors,
+        "sample_prices": [
+            {
+                "code": q.code,
+                "name": q.name,
+                "price": krw(q.price),
+            }
+            for q in list(feed.quotes.values())
+            if q.price > 0
+        ][:5],
+
+        "market_updated_at":
+            feed.market_updated_at,
+
+        "market_errors":
+            feed.market_errors,
     }
 
 
@@ -352,7 +365,9 @@ def set_budget(x: Budget):
         ),
     )
 
-    paper.set_budget(amount)
+    paper.set_budget(
+        amount
+    )
 
     return {
         "ok": True,
@@ -364,19 +379,30 @@ def set_budget(x: Budget):
 @app.get("/api/state")
 def state():
     with cache_lock:
-        sectors = list(CACHE["sectors"])
-        scalp = list(CACHE["scalp"][:30])
-        smart = list(CACHE["smart"][:30])
-        updated_at = CACHE["updated_at"]
+        sectors = list(
+            CACHE["sectors"]
+        )
+
+        scalp = list(
+            CACHE["scalp"][:30]
+        )
+
+        smart = list(
+            CACHE["smart"][:30]
+        )
+
+        updated_at = (
+            CACHE["updated_at"]
+        )
 
     positions = [
         {
             "code": p.code,
             "name": p.name,
             "qty": p.qty,
-            "avg_price": p.avg_price,
-            "current_price": p.current_price,
-            "pnl": p.pnl,
+            "avg_price": krw(p.avg_price),
+            "current_price": krw(p.current_price),
+            "pnl": krw(p.pnl),
             "pnl_pct": p.pnl_pct,
         }
         for p in paper.positions.values()
@@ -385,33 +411,46 @@ def state():
     return {
         "health": health(),
 
-        "market": feed.market_state(),
+        "market":
+            feed.market_state(),
 
-        "sectors": sectors,
+        "sectors":
+            sectors,
 
-        "scalp": scalp,
+        "scalp":
+            scalp,
 
-        "smart": smart,
+        "smart":
+            smart,
 
-        "cache_updated_at": updated_at,
+        "cache_updated_at":
+            updated_at,
 
         "paper": {
-            "initial_cash": paper.initial_cash,
+            "initial_cash":
+                krw(paper.initial_cash),
 
-            "cash": paper.cash,
+            "cash":
+                krw(paper.cash),
 
-            "equity": paper.equity(),
+            "equity":
+                krw(paper.equity()),
 
-            "budget": paper.daily_budget,
+            "budget":
+                krw(paper.daily_budget),
 
-            "held_cost": paper.held_cost(),
+            "held_cost":
+                krw(paper.held_cost()),
 
-            "positions": positions,
+            "positions":
+                positions,
 
-            "trades": paper.trades[:100],
+            "trades":
+                paper.trades[:100],
         },
 
-        "protected_codes": sorted(protected),
+        "protected_codes":
+            sorted(protected),
     }
 
 
@@ -420,7 +459,15 @@ if __name__ == "__main__":
 
     uvicorn.run(
         "app:app",
-        host=os.getenv("HOST", "0.0.0.0"),
-        port=int(os.getenv("PORT", "8787")),
+        host=os.getenv(
+            "HOST",
+            "0.0.0.0",
+        ),
+        port=int(
+            os.getenv(
+                "PORT",
+                "8787",
+            )
+        ),
         reload=False,
-                     )
+    )
