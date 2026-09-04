@@ -1,0 +1,27 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.namuh.smarttrader'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "com.namuh.smarttrader"
+        minSdk 26
+        targetSdk 35
+        versionCode 2
+        versionName "0.2.0"
+
+        testInstrumentationRunner "android.test.InstrumentationTestRunner"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+}
+
+dependencies {
+}
