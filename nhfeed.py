@@ -1,2852 +1,2300 @@
-from __future__ import annotations
+let STATE = null;
 
-import os
-import re
-import threading
-import time
+let refreshing = false;
 
-from datetime import (
-    datetime,
-    timedelta,
-    timezone,
-)
+let MODE = 'KR';
 
-from typing import (
-    Dict,
-    Iterable,
-)
+let budgetInitialized = false;
 
-import requests
+let profitCursor =
+  new Date();
 
-from engine import Quote
+let currentProfitMap = {};
+
+let selectedProfitDate =
+  null;
 
 
-KST = timezone(
-    timedelta(
-        hours=9
+const $ = (id) =>
+  document.getElementById(
+    id
+  );
+
+
+const setText = (
+  id,
+  text
+) => {
+  const el = $(
+    id
+  );
+
+  if (el) {
+    el.textContent =
+      text;
+  }
+};
+
+
+const setHtml = (
+  id,
+  html
+) => {
+  const el = $(
+    id
+  );
+
+  if (el) {
+    el.innerHTML =
+      html;
+  }
+};
+
+
+const won = (n) =>
+  Number(
+    n || 0
+  )
+  .toLocaleString(
+    'ko-KR'
+  )
+  +
+  '원';
+
+
+const usd = (n) =>
+  '$'
+  +
+  Number(
+    n || 0
+  )
+  .toLocaleString(
+    'en-US',
+    {
+      minimumFractionDigits:
+        2,
+
+      maximumFractionDigits:
+        4
+    }
+  );
+
+
+const pct = (n) =>
+  (
+    Number(
+      n || 0
+    ) >= 0
+      ? '+'
+      : ''
+  )
+  +
+  Number(
+    n || 0
+  ).toFixed(
+    2
+  )
+  +
+  '%';
+
+
+const priceText = (
+  value,
+  market = MODE
+) =>
+  market === 'US'
+    ? usd(
+        value
+      )
+    : won(
+        value
+      );
+
+
+function kstHour() {
+
+  const parts =
+    new Intl
+      .DateTimeFormat(
+        'en-US',
+        {
+          timeZone:
+            'Asia/Seoul',
+
+          hour:
+            '2-digit',
+
+          minute:
+            '2-digit',
+
+          hour12:
+            false
+        }
+      )
+      .formatToParts(
+        new Date()
+      );
+
+  const hour =
+    Number(
+      parts.find(
+        x =>
+          x.type
+          === 'hour'
+      )?.value
+      || 0
+    );
+
+  const minute =
+    Number(
+      parts.find(
+        x =>
+          x.type
+          === 'minute'
+      )?.value
+      || 0
+    );
+
+  return (
+    hour
+    + minute
+    / 60
+  );
+}
+
+
+function autoViewMarket() {
+
+  const h =
+    kstHour();
+
+  return (
+    h >= 20
+    || h < 6
+  )
+    ? 'US'
+    : 'KR';
+}
+
+
+function applyModeUi() {
+
+  const isUS =
+    MODE === 'US';
+
+  document.body.dataset.market =
+    MODE;
+
+
+  $('marketModeBtn')
+    ?.classList
+    .toggle(
+      'us',
+      isUS
+    );
+
+
+  $('krModeLabel')
+    ?.classList
+    .toggle(
+      'active',
+      !isUS
+    );
+
+
+  $('usModeLabel')
+    ?.classList
+    .toggle(
+      'active',
+      isUS
+    );
+
+
+  setText(
+    'subtitle',
+
+    isUS
+      ? 'NHPLUG 공식 데이터 기반 미장 모의투자'
+      : 'NHPLUG 공식 데이터 기반 국장 모의투자'
+  );
+
+
+  setText(
+    'heroText',
+
+    isUS
+      ? '미국 종목만 표시하며 원화 예산을 당일 환율로 환산해 PAPER 매매합니다.'
+      : '국내 종목만 표시하며 KRX/NXT 시간대에 맞춰 PAPER 매매합니다.'
+  );
+
+
+  setText(
+    'engineLabel',
+
+    isUS
+      ? 'US · PAPER · FX'
+      : 'KR · PAPER · NHPLUG'
+  );
+
+
+  setText(
+    'marketModeCaption',
+
+    isUS
+      ? '미장 주요 지수 · 그래프 포함'
+      : '국장 주요 지수 · 그래프 포함'
+  );
+
+
+  setText(
+    'sectorCaption',
+
+    isUS
+      ? '미국 업종 강도'
+      : '국내 주도섹터'
+  );
+
+
+  setText(
+    'scalpTitle',
+
+    isUS
+      ? '미국 분석 후보'
+      : '국내 수급 후보'
+  );
+
+
+  setText(
+    'scalpCaption',
+
+    isUS
+      ? 'AI 점수 · USD 현재가'
+      : 'AI 점수 · 목표가(VI)'
+  );
+
+
+  setText(
+    'smartTitle',
+
+    isUS
+      ? '미국 스마트 분석'
+      : '국내 스마트머니 + 저평가'
+  );
+
+
+  setText(
+    'smartCaption',
+
+    isUS
+      ? 'PER · PBR · 기술점수'
+      : 'PER · PBR · 외국인 · 기관'
+  );
+}
+
+
+async function setMode(
+  mode
+) {
+
+  MODE =
+    mode === 'US'
+      ? 'US'
+      : 'KR';
+
+  budgetInitialized =
+    false;
+
+  applyModeUi();
+
+  await refresh(
+    true
+  );
+}
+
+
+async function saveBudget() {
+
+  const raw =
+    String(
+      $('budget')?.value
+      || ''
     )
-)
-
-
-KR_DEFAULT_CODES = [
-    "005930",
-    "000660",
-    "035420",
-    "035720",
-    "068270",
-    "012450",
-    "267260",
-    "042700",
-    "005380",
-    "000270",
-    "105560",
-    "055550",
-    "086790",
-    "028260",
-    "207940",
-]
-
-
-US_DEFAULT_CODES = [
-    "AAPL",
-    "MSFT",
-    "NVDA",
-    "AMZN",
-    "META",
-    "GOOGL",
-    "TSLA",
-    "AVGO",
-    "AMD",
-    "NFLX",
-    "COST",
-    "PLTR",
-    "JPM",
-    "BAC",
-    "WMT",
-    "LLY",
-    "UNH",
-    "XOM",
-    "CVX",
-    "ORCL",
-    "CRM",
-    "ADBE",
-    "QCOM",
-    "MU",
-    "INTC",
-    "ARM",
-    "TSM",
-]
-
-
-def walk(
-    value
-):
-    if isinstance(
-        value,
-        dict,
-    ):
-        yield value
-
-        for child in (
-            value.values()
-        ):
-            yield from walk(
-                child
-            )
-
-    elif isinstance(
-        value,
-        list,
-    ):
-        for child in value:
-            yield from walk(
-                child
-            )
-
-
-def num(
-    value
-):
-    try:
-        return float(
-            str(
-                value
-            )
-            .replace(
-                ",",
-                "",
-            )
-            .replace(
-                "+",
-                "",
-            )
-            .strip()
-        )
-
-    except Exception:
-        return 0.0
-
-
-def pick(
-    data,
-    keys: Iterable[str],
-):
-    for obj in walk(
-        data
-    ):
-        for key in keys:
-
-            if (
-                key in obj
-                and obj[
-                    key
-                ]
-                not in (
-                    None,
-                    "",
-                )
-            ):
-                return num(
-                    obj[
-                        key
-                    ]
-                )
-
-    return 0.0
-
-
-def pick_text(
-    data,
-    keys: Iterable[str],
-):
-    for obj in walk(
-        data
-    ):
-        for key in keys:
-
-            value = obj.get(
-                key
-            )
-
-            if value not in (
-                None,
-                "",
-            ):
-                return str(
-                    value
-                ).strip()
-
-    return ""
-
-
-def first_list(
-    data,
-    keys: Iterable[str],
-):
-    for obj in walk(
-        data
-    ):
-        for key in keys:
-
-            value = obj.get(
-                key
-            )
-
-            if isinstance(
-                value,
-                list,
-            ):
-                return value
-
-    return []
-
-
-def signed_value(
-    value,
-    sign,
-):
-    value = abs(
-        num(
-            value
-        )
+    .replace(
+      /,/g,
+      ''
     )
-
-    if str(
-        sign
-    ) in (
-        "4",
-        "5",
-        "8",
-        "9",
-        "-",
-        "▼",
-    ):
-        return -value
-
-    return value
+    .trim();
 
 
-def dataframe_rows(
-    frame
-):
-    if frame is None:
-        return []
-
-    if hasattr(
-        frame,
-        "to_dict",
-    ):
-        try:
-            return frame.to_dict(
-                "records"
-            )
-
-        except TypeError:
-            pass
-
-    if isinstance(
-        frame,
-        list,
-    ):
-        return frame
-
-    return []
+  const amount =
+    raw === ''
+      ? null
+      : Number(
+          raw.replace(
+            /\D/g,
+            ''
+          )
+        );
 
 
-class NHFeed:
+  if (
+    amount !== null
+    &&
+    (
+      !Number.isFinite(
+        amount
+      )
+      ||
+      amount < 0
+      ||
+      amount > 1000000
+    )
+  ) {
 
-    def __init__(
-        self
-    ):
-        self.quotes: Dict[
-            str,
-            Dict[
-                str,
-                Quote,
-            ],
-        ] = {
-            "KR": {},
-            "US": {},
-        }
+    alert(
+      '0~1,000,000원 범위로 입력하거나 비워주세요.'
+    );
 
-        self.connected = {
-            "KR": False,
-            "US": False,
-        }
+    return;
+  }
 
-        self.errors = {
-            "KR": "",
-            "US": "",
-        }
 
-        self.scan_index = {
-            "KR": 0,
-            "US": 0,
-        }
+  const response =
+    await fetch(
+      '/api/budget',
+      {
+        method:
+          'POST',
 
-        self.code_lists = {
-            "KR": [],
-            "US": [],
-        }
+        headers: {
+          'Content-Type':
+            'application/json'
+        },
 
-        self.fixed = {
-            "KR":
-                self._env_codes(
-                    "TRACKED_CODES",
-                    KR_DEFAULT_CODES,
-                ),
+        body:
+          JSON.stringify(
+            {
+              amount:
 
-            "US":
-                self._env_codes(
-                    "US_TRACKED_CODES",
-                    US_DEFAULT_CODES,
-                ),
-        }
+                amount,
 
-        self.market = {}
-
-        self.market_errors = {}
-
-        self.market_updated_at = (
-            0.0
-        )
-
-        self.usdkrw = (
-            0.0
-        )
-
-        self.usdkrw_asof = ""
-
-        self.index_symbols = {
-            "sp500":
-                os.getenv(
-                    "NH_SP500_SYMBOL",
-                    "N@SPX",
-                ).strip()
-                or "N@SPX",
-
-            "nasdaq":
-                os.getenv(
-                    "NH_NASDAQ_SYMBOL",
-                    "N@IXIC",
-                ).strip()
-                or "N@IXIC",
-
-            "sox":
-                os.getenv(
-                    "NH_SOX_SYMBOL",
-                    "N@SOX",
-                ).strip()
-                or "N@SOX",
-
-            "usdkrw":
-                os.getenv(
-                    "NH_USDKRW_SYMBOL",
-                    "X@KRW",
-                ).strip()
-                or "X@KRW",
-        }
-
-        self.future_symbols = {
-            "kospi_night":
-                os.getenv(
-                    "NH_KOSPI_NIGHT_SYMBOL",
-                    "",
-                ).strip(),
-
-            "nasdaq_future":
-                os.getenv(
-                    "NH_NASDAQ_FUTURE_SYMBOL",
-                    "",
-                ).strip(),
-
-            "nasdaq_future_exnm":
-                os.getenv(
-                    "NH_NASDAQ_FUTURE_EXNM",
-                    "FCME",
-                ).strip()
-                or "FCME",
-        }
-
-        self.nxt = {
-            "session":
-                "CLOSED",
-
-            "label":
-                "NXT 장외시간",
-
-            "open":
-                False,
-
-            "updated_at":
-                0.0,
-        }
-
-        self._stop = (
-            threading.Event()
-        )
-
-    @staticmethod
-    def _env_codes(
-        key,
-        defaults,
-    ):
-        configured = [
-            x.strip().upper()
-
-            for x
-            in os.getenv(
-                key,
-                "",
-            ).split(
-                ","
-            )
-
-            if x.strip()
-        ]
-
-        return (
-            configured
-            or list(
-                defaults
-            )
-        )
-
-    def quotes_for(
-        self,
-        market: str,
-    ):
-        return self.quotes[
-            "US"
-            if str(
-                market
-            ).upper()
-            == "US"
-            else "KR"
-        ]
-
-    def connected_any(
-        self
-    ):
-        return any(
-            self.connected.values()
-        )
-
-    def q(
-        self,
-        market: str,
-        code: str,
-    ):
-        market = (
-            "US"
-            if str(
-                market
-            ).upper()
-            == "US"
-            else "KR"
-        )
-
-        code = (
-            str(
-                code
-            )
-            .strip()
-            .upper()
-        )
-
-        bucket = (
-            self.quotes[
-                market
-            ]
-        )
-
-        if code not in bucket:
-
-            bucket[
-                code
-            ] = Quote(
-                code,
-                code,
-            )
-
-        return bucket[
-            code
-        ]
-
-    def update_nxt_session(
-        self
-    ):
-        now = datetime.now(
-            KST
-        )
-
-        if now.weekday() >= 5:
-
-            (
-                session,
-                label,
-                opened,
-            ) = (
-                "CLOSED",
-                "NXT 휴장",
-                False,
-            )
-
-        else:
-
-            mins = (
-                now.hour
-                * 60
-                + now.minute
-                + now.second
-                / 60
-            )
-
-            if (
-                480
-                <= mins
-                < 530
-            ):
-                (
-                    session,
-                    label,
-                    opened,
-                ) = (
-                    "PRE",
-                    "NXT 프리마켓",
-                    True,
+              auto_max_if_unset:
+                Boolean(
+                  $(
+                    'autoMaxIfUnset'
+                  )?.checked
                 )
+            }
+          )
+      }
+    );
 
-            elif (
-                530
-                <= mins
-                < 540.5
-            ):
-                (
-                    session,
-                    label,
-                    opened,
-                ) = (
-                    "BREAK",
-                    "NXT 메인마켓 대기",
-                    False,
-                )
 
-            elif (
-                540.5
-                <= mins
-                < 920
-            ):
-                (
-                    session,
-                    label,
-                    opened,
-                ) = (
-                    "MAIN",
-                    "NXT 메인마켓",
-                    True,
-                )
+  if (
+    !response.ok
+  ) {
 
-            elif (
-                920
-                <= mins
-                < 940
-            ):
-                (
-                    session,
-                    label,
-                    opened,
-                ) = (
-                    "AFTER_WAIT",
-                    "NXT 애프터마켓 대기",
-                    False,
-                )
+    alert(
+      '운용금액 저장 실패'
+    );
 
-            elif (
-                940
-                <= mins
-                < 1200
-            ):
-                (
-                    session,
-                    label,
-                    opened,
-                ) = (
-                    "AFTER",
-                    "NXT 애프터마켓",
-                    True,
-                )
+    return;
+  }
 
-            else:
-                (
-                    session,
-                    label,
-                    opened,
-                ) = (
-                    "CLOSED",
-                    "NXT 장외시간",
-                    False,
-                )
 
-        self.nxt = {
-            "session":
-                session,
+  const data =
+    await response.json();
 
-            "label":
-                label,
 
-            "open":
-                opened,
+  setText(
+    'currentBudget',
 
-            "updated_at":
-                time.time(),
-        }
+    data.explicit_budget
+    == null
 
-    def session_state(
-        self,
-        market: str,
-    ):
-        if (
-            str(
-                market
-            ).upper()
-            == "US"
-        ):
-            return None
-
-        self.update_nxt_session()
-
-        return {
-            "name":
-                "NXT",
-
-            "session":
-                self.nxt[
-                    "session"
-                ],
-
-            "label":
-                self.nxt[
-                    "label"
-                ],
-
-            "open":
-                self.nxt[
-                    "open"
-                ],
-
-            "status":
-                (
-                    "거래중"
-                    if self.nxt[
-                        "open"
-                    ]
-                    else "대기/종료"
-                ),
-
-            "updated_at":
-                self.nxt[
-                    "updated_at"
-                ],
-        }
-
-    def _apply_kr(
-        self,
-        code,
-        data,
-    ):
-        q = self.q(
-            "KR",
-            code,
+      ? (
+          '현재 운용값: 자동 최대 '
+          +
+          won(
+            data.effective_budget
+          )
         )
 
-        price = pick(
-            data,
-            (
-                "stck_prpr",
-                "prpr",
-                "price",
-                "cur_pr",
-                "now_pr",
-            ),
+      : (
+          '현재 운용값: '
+          +
+          won(
+            data.effective_budget
+          )
         )
+  );
 
-        volume = pick(
-            data,
-            (
-                "acml_vol",
-                "volume",
-                "vol",
-            ),
-        )
 
-        if price:
+  await refresh(
+    true
+  );
+}
 
-            q.mark(
-                round(
-                    price
-                ),
-                volume,
-            )
 
-        q.open = round(
-            pick(
-                data,
-                (
-                    "stck_oprc",
-                    "open",
-                ),
-            )
-            or q.open
-        )
+function sparkline(
+  series
+) {
 
-        q.high = round(
-            pick(
-                data,
-                (
-                    "stck_hgpr",
-                    "high",
-                ),
-            )
-            or q.high
-        )
+  const values =
+    (
+      Array.isArray(
+        series
+      )
+        ? series
+        : []
+    )
+    .map(
+      Number
+    )
+    .filter(
+      Number.isFinite
+    );
 
-        q.low = round(
-            pick(
-                data,
-                (
-                    "stck_lwpr",
-                    "low",
-                ),
-            )
-            or q.low
-        )
 
-        q.per = (
-            pick(
-                data,
-                (
-                    "per",
-                    "per_val",
-                ),
-            )
-            or q.per
-        )
+  if (
+    values.length < 2
+  ) {
 
-        q.pbr = (
-            pick(
-                data,
-                (
-                    "pbr",
-                    "pbr_val",
-                ),
-            )
-            or q.pbr
-        )
+    return (
+      '<div class="pending">'
+      +
+      '그래프 데이터 축적 중'
+      +
+      '</div>'
+    );
+  }
 
-        q.foreign_net = (
-            pick(
-                data,
-                (
-                    "frgn_ntby_qty",
-                    "invest",
-                ),
-            )
-            or q.foreign_net
-        )
 
-        q.institution_net = (
-            pick(
-                data,
-                (
-                    "gigwan",
-                    "orgn_ntby_qty",
-                ),
-            )
-            or q.institution_net
-        )
+  const width =
+    240;
 
-        strength = pick(
-            data,
-            (
-                "cttr",
-                "volpower",
-                "execution_strength",
-            ),
-        )
+  const height =
+    48;
 
-        if strength:
-            q.execution_strength = (
-                strength
-            )
 
-    def _apply_us(
-        self,
-        code,
-        data,
-    ):
-        q = self.q(
-            "US",
-            code,
-        )
+  const min =
+    Math.min(
+      ...values
+    );
 
-        price = pick(
-            data,
-            (
-                "ovrs_prpr",
-                "last",
-                "prc",
-                "price",
-                "close",
-            ),
-        )
 
-        volume = pick(
-            data,
-            (
-                "acml_vol",
-                "tvol",
-                "volume",
-                "vol",
-            ),
-        )
+  const max =
+    Math.max(
+      ...values
+    );
 
-        if price:
 
-            q.mark(
-                price,
-                volume,
-            )
+  const span =
+    max - min
+    || 1;
 
-        q.open = (
-            pick(
-                data,
-                (
-                    "ovrs_oprc",
-                    "open_prc",
-                    "open",
-                ),
-            )
-            or q.open
-        )
 
-        q.high = (
-            pick(
-                data,
-                (
-                    "ovrs_hgpr",
-                    "high_prc",
-                    "high",
-                ),
-            )
-            or q.high
-        )
-
-        q.low = (
-            pick(
-                data,
-                (
-                    "ovrs_lwpr",
-                    "low_prc",
-                    "low",
-                ),
-            )
-            or q.low
-        )
-
-        q.per = (
-            pick(
-                data,
-                (
-                    "per",
-                    "per_val",
-                ),
-            )
-            or q.per
-        )
-
-        q.pbr = (
-            pick(
-                data,
-                (
-                    "pbr",
-                    "pbr_val",
-                ),
-            )
-            or q.pbr
-        )
-
-    def _load_kr_master(
-        self
-    ):
-        try:
-            from nhplug.instruments import (
-                load_master,
-            )
-
-            rows = dataframe_rows(
-                load_master(
-                    "m_new_stock"
-                )
-            )
-
-            wanted = set(
-                self.fixed[
-                    "KR"
-                ]
-            )
-
-            for row in rows:
-
-                code = str(
-                    row.get(
-                        "shrn_iscd"
-                    )
-                    or row.get(
-                        "sCode"
-                    )
-                    or row.get(
-                        "code"
-                    )
-                    or ""
-                ).strip()
-
-                match = re.search(
-                    r"(\d{6})",
-                    code,
-                )
-
-                if not match:
-                    continue
-
-                code = match.group(
-                    1
-                )
-
-                if code not in wanted:
-                    continue
-
-                q = self.q(
-                    "KR",
-                    code,
-                )
-
-                q.name = str(
-                    row.get(
-                        "hts_kor_isnm"
-                    )
-                    or row.get(
-                        "name"
-                    )
-                    or row.get(
-                        "sKorName"
-                    )
-                    or code
-                ).lstrip(
-                    "*#"
-                ).strip()
-
-                q.sector = str(
-                    row.get(
-                        "bstp_medm_div_code"
-                    )
-                    or row.get(
-                        "industry_group"
-                    )
-                    or ""
-                ).strip()
-
-            self.code_lists[
-                "KR"
-            ] = self.fixed[
-                "KR"
-            ][:]
-
-        except Exception as exc:
-
-            self.errors[
-                "KR"
-            ] = (
-                "국내 종목마스터: "
-                f"{exc}"
-            )[:300]
-
-            self.code_lists[
-                "KR"
-            ] = self.fixed[
-                "KR"
-            ][:]
-
-    def _load_us_master(
-        self
-    ):
-        try:
-            from nhplug.instruments import (
-                load_master,
-            )
-
-            rows = dataframe_rows(
-                load_master(
-                    "m_gtsstock"
-                )
-            )
-
-            wanted = set(
-                self.fixed[
-                    "US"
-                ]
-            )
-
-            for row in rows:
-
-                symbol = str(
-                    row.get(
-                        "symbol"
-                    )
-                    or row.get(
-                        "sSymbol"
-                    )
-                    or ""
-                ).strip().upper()
-
-                if symbol not in wanted:
-                    continue
-
-                q = self.q(
-                    "US",
-                    symbol,
-                )
-
-                q.name = str(
-                    row.get(
-                        "kor_name"
-                    )
-                    or row.get(
-                        "eng_name"
-                    )
-                    or row.get(
-                        "sKorName"
-                    )
-                    or row.get(
-                        "sEngName"
-                    )
-                    or symbol
-                ).strip()
-
-                industry = str(
-                    row.get(
-                        "industry_group"
-                    )
-                    or row.get(
-                        "gIndustryReuter"
-                    )
-                    or ""
-                ).strip()
-
-                q.sector = (
-                    f"업종 {industry}"
-                    if industry
-                    else "미국주식"
-                )
-
-            self.code_lists[
-                "US"
-            ] = self.fixed[
-                "US"
-            ][:]
-
-        except Exception as exc:
-
-            self.errors[
-                "US"
-            ] = (
-                "해외 종목마스터: "
-                f"{exc}"
-            )[:300]
-
-            self.code_lists[
-                "US"
-            ] = self.fixed[
-                "US"
-            ][:]
-
-    def _discover_futures(
-        self
-    ):
-        try:
-            from nhplug.instruments import (
-                load_master,
-            )
-
-            if not self.future_symbols[
-                "kospi_night"
-            ]:
-
-                fallback = []
-
-                for row in dataframe_rows(
-                    load_master(
-                        "m_future"
-                    )
-                ):
-
-                    code = str(
-                        row.get(
-                            "code"
-                        )
-                        or row.get(
-                            "sCode"
-                        )
-                        or ""
-                    ).strip().upper()
-
-                    name = str(
-                        row.get(
-                            "name"
-                        )
-                        or row.get(
-                            "sName"
-                        )
-                        or ""
-                    ).strip()
-
-                    if code.startswith(
-                        "KA"
-                    ):
-                        fallback.append(
-                            code
-                        )
-
-                    normalized = re.sub(
-                        r"\s+",
-                        "",
-                        name,
-                    ).upper()
-
-                    if (
-                        code.startswith(
-                            "KA"
-                        )
-                        and (
-                            "KOSPI200"
-                            in normalized
-                            or "코스피200"
-                            in name
-                        )
-                    ):
-                        self.future_symbols[
-                            "kospi_night"
-                        ] = code
-
-                        break
-
-                if (
-                    not self.future_symbols[
-                        "kospi_night"
-                    ]
-                    and fallback
-                ):
-                    self.future_symbols[
-                        "kospi_night"
-                    ] = fallback[
-                        0
-                    ]
-
-            if not self.future_symbols[
-                "nasdaq_future"
-            ]:
-
-                candidates = []
-
-                for row in dataframe_rows(
-                    load_master(
-                        "fucode_h"
-                    )
-                ):
-
-                    symbol = str(
-                        row.get(
-                            "isym"
-                        )
-                        or row.get(
-                            "InnerSymbol"
-                        )
-                        or row.get(
-                            "symb"
-                        )
-                        or row.get(
-                            "Symbol"
-                        )
-                        or ""
-                    ).strip().upper()
-
-                    name = str(
-                        row.get(
-                            "enam"
-                        )
-                        or row.get(
-                            "EngName"
-                        )
-                        or ""
-                    ).strip()
-
-                    exnm = str(
-                        row.get(
-                            "exnm"
-                        )
-                        or row.get(
-                            "ExchName"
-                        )
-                        or "FCME"
-                    ).strip().upper()
-                    or "FCME"
-
-                    lead = str(
-                        row.get(
-                            "ledm"
-                        )
-                        or row.get(
-                            "Leadmonth"
-                        )
-                        or ""
-                    ).strip()
-
-                    if (
-                        "NASDAQ"
-                        in name.upper()
-                        and symbol
-                    ):
-                        candidates.append(
-                            (
-                                10
-                                if lead == "1"
-                                else 0,
-                                symbol,
-                                exnm,
-                            )
-                        )
-
-                if candidates:
-
-                    candidates.sort(
-                        reverse=True
-                    )
-
-                    (
-                        _,
-                        symbol,
-                        exnm,
-                    ) = candidates[
-                        0
-                    ]
-
-                    self.future_symbols[
-                        "nasdaq_future"
-                    ] = symbol
-
-                    self.future_symbols[
-                        "nasdaq_future_exnm"
-                    ] = exnm
-
-        except Exception as exc:
-
-            self.market_errors[
-                "future_master"
-            ] = str(
-                exc
-            )[:300]
-
-    def _market_order(
-        self
-    ):
-        self.update_nxt_session()
-
-        if self.nxt[
-            "session"
-        ] in (
-            "PRE",
-            "AFTER",
-        ):
-            return (
-                "NXT",
-                "KRX",
-            )
-
-        if (
-            self.nxt[
-                "session"
-            ]
-            == "MAIN"
-        ):
-            return (
-                "KRX",
-                "NXT",
-            )
-
-        return (
-            "KRX",
-        )
-
-    def kr_scanner(
-        self
-    ):
-        self._load_kr_master()
-
-        codes = (
-            self.code_lists[
-                "KR"
-            ]
-            or self.fixed[
-                "KR"
-            ]
-        )
-
-        from nhplug import call
-
-        while not self._stop.is_set():
-
-            code = codes[
-                self.scan_index[
-                    "KR"
-                ]
-                % len(
-                    codes
-                )
-            ]
-
-            self.scan_index[
-                "KR"
-            ] = (
-                self.scan_index[
-                    "KR"
-                ]
-                + 1
-            ) % len(
-                codes
-            )
-
-            last_error = ""
-
-            for market_cd in (
-                self._market_order()
-            ):
-                try:
-                    data = call(
-                        "/krstock/quote/v1/currentPrice",
-                        {
-                            "iem_cd":
-                                code,
-
-                            "market_cd":
-                                market_cd,
-                        },
-                    )
-
-                    self._apply_kr(
-                        code,
-                        data,
-                    )
-
-                    if (
-                        self.q(
-                            "KR",
-                            code,
-                        ).price
-                        > 0
-                    ):
-                        self.connected[
-                            "KR"
-                        ] = True
-
-                        self.errors[
-                            "KR"
-                        ] = ""
-
-                        break
-
-                except Exception as exc:
-
-                    last_error = (
-                        f"{market_cd} "
-                        f"{code}: "
-                        f"{exc}"
-                    )[:300]
-
-                    if (
-                        "429"
-                        in last_error
-                    ):
-                        time.sleep(
-                            1.5
-                        )
-
-                        break
-
-            if (
-                last_error
-                and self.q(
-                    "KR",
-                    code,
-                ).price
-                <= 0
-            ):
-                self.errors[
-                    "KR"
-                ] = last_error
-
-            time.sleep(
-                0.35
-            )
-
-    def us_scanner(
-        self
-    ):
-        self._load_us_master()
-
-        codes = (
-            self.code_lists[
-                "US"
-            ]
-            or self.fixed[
-                "US"
-            ]
-        )
-
-        from nhplug import call
-
-        while not self._stop.is_set():
-
-            code = codes[
-                self.scan_index[
-                    "US"
-                ]
-                % len(
-                    codes
-                )
-            ]
-
-            self.scan_index[
-                "US"
-            ] = (
-                self.scan_index[
-                    "US"
-                ]
-                + 1
-            ) % len(
-                codes
-            )
-
-            try:
-
-                data = call(
-                    "/gbstock/quote/v1/current",
-                    {
-                        "iem_cd":
-                            code
-                    },
-                )
-
-                self._apply_us(
-                    code,
-                    data,
-                )
-
-                if (
-                    self.q(
-                        "US",
-                        code,
-                    ).price
-                    > 0
-                ):
-                    self.connected[
-                        "US"
-                    ] = True
-
-                    self.errors[
-                        "US"
-                    ] = ""
-
-            except Exception as exc:
-
-                self.errors[
-                    "US"
-                ] = (
-                    f"{code}: "
-                    f"{exc}"
-                )[:300]
-
-                if (
-                    "429"
-                    in self.errors[
-                        "US"
-                    ]
-                ):
-                    time.sleep(
-                        1.5
-                    )
-
-            time.sleep(
-                0.5
-            )
-
-    @staticmethod
-    def _market_item(
-        label,
+  const points =
+    values.map(
+      (
         value,
-        change,
-        change_pct,
-        status,
-        source="",
-        series=None,
-        asof="",
-    ):
-        return {
-            "label":
-                label,
+        index
+      ) => {
 
-            "value":
-                value,
-
-            "change":
-                change,
-
-            "change_pct":
-                change_pct,
-
-            "status":
-                status,
-
-            "source":
-                source,
-
-            "series":
-                list(
-                    series
-                    or []
-                ),
-
-            "asof":
-                asof,
-        }
-
-    def _krx_rows(
-        self,
-        market_code,
-        trade_date,
-    ):
-        payload = {
-            "bld":
-                (
-                    "dbms/MDC/STAT/"
-                    "standard/"
-                    "MDCSTAT00101"
-                ),
-
-            "trdDd":
-                trade_date,
-
-            "idxIndMidclssCd":
-                market_code,
-
-            "share":
-                "2",
-
-            "money":
-                "3",
-
-            "csvxls_isNo":
-                "false",
-        }
-
-        urls = [
+        const x =
+          (
+            index
+            /
             (
-                "http://data.krx.co.kr/"
-                "comm/bldAttendant/"
-                "getJsonData.cmd"
-            ),
+              values.length
+              - 1
+            )
+          )
+          * width;
+
+
+        const y =
+          height
+          - 4
+          -
+          (
             (
-                "https://data.krx.co.kr/"
-                "comm/bldAttendant/"
-                "getJsonData.cmd"
-            ),
-        ]
-
-        last = None
-
-        for url in urls:
-
-            try:
-
-                r = requests.post(
-                    url,
-                    data=payload,
-                    timeout=10,
-                    headers={
-                        "User-Agent":
-                            "Mozilla/5.0"
-                    },
-                )
-
-                r.raise_for_status()
-
-                if (
-                    not r.text.strip()
-                    or r.text
-                    .strip()
-                    .upper()
-                    == "LOGOUT"
-                ):
-                    raise RuntimeError(
-                        "KRX empty/LOGOUT"
-                    )
-
-                data = r.json()
-
-                rows = (
-                    data.get(
-                        "output"
-                    )
-                    or data.get(
-                        "OutBlock_1"
-                    )
-                    or data.get(
-                        "block1"
-                    )
-                    or []
-                )
-
-                if not isinstance(
-                    rows,
-                    list,
-                ):
-                    raise RuntimeError(
-                        "KRX index response "
-                        "has no row list"
-                    )
-
-                return rows
-
-            except Exception as exc:
-
-                last = exc
-
-        raise RuntimeError(
-            str(
-                last
+              value
+              - min
             )
-        )
+            /
+            span
+          )
+          *
+          (
+            height
+            - 8
+          );
 
-    @staticmethod
-    def _find_index_row(
-        rows,
-        names,
-    ):
-        targets = {
-            re.sub(
-                r"\s+",
-                "",
-                x,
-            ).upper()
-
-            for x in names
-        }
-
-        for row in rows:
-
-            name = str(
-                row.get(
-                    "IDX_NM"
-                )
-                or row.get(
-                    "IDX_NM_KOR"
-                )
-                or row.get(
-                    "idx_nm"
-                )
-                or ""
-            )
-
-            if (
-                re.sub(
-                    r"\s+",
-                    "",
-                    name,
-                ).upper()
-                in targets
-            ):
-                return row
-
-        return None
-
-    @staticmethod
-    def _parse_krx_row(
-        row
-    ):
-        value = num(
-            row.get(
-                "CLSPRC_IDX"
-            )
-            or row.get(
-                "TDD_CLSPRC"
-            )
-            or row.get(
-                "close"
-            )
-        )
-
-        change = num(
-            row.get(
-                "CMPPREVDD_IDX"
-            )
-            or row.get(
-                "CMPPREVDD_PRC"
-            )
-            or row.get(
-                "change"
-            )
-        )
-
-        change_pct = num(
-            row.get(
-                "FLUC_RT"
-            )
-            or row.get(
-                "change_rate"
-            )
-        )
-
-        sign = str(
-            row.get(
-                "FLUC_TP_CD"
-            )
-            or row.get(
-                "fluc_tp_cd"
-            )
-            or ""
-        )
-
-        if sign in (
-            "4",
-            "5",
-            "8",
-            "9",
-            "-",
-            "▼",
-        ):
-            change = (
-                -abs(
-                    change
-                )
-            )
-
-            change_pct = (
-                -abs(
-                    change_pct
-                )
-            )
-
-        elif sign in (
-            "1",
-            "2",
-            "6",
-            "7",
-            "+",
-            "▲",
-        ):
-            change = (
-                abs(
-                    change
-                )
-            )
-
-            change_pct = (
-                abs(
-                    change_pct
-                )
-            )
 
         return (
-            value,
-            change,
-            change_pct,
+          `${x},${y}`
+        );
+      }
+    )
+    .join(
+      ' '
+    );
+
+
+  return `
+    <svg
+      class="index-spark"
+      viewBox="0 0 ${width} ${height}"
+      preserveAspectRatio="none"
+      aria-label="지수 추이 그래프"
+    >
+
+      <line
+        class="index-base"
+        x1="0"
+        y1="${height - 4}"
+        x2="${width}"
+        y2="${height - 4}"
+      ></line>
+
+      <polyline
+        points="${points}"
+      ></polyline>
+
+    </svg>
+  `;
+}
+
+
+function marketCards(
+  markets
+) {
+
+  return markets
+    .map(
+      (market) => {
+
+        const change =
+          market.change
+          == null
+            ? null
+            : Number(
+                market.change
+              );
+
+
+        const rate =
+          market.change_pct
+          == null
+            ? null
+            : Number(
+                market.change_pct
+              );
+
+
+        const cls =
+          rate == null
+            ? ''
+            : rate >= 0
+              ? 'pos'
+              : 'neg';
+
+
+        return `
+          <div class="market">
+
+            <b>
+              ${market.label}
+            </b>
+
+            <strong>
+              ${
+                market.value
+                == null
+                  ? '—'
+                  : Number(
+                      market.value
+                    )
+                    .toLocaleString(
+                      undefined,
+                      {
+                        maximumFractionDigits:
+                          4
+                      }
+                    )
+              }
+            </strong>
+
+            <div
+              class="
+                delta
+                ${cls}
+              "
+            >
+              ${
+                change == null
+                  ? ''
+                  : (
+                      `${
+                        change >= 0
+                          ? '+'
+                          : ''
+                      }`
+                      +
+                      change
+                        .toLocaleString(
+                          undefined,
+                          {
+                            maximumFractionDigits:
+                              2
+                          }
+                        )
+                      +
+                      ' · '
+                      +
+                      pct(
+                        rate
+                      )
+                    )
+              }
+            </div>
+
+            ${
+              sparkline(
+                market.series
+              )
+            }
+
+            <div class="pending">
+              ${
+                market.source
+                  ? market.source
+                    + ' · '
+                  : ''
+              }
+
+              ${
+                market.status
+                || ''
+              }
+            </div>
+
+          </div>
+        `;
+      }
+    )
+    .join(
+      ''
+    );
+}
+
+
+function candidateRow(
+  item,
+  smart = false,
+  rank = 0
+) {
+
+  const payload =
+    encodeURIComponent(
+      JSON.stringify(
+        item
+      )
+    );
+
+
+  const isUS =
+    (
+      item.market
+      || MODE
+    )
+    === 'US';
+
+
+  return `
+    <div
+      class="row"
+      data-detail="${payload}"
+    >
+
+      <div class="stock-top">
+
+        <div class="stock-left">
+
+          <div class="name">
+            ${
+              item.name
+              || item.code
+            }
+          </div>
+
+          <div class="code">
+            ${
+              item.code
+            }
+
+            ${
+              item.sector
+                ? ' · '
+                  + item.sector
+                : ''
+            }
+          </div>
+
+          <span class="pill">
+            ${
+              (
+                item.reasons
+                || []
+              )
+              .slice(
+                0,
+                2
+              )
+              .join(
+                ' · '
+              )
+              ||
+              '분석중'
+            }
+          </span>
+
+        </div>
+
+        <div class="stock-rank">
+          ${rank}위
+        </div>
+
+      </div>
+
+
+      <div class="metric-grid">
+
+
+        <div class="metric">
+
+          <span class="metric-title">
+            현재가
+          </span>
+
+          <span class="metric-value">
+            ${
+              priceText(
+                item.price,
+                item.market
+                || MODE
+              )
+            }
+          </span>
+
+        </div>
+
+
+        <div class="metric">
+
+          <span class="metric-title">
+            AI 점수
+          </span>
+
+          <span
+            class="
+              metric-value
+              score
+            "
+          >
+            ${
+              Number(
+                item.score
+                || 0
+              ).toFixed(
+                1
+              )
+            }
+          </span>
+
+        </div>
+
+
+        <div class="metric">
+
+          <span class="metric-title">
+            ${
+              isUS
+                ? 'PER / PBR'
+                : '목표가(VI)'
+            }
+          </span>
+
+          <span class="metric-value">
+
+            ${
+              isUS
+                ? (
+                    Number(
+                      item.per
+                      || 0
+                    ).toFixed(
+                      1
+                    )
+                    +
+                    ' / '
+                    +
+                    Number(
+                      item.pbr
+                      || 0
+                    ).toFixed(
+                      2
+                    )
+                  )
+
+                : priceText(
+                    item.vi_pre,
+                    'KR'
+                  )
+            }
+
+          </span>
+
+        </div>
+
+
+        <div class="metric">
+
+          <span class="metric-title">
+            ${
+              isUS
+                ? '통화'
+                : '외국인 / 기관'
+            }
+          </span>
+
+          <span class="metric-value">
+
+            ${
+              isUS
+                ? 'USD'
+
+                : (
+                    Math.round(
+                      item.foreign_net
+                      || 0
+                    )
+                    +
+                    ' / '
+                    +
+                    Math.round(
+                      item.institution_net
+                      || 0
+                    )
+                  )
+            }
+
+          </span>
+
+        </div>
+
+
+      </div>
+
+    </div>
+  `;
+}
+
+
+function positionRow(
+  position
+) {
+
+  const isUS =
+    position.market
+    === 'US';
+
+
+  return `
+    <div class="row">
+
+      <div class="stock-top">
+
+        <div class="stock-left">
+
+          <div class="name">
+            ● ${
+              position.name
+              || position.code
+            }
+          </div>
+
+          <div class="code">
+            ${
+              position.code
+            }
+            ·
+            ${
+              position.qty
+            }주
+
+            ${
+              isUS
+              &&
+              position.fx_buy
+                ? (
+                    ' · 매수환율 '
+                    +
+                    Number(
+                      position.fx_buy
+                    )
+                    .toLocaleString()
+                    +
+                    '원'
+                  )
+                : ''
+            }
+
+          </div>
+
+        </div>
+
+      </div>
+
+
+      <div class="metric-grid">
+
+
+        <div class="metric">
+
+          <span class="metric-title">
+            평단
+          </span>
+
+          <span class="metric-value">
+            ${
+              priceText(
+                position.avg_price,
+                position.market
+              )
+            }
+          </span>
+
+        </div>
+
+
+        <div class="metric">
+
+          <span class="metric-title">
+            현재가
+          </span>
+
+          <span class="metric-value">
+            ${
+              priceText(
+                position.current_price,
+                position.market
+              )
+            }
+          </span>
+
+        </div>
+
+
+        <div class="metric">
+
+          <span class="metric-title">
+            원화 손익률
+          </span>
+
+          <span
+            class="
+              metric-value
+              ${
+                position.pnl >= 0
+                  ? 'pos'
+                  : 'neg'
+              }
+            "
+          >
+            ${
+              pct(
+                position.pnl_pct
+              )
+            }
+          </span>
+
+        </div>
+
+
+        <div class="metric">
+
+          <span class="metric-title">
+            원화 손익
+          </span>
+
+          <span
+            class="
+              metric-value
+              ${
+                position.pnl >= 0
+                  ? 'pos'
+                  : 'neg'
+              }
+            "
+          >
+            ${
+              won(
+                position.pnl
+              )
+            }
+          </span>
+
+        </div>
+
+
+      </div>
+
+    </div>
+  `;
+}
+
+
+function detail(
+  item
+) {
+
+  setHtml(
+    'detail',
+    `
+      <h2>
+        ${
+          item.name
+          || item.code
+        }
+
+        <small>
+          ${item.code}
+        </small>
+      </h2>
+
+      <h1>
+        ${
+          priceText(
+            item.price,
+            item.market
+            || MODE
+          )
+        }
+      </h1>
+
+      ${
+        sparkline(
+          item.series
+        )
+      }
+
+      <p>
+        <b>
+          AI 점수
+        </b>
+
+        ${
+          Number(
+            item.score
+            || 0
+          ).toFixed(
+            1
+          )
+        }
+      </p>
+
+      <p>
+        <b>
+          PER / PBR
+        </b>
+
+        ${
+          Number(
+            item.per
+            || 0
+          ).toFixed(
+            2
+          )
+        }
+        /
+        ${
+          Number(
+            item.pbr
+            || 0
+          ).toFixed(
+            2
+          )
+        }
+      </p>
+
+      <p>
+        ${
+          (
+            item.reasons
+            || []
+          ).join(
+            ' · '
+          )
+          ||
+          '분석 데이터 축적 중'
+        }
+      </p>
+    `
+  );
+
+
+  $('modal')
+    ?.classList
+    .add(
+      'show'
+    );
+}
+
+
+function dateKey(
+  date
+) {
+
+  return (
+    `${date.getFullYear()}-`
+    +
+    `${String(
+      date.getMonth()
+      + 1
+    ).padStart(
+      2,
+      '0'
+    )}-`
+    +
+    `${String(
+      date.getDate()
+    ).padStart(
+      2,
+      '0'
+    )}`
+  );
+}
+
+
+function buildProfitMap(
+  trades
+) {
+
+  const map = {};
+
+
+  for (
+    const trade
+    of trades
+    || []
+  ) {
+
+    if (
+      trade.side
+      !== 'SELL'
+    ) {
+      continue;
+    }
+
+
+    const key =
+      trade.date
+      ||
+      dateKey(
+        new Date()
+      );
+
+
+    if (!map[key]) {
+
+      map[key] = {
+        total:
+          0,
+
+        items:
+          []
+      };
+
+    }
+
+
+    map[
+      key
+    ].total +=
+      Number(
+        trade.pnl
+        || 0
+      );
+
+
+    map[
+      key
+    ].items.push(
+      trade
+    );
+
+  }
+
+
+  return map;
+}
+
+
+function drawProfitCalendar() {
+
+  const year =
+    profitCursor
+      .getFullYear();
+
+
+  const month =
+    profitCursor
+      .getMonth();
+
+
+  const first =
+    new Date(
+      year,
+      month,
+      1
+    );
+
+
+  const last =
+    new Date(
+      year,
+      month + 1,
+      0
+    );
+
+
+  setText(
+    'profitMonthTitle',
+    `${year}년 ${month + 1}월`
+  );
+
+
+  const cells = [];
+
+
+  for (
+    let i = 0;
+
+    i < first.getDay();
+
+    i += 1
+  ) {
+
+    cells.push(
+      null
+    );
+
+  }
+
+
+  for (
+    let day = 1;
+
+    day <= last.getDate();
+
+    day += 1
+  ) {
+
+    cells.push(
+      new Date(
+        year,
+        month,
+        day
+      )
+    );
+
+  }
+
+
+  setHtml(
+    'profitCalendar',
+
+    cells
+      .map(
+        (date) => {
+
+          if (!date) {
+
+            return (
+              '<div class="day-cell is-other"></div>'
+            );
+
+          }
+
+
+          const key =
+            dateKey(
+              date
+            );
+
+
+          const value =
+            currentProfitMap[
+              key
+            ]?.total;
+
+
+          return `
+            <button
+              class="
+                day-cell
+                ${
+                  selectedProfitDate
+                  === key
+                    ? 'is-active'
+                    : ''
+                }
+              "
+              data-date="${key}"
+            >
+
+              <div class="day-head">
+                ${
+                  date.getDate()
+                }
+              </div>
+
+              <div
+                class="
+                  day-profit
+                  ${
+                    Number(
+                      value
+                      || 0
+                    ) >= 0
+                      ? 'pos'
+                      : 'neg'
+                  }
+                "
+              >
+                ${
+                  value == null
+                    ? ''
+                    : won(
+                        value
+                      )
+                }
+              </div>
+
+            </button>
+          `;
+        }
+      )
+      .join(
+        ''
+      )
+  );
+}
+
+
+function renderProfitDetail(
+  key
+) {
+
+  selectedProfitDate =
+    key;
+
+
+  const data =
+    currentProfitMap[
+      key
+    ];
+
+
+  setHtml(
+    'profitSummary',
+    `
+      ${key} 실현손익:
+
+      <b
+        class="${
+          Number(
+            data?.total
+            || 0
+          ) >= 0
+            ? 'pos'
+            : 'neg'
+        }"
+      >
+        ${
+          won(
+            data?.total
+            || 0
+          )
+        }
+      </b>
+    `
+  );
+
+
+  setHtml(
+    'profitDetailList',
+
+    data
+      ? data.items
+          .map(
+            trade => `
+              <div class="profit-row">
+
+                <div class="profit-left">
+
+                  <b>
+                    ${
+                      trade.name
+                      || trade.code
+                    }
+                  </b>
+
+                  <span>
+                    ${trade.code}
+                    ·
+                    ${trade.time}
+                  </span>
+
+                </div>
+
+                <div class="profit-right">
+
+                  <b
+                    class="${
+                      trade.pnl >= 0
+                        ? 'pos'
+                        : 'neg'
+                    }"
+                  >
+                    ${
+                      won(
+                        trade.pnl
+                      )
+                    }
+                  </b>
+
+                  <span>
+                    ${
+                      pct(
+                        trade.pnl_pct
+                      )
+                    }
+                  </span>
+
+                </div>
+
+              </div>
+            `
+          )
+          .join(
+            ''
+          )
+
+      : (
+          '<div class="empty">'
+          +
+          '선택한 날짜의 매매내역이 없습니다.'
+          +
+          '</div>'
+        )
+  );
+
+
+  drawProfitCalendar();
+}
+
+
+function render(
+  state
+) {
+
+  if (
+    !state
+    ||
+    state.mode
+    !== MODE
+  ) {
+
+    throw new Error(
+      'market state mismatch'
+    );
+
+  }
+
+
+  STATE =
+    state;
+
+
+  const paper =
+    state.paper
+    || {};
+
+
+  const schedule =
+    state.schedule
+    || {};
+
+
+  setText(
+    'equity',
+    won(
+      paper.equity
+    )
+  );
+
+
+  setText(
+    'heldCost',
+    (
+      '보유원가 '
+      +
+      won(
+        paper.held_cost
+      )
+      +
+      ' / 한도 '
+      +
+      won(
+        paper.effective_budget
+      )
+    )
+  );
+
+
+  if (
+    !budgetInitialized
+  ) {
+
+    $('budget').value =
+      paper.explicit_budget
+      == null
+        ? ''
+        : paper.explicit_budget;
+
+
+    $('autoMaxIfUnset').checked =
+      Boolean(
+        paper.auto_max_if_unset
+      );
+
+
+    budgetInitialized =
+      true;
+
+  }
+
+
+  setText(
+    'currentBudget',
+
+    paper.explicit_budget
+    == null
+
+      ? (
+          '현재 운용값: '
+          +
+          (
+            paper.auto_max_if_unset
+
+              ? (
+                  '자동 최대 '
+                  +
+                  won(
+                    paper.effective_budget
+                  )
+                )
+
+              : '미설정(매수 중지)'
+          )
         )
 
-    def _read_krx_history(
-        self
-    ):
-        today = datetime.now(
-            KST
-        ).date()
+      : (
+          '현재 운용값: '
+          +
+          won(
+            paper.effective_budget
+          )
+        )
+  );
 
-        history = {
-            "kospi": [],
-            "kosdaq": [],
+
+  setText(
+    'scheduleCard',
+
+    (
+      '자동매매 · 국장 '
+      +
+      (
+        schedule.kr_hours
+        || '08:00~20:00 KST'
+      )
+      +
+      ' / 미장 '
+      +
+      (
+        schedule.us_hours
+        || '20:00~06:00 KST'
+      )
+      +
+      ' · 현재 '
+      +
+      (
+        schedule.label
+        || '-'
+      )
+    )
+  );
+
+
+  setText(
+    'fxNote',
+
+    paper.usdkrw > 0
+
+      ? (
+          'USD/KRW '
+          +
+          Number(
+            paper.usdkrw
+          )
+          .toLocaleString(
+            undefined,
+            {
+              maximumFractionDigits:
+                2
+            }
+          )
+          +
+          '원 · '
+          +
+          (
+            paper.usdkrw_asof
+            || '최근 공식값'
+          )
+        )
+
+      : (
+          'USD/KRW 공식 환율 수신 대기'
+          +
+          ' · 수신 전 미장 신규매수 차단'
+        )
+  );
+
+
+  const health =
+    state.health
+    || {};
+
+
+  setText(
+    'health',
+
+    health.nh_configured
+
+      ? (
+          '● NH 연결 · KR '
+          +
+          (
+            health.kr_priced
+            || 0
+          )
+          +
+          '/'
+          +
+          (
+            health.kr_tracked
+            || 0
+          )
+          +
+          ' · US '
+          +
+          (
+            health.us_priced
+            || 0
+          )
+          +
+          '/'
+          +
+          (
+            health.us_tracked
+            || 0
+          )
+        )
+
+      : '○ NH API 키 미설정'
+  );
+
+
+  const session =
+    state.session;
+
+
+  if (
+    MODE === 'KR'
+    &&
+    session
+  ) {
+
+    setText(
+      'sessionStatus',
+      (
+        session.label
+        +
+        ' · '
+        +
+        session.status
+      )
+    );
+
+
+    $('sessionStatus').hidden =
+      false;
+
+  }
+
+  else {
+
+    $('sessionStatus').hidden =
+      true;
+
+  }
+
+
+  setHtml(
+    'markets',
+
+    marketCards(
+      Array.isArray(
+        state.market
+      )
+        ? state.market
+        : []
+    )
+  );
+
+
+  const sectors =
+    Array.isArray(
+      state.sectors
+    )
+      ? state.sectors
+      : [];
+
+
+  setHtml(
+    'sectors',
+
+    sectors.length
+
+      ? sectors
+          .map(
+            (
+              item,
+              index
+            ) => `
+              <div class="sector">
+                ${index + 1}위
+                ·
+                ${item.sector}
+                ${pct(item.change_pct)}
+                ${
+                  item.leader
+                    ? ' · '
+                      + item.leader
+                    : ''
+                }
+              </div>
+            `
+          )
+          .join(
+            ''
+          )
+
+      : (
+          '<div class="empty">'
+          +
+          '섹터 데이터 축적 중'
+          +
+          '</div>'
+        )
+  );
+
+
+  const scalp =
+    Array.isArray(
+      state.scalp
+    )
+      ? state.scalp
+      : [];
+
+
+  const smart =
+    Array.isArray(
+      state.smart
+    )
+      ? state.smart
+      : [];
+
+
+  setHtml(
+    'scalpList',
+
+    scalp.length
+
+      ? scalp
+          .map(
+            (
+              item,
+              index
+            ) =>
+              candidateRow(
+                item,
+                false,
+                index + 1
+              )
+          )
+          .join(
+            ''
+          )
+
+      : (
+          '<div class="empty">'
+          +
+          '후보 데이터 축적 중'
+          +
+          '</div>'
+        )
+  );
+
+
+  setHtml(
+    'smartList',
+
+    smart.length
+
+      ? smart
+          .map(
+            (
+              item,
+              index
+            ) =>
+              candidateRow(
+                item,
+                true,
+                index + 1
+              )
+          )
+          .join(
+            ''
+          )
+
+      : (
+          '<div class="empty">'
+          +
+          '스마트 후보 데이터 축적 중'
+          +
+          '</div>'
+        )
+  );
+
+
+  const positions =
+    Array.isArray(
+      paper.positions
+    )
+      ? paper.positions
+      : [];
+
+
+  setHtml(
+    'positions',
+
+    positions.length
+
+      ? positions
+          .map(
+            positionRow
+          )
+          .join(
+            ''
+          )
+
+      : (
+          '<div class="empty">'
+          +
+          '현재 보유종목이 없습니다.'
+          +
+          '</div>'
+        )
+  );
+
+
+  currentProfitMap =
+    buildProfitMap(
+      paper.trades
+      || []
+    );
+
+
+  drawProfitCalendar();
+
+
+  if (
+    selectedProfitDate
+  ) {
+
+    renderProfitDetail(
+      selectedProfitDate
+    );
+
+  }
+
+  else {
+
+    setHtml(
+      'profitSummary',
+      '날짜를 누르면 그날의 수익 내역이 표시됩니다.'
+    );
+
+
+    setHtml(
+      'profitDetailList',
+      '<div class="empty">아직 실현손익 데이터가 없습니다.</div>'
+    );
+
+  }
+
+
+  if (
+    state.market_separation
+    &&
+    !state.market_separation.ok
+  ) {
+
+    throw new Error(
+      'market separation violation'
+    );
+
+  }
+
+}
+
+
+async function refresh(
+  force = false
+) {
+
+  if (
+    refreshing
+    &&
+    !force
+  ) {
+    return;
+  }
+
+
+  refreshing =
+    true;
+
+
+  try {
+
+    const response =
+      await fetch(
+        `/api/state?market=${MODE}`,
+        {
+          cache:
+            'no-store'
         }
+      );
 
-        latest = {
-            "kospi": None,
-            "kosdaq": None,
-        }
 
-        last_error = None
+    if (
+      !response.ok
+    ) {
 
-        for offset in range(
-            18
-        ):
-            day = (
-                today
-                - timedelta(
-                    days=offset
-                )
-            )
+      throw new Error(
+        `state ${response.status}`
+      );
 
-            if day.weekday() >= 5:
-                continue
+    }
 
-            trade_date = (
-                day.strftime(
-                    "%Y%m%d"
-                )
-            )
 
-            try:
+    render(
+      await response.json()
+    );
 
-                kp_rows = (
-                    self._krx_rows(
-                        "02",
-                        trade_date,
-                    )
-                )
+  }
 
-                kq_rows = (
-                    self._krx_rows(
-                        "03",
-                        trade_date,
-                    )
-                )
+  catch (
+    error
+  ) {
 
-                kp = (
-                    self._find_index_row(
-                        kp_rows,
-                        (
-                            "코스피",
-                            "KOSPI",
-                        ),
-                    )
-                )
+    console.error(
+      error
+    );
 
-                kq = (
-                    self._find_index_row(
-                        kq_rows,
-                        (
-                            "코스닥",
-                            "KOSDAQ",
-                        ),
-                    )
-                )
 
-                if (
-                    not kp
-                    or not kq
-                ):
-                    raise RuntimeError(
-                        "KOSPI/KOSDAQ "
-                        "representative row "
-                        "not found"
-                    )
+    setText(
+      'health',
+      '○ 서버/데이터 연결 오류'
+    );
 
-                for (
-                    key,
-                    row,
-                ) in (
-                    (
-                        "kospi",
-                        kp,
-                    ),
-                    (
-                        "kosdaq",
-                        kq,
-                    ),
-                ):
+  }
 
-                    (
-                        value,
-                        change,
-                        change_pct,
-                    ) = (
-                        self._parse_krx_row(
-                            row
-                        )
-                    )
+  finally {
 
-                    if value <= 0:
-                        continue
+    refreshing =
+      false;
 
-                    history[
-                        key
-                    ].append(
-                        (
-                            trade_date,
-                            value,
-                        )
-                    )
+  }
 
-                    if (
-                        latest[
-                            key
-                        ]
-                        is None
-                    ):
-                        latest[
-                            key
-                        ] = (
-                            trade_date,
-                            value,
-                            change,
-                            change_pct,
-                        )
+}
 
-                if (
-                    len(
-                        history[
-                            "kospi"
-                        ]
-                    ) >= 10
-                    and len(
-                        history[
-                            "kosdaq"
-                        ]
-                    ) >= 10
-                ):
-                    break
 
-            except Exception as exc:
+function bind(
+) {
 
-                last_error = exc
+  $('saveBudgetBtn')
+    ?.addEventListener(
+      'click',
+      saveBudget
+    );
 
-            time.sleep(
-                0.08
-            )
+
+  $('marketModeBtn')
+    ?.addEventListener(
+      'click',
+      () =>
+        setMode(
+          MODE === 'KR'
+            ? 'US'
+            : 'KR'
+        )
+    );
+
+
+  $('krModeLabel')
+    ?.addEventListener(
+      'click',
+      () =>
+        setMode(
+          'KR'
+        )
+    );
+
+
+  $('usModeLabel')
+    ?.addEventListener(
+      'click',
+      () =>
+        setMode(
+          'US'
+        )
+    );
+
+
+  document
+    .querySelectorAll(
+      '[data-scroll]'
+    )
+    .forEach(
+      button =>
+
+        button
+          .addEventListener(
+            'click',
+            () =>
+              $(
+                button.dataset.scroll
+              )
+              ?.scrollIntoView(
+                {
+                  behavior:
+                    'smooth',
+
+                  block:
+                    'start'
+                }
+              )
+          )
+    );
+
+
+  document
+    .addEventListener(
+      'click',
+      event => {
+
+        const detailElement =
+          event.target
+            .closest?.(
+              '[data-detail]'
+            );
+
 
         if (
-            not latest[
-                "kospi"
-            ]
-            or not latest[
-                "kosdaq"
-            ]
-        ):
-            raise RuntimeError(
-                "KRX index load "
-                f"failed: {last_error}"
-            )
+          detailElement
+        ) {
 
-        out = {}
+          try {
 
-        for (
-            key,
-            label,
-        ) in (
-            (
-                "kospi",
-                "코스피",
-            ),
-            (
-                "kosdaq",
-                "코스닥",
-            ),
-        ):
-
-            (
-                asof,
-                value,
-                change,
-                change_pct,
-            ) = latest[
-                key
-            ]
-
-            series = [
-                v
-
-                for _,
-                v
-                in reversed(
-                    history[
-                        key
-                    ]
+            detail(
+              JSON.parse(
+                decodeURIComponent(
+                  detailElement
+                    .dataset
+                    .detail
                 )
-            ]
+              )
+            );
 
-            out[
-                key
-            ] = (
-                self._market_item(
-                    label,
-                    value,
-                    change,
-                    change_pct,
-                    (
-                        "종가 기준 · "
-                        f"{asof[:4]}-"
-                        f"{asof[4:6]}-"
-                        f"{asof[6:]}"
-                    ),
-                    "KRX 공식",
-                    series,
-                    asof,
-                )
-            )
+          }
 
-        return out
+          catch (
+            error
+          ) {
 
-    def _read_symbol_period(
-        self,
-        symbol,
-        label,
-        status="종가 기준",
-    ):
-        from nhplug import call
+            console.error(
+              error
+            );
 
-        today = datetime.now(
-            KST
-        ).strftime(
-            "%Y%m%d"
-        )
+          }
 
-        data = call(
-            "/gbstock/quote/v1/symbolIndexFxPeriod",
-            {
-                "iem_cd":
-                    symbol,
+          return;
 
-                "end_dt":
-                    today,
-
-                "array_cnt":
-                    "0012",
-
-                "maxavg":
-                    "005",
-
-                "gubun":
-                    "1",
-
-                "xtick":
-                    "001",
-
-                "today_cls":
-                    "0",
-
-                "scale_change":
-                    "0",
-            },
-        )
-
-        value = pick(
-            data,
-            (
-                "ovrs_prpr",
-                "last",
-                "close",
-                "prpr",
-            ),
-        )
-
-        sign = pick_text(
-            data,
-            (
-                "prdy_vrss_sign",
-                "sign",
-            ),
-        )
-
-        change = (
-            signed_value(
-                pick(
-                    data,
-                    (
-                        "prdy_vrss",
-                        "change",
-                    ),
-                ),
-                sign,
-            )
-        )
-
-        change_pct = (
-            signed_value(
-                pick(
-                    data,
-                    (
-                        "prdy_ctrt",
-                        "change_rate",
-                    ),
-                ),
-                sign,
-            )
-        )
-
-        rows = first_list(
-            data,
-            (
-                "Output_1",
-                "output_1",
-                "output1",
-                "Output1",
-            ),
-        )
-
-        series = []
-
-        asof = ""
-
-        for row in rows:
-
-            v = num(
-                row.get(
-                    "ovrs_prpr"
-                )
-                or row.get(
-                    "close"
-                )
-                or row.get(
-                    "last"
-                )
-            )
-
-            if v:
-                series.append(
-                    v
-                )
-
-            if not asof:
-
-                raw_date = str(
-                    row.get(
-                        "xymd"
-                    )
-                    or row.get(
-                        "date"
-                    )
-                    or row.get(
-                        "bas_dt"
-                    )
-                    or row.get(
-                        "stck_bsop_date"
-                    )
-                    or ""
-                )
-
-                if (
-                    len(
-                        raw_date
-                    ) >= 8
-                    and raw_date[
-                        :8
-                    ].isdigit()
-                ):
-                    asof = (
-                        raw_date[
-                            :8
-                        ]
-                    )
-
-        if (
-            not value
-            and series
-        ):
-            value = (
-                series[
-                    0
-                ]
-            )
-
-        if value <= 0:
-            raise RuntimeError(
-                f"{label} value "
-                f"missing for {symbol}"
-            )
-
-        if not asof:
-            asof = today
-
-        return (
-            self._market_item(
-                label,
-                value,
-                change,
-                change_pct,
-                (
-                    f"{status} · "
-                    f"{asof[:4]}-"
-                    f"{asof[4:6]}-"
-                    f"{asof[6:]}"
-                ),
-                "NHPLUG",
-                list(
-                    reversed(
-                        series
-                    )
-                ),
-                asof,
-            )
-        )
-
-    def _read_fx(
-        self
-    ):
-        item = (
-            self._read_symbol_period(
-                self.index_symbols[
-                    "usdkrw"
-                ],
-                "USD/KRW",
-                "환율 기준",
-            )
-        )
-
-        self.usdkrw = float(
-            item[
-                "value"
-            ]
-            or 0
-        )
-
-        self.usdkrw_asof = (
-            item.get(
-                "asof",
-                "",
-            )
-        )
-
-        return item
-
-    def _read_kospi_night(
-        self
-    ):
-        from nhplug import call
-
-        symbol = (
-            self.future_symbols.get(
-                "kospi_night",
-                "",
-            )
-        )
-
-        if not symbol:
-            raise RuntimeError(
-                "코스피 야간선물 "
-                "종목코드 자동탐색 실패"
-            )
-
-        data = call(
-            "/krfuture/quote/v1/night",
-            {
-                "iem_cd":
-                    symbol
-            },
-        )
-
-        value = pick(
-            data,
-            (
-                "prpr",
-            ),
-        )
-
-        sign = pick_text(
-            data,
-            (
-                "sign",
-            ),
-        )
-
-        change = (
-            signed_value(
-                pick(
-                    data,
-                    (
-                        "vrss",
-                    ),
-                ),
-                sign,
-            )
-        )
-
-        change_pct = (
-            signed_value(
-                pick(
-                    data,
-                    (
-                        "ctrt",
-                    ),
-                ),
-                sign,
-            )
-        )
-
-        if value <= 0:
-            raise RuntimeError(
-                f"{symbol} "
-                "야간선물 현재가 없음"
-            )
-
-        old = (
-            self.market.get(
-                "kospi_night",
-                {},
-            ).get(
-                "series",
-                [],
-            )
-            if self.market.get(
-                "kospi_night"
-            )
-            else []
-        )
-
-        series = (
-            old
-            + [
-                value
-            ]
-        )[-30:]
-
-        return (
-            self._market_item(
-                "코스피 야간선물",
-                value,
-                change,
-                change_pct,
-                "실시간",
-                "NHPLUG",
-                series,
-                datetime.now(
-                    KST
-                ).strftime(
-                    "%Y%m%d"
-                ),
-            )
-        )
-
-    def _read_nasdaq_future(
-        self
-    ):
-        from nhplug import call
-
-        symbol = (
-            self.future_symbols.get(
-                "nasdaq_future",
-                "",
-            )
-        )
-
-        exnm = (
-            self.future_symbols.get(
-                "nasdaq_future_exnm",
-                "FCME",
-            )
-            or "FCME"
-        )
-
-        if not symbol:
-            raise RuntimeError(
-                "NASDAQ 선물 "
-                "선도월물 자동탐색 실패"
-            )
-
-        data = call(
-            "/gbfuture/quote/v1/current",
-            {
-                "exnm":
-                    exnm,
-
-                "iem_cd":
-                    symbol,
-            },
-        )
-
-        value = pick(
-            data,
-            (
-                "last",
-            ),
-        )
-
-        sign = pick_text(
-            data,
-            (
-                "sign",
-            ),
-        )
-
-        change = (
-            signed_value(
-                pick(
-                    data,
-                    (
-                        "diff",
-                    ),
-                ),
-                sign,
-            )
-        )
-
-        change_pct = (
-            signed_value(
-                pick(
-                    data,
-                    (
-                        "rate",
-                    ),
-                ),
-                sign,
-            )
-        )
-
-        if value <= 0:
-            raise RuntimeError(
-                f"{symbol} "
-                "나스닥 선물 현재가 없음"
-            )
-
-        old = (
-            self.market.get(
-                "nasdaq_future",
-                {},
-            ).get(
-                "series",
-                [],
-            )
-            if self.market.get(
-                "nasdaq_future"
-            )
-            else []
-        )
-
-        series = (
-            old
-            + [
-                value
-            ]
-        )[-30:]
-
-        return (
-            self._market_item(
-                "나스닥 선물",
-                value,
-                change,
-                change_pct,
-                "실시간",
-                "NHPLUG",
-                series,
-                datetime.now(
-                    KST
-                ).strftime(
-                    "%Y%m%d"
-                ),
-            )
-        )
-
-    def reference_loop(
-        self
-    ):
-        last_krx = 0.0
-
-        while not self._stop.is_set():
-
-            errors = dict(
-                self.market_errors
-            )
-
-            if (
-                time.time()
-                - last_krx
-                > 600
-            ):
-                try:
-
-                    self.market.update(
-                        self._read_krx_history()
-                    )
-
-                    errors.pop(
-                        "krx_indices",
-                        None,
-                    )
-
-                    last_krx = (
-                        time.time()
-                    )
-
-                except Exception as exc:
-
-                    errors[
-                        "krx_indices"
-                    ] = str(
-                        exc
-                    )[:500]
-
-            for (
-                key,
-                label,
-            ) in (
-                (
-                    "sp500",
-                    "S&P500",
-                ),
-                (
-                    "nasdaq",
-                    "나스닥",
-                ),
-                (
-                    "sox",
-                    "필라델피아 반도체지수",
-                ),
-            ):
-
-                try:
-
-                    self.market[
-                        key
-                    ] = (
-                        self._read_symbol_period(
-                            self.index_symbols[
-                                key
-                            ],
-                            label,
-                        )
-                    )
-
-                    errors.pop(
-                        key,
-                        None,
-                    )
-
-                except Exception as exc:
-
-                    errors[
-                        key
-                    ] = str(
-                        exc
-                    )[:300]
-
-            try:
-
-                self._read_fx()
-
-                errors.pop(
-                    "usdkrw",
-                    None,
-                )
-
-            except Exception as exc:
-
-                errors[
-                    "usdkrw"
-                ] = str(
-                    exc
-                )[:300]
-
-            self.market_errors = (
-                errors
-            )
-
-            self.market_updated_at = (
-                time.time()
-            )
-
-            time.sleep(
-                60
-            )
-
-    def futures_loop(
-        self
-    ):
-        self._discover_futures()
-
-        while not self._stop.is_set():
-
-            errors = dict(
-                self.market_errors
-            )
-
-            try:
-
-                self.market[
-                    "kospi_night"
-                ] = (
-                    self._read_kospi_night()
-                )
-
-                errors.pop(
-                    "kospi_night",
-                    None,
-                )
-
-            except Exception as exc:
-
-                errors[
-                    "kospi_night"
-                ] = str(
-                    exc
-                )[:300]
-
-            try:
-
-                self.market[
-                    "nasdaq_future"
-                ] = (
-                    self._read_nasdaq_future()
-                )
-
-                errors.pop(
-                    "nasdaq_future",
-                    None,
-                )
-
-            except Exception as exc:
-
-                errors[
-                    "nasdaq_future"
-                ] = str(
-                    exc
-                )[:300]
-
-            self.market_errors = (
-                errors
-            )
-
-            self.market_updated_at = (
-                time.time()
-            )
-
-            time.sleep(
-                15
-            )
-
-    def _pending(
-        self,
-        key,
-        label,
-        source="NHPLUG",
-    ):
-        err = (
-            self.market_errors.get(
-                key
-            )
-        )
-
-        return (
-            self._market_item(
-                label,
-                None,
-                None,
-                None,
-                (
-                    "수신 오류 · "
-                    f"{err[:100]}"
-                    if err
-                    else "수신 대기"
-                ),
-                source,
-                [],
-            )
-        )
-
-    def market_state(
-        self,
-        market: str,
-    ):
-        market = (
-            "US"
-            if str(
-                market
-            ).upper()
-            == "US"
-            else "KR"
-        )
-
-        if market == "KR":
-
-            return [
-                (
-                    self.market.get(
-                        "kospi"
-                    )
-                    or self._pending(
-                        "krx_indices",
-                        "코스피",
-                        "KRX 공식",
-                    )
-                ),
-
-                (
-                    self.market.get(
-                        "kosdaq"
-                    )
-                    or self._pending(
-                        "krx_indices",
-                        "코스닥",
-                        "KRX 공식",
-                    )
-                ),
-
-                (
-                    self.market.get(
-                        "kospi_night"
-                    )
-                    or self._pending(
-                        "kospi_night",
-                        "코스피 야간선물",
-                    )
-                ),
-
-                (
-                    self.market.get(
-                        "nasdaq_future"
-                    )
-                    or self._pending(
-                        "nasdaq_future",
-                        "나스닥 선물",
-                    )
-                ),
-
-                (
-                    self.market.get(
-                        "sox"
-                    )
-                    or self._pending(
-                        "sox",
-                        "필라델피아 반도체지수",
-                    )
-                ),
-            ]
-
-        return [
-            (
-                self.market.get(
-                    "sp500"
-                )
-                or self._pending(
-                    "sp500",
-                    "S&P500",
-                )
-            ),
-
-            (
-                self.market.get(
-                    "nasdaq"
-                )
-                or self._pending(
-                    "nasdaq",
-                    "나스닥",
-                )
-            ),
-
-            (
-                self.market.get(
-                    "nasdaq_future"
-                )
-                or self._pending(
-                    "nasdaq_future",
-                    "나스닥 선물",
-                )
-            ),
-
-            (
-                self.market.get(
-                    "sox"
-                )
-                or self._pending(
-                    "sox",
-                    "필라델피아 반도체지수",
-                )
-            ),
-        ]
-
-    def health(
-        self
-    ):
-        return {
-            "nh_realtime":
-                self.connected_any(),
-
-            "realtime":
-                dict(
-                    self.connected
-                ),
-
-            "errors":
-                dict(
-                    self.errors
-                ),
-
-            "kr_tracked":
-                len(
-                    self.fixed[
-                        "KR"
-                    ]
-                ),
-
-            "kr_priced":
-                sum(
-                    1
-
-                    for q in
-                    self.quotes[
-                        "KR"
-                    ].values()
-
-                    if q.price > 0
-                ),
-
-            "us_tracked":
-                len(
-                    self.fixed[
-                        "US"
-                    ]
-                ),
-
-            "us_priced":
-                sum(
-                    1
-
-                    for q in
-                    self.quotes[
-                        "US"
-                    ].values()
-
-                    if q.price > 0
-                ),
-
-            "market_updated_at":
-                self.market_updated_at,
-
-            "market_errors":
-                dict(
-                    self.market_errors
-                ),
-
-            "usdkrw":
-                self.usdkrw,
-
-            "usdkrw_asof":
-                self.usdkrw_asof,
         }
 
-    def start(
-        self
-    ):
-        for target in (
-            self.kr_scanner,
-            self.us_scanner,
-            self.reference_loop,
-            self.futures_loop,
-        ):
 
-            threading.Thread(
-                target=target,
-                daemon=True,
-            ).start()
+        const day =
+          event.target
+            .closest?.(
+              '[data-date]'
+            );
+
+
+        if (day) {
+
+          renderProfitDetail(
+            day.dataset.date
+          );
+
+        }
+
+      }
+    );
+
+
+  $('closeModalBtn')
+    ?.addEventListener(
+      'click',
+      () =>
+        $('modal')
+          ?.classList
+          .remove(
+            'show'
+          )
+    );
+
+
+  $('modal')
+    ?.addEventListener(
+      'click',
+      event => {
+
+        if (
+          event.target
+          === event.currentTarget
+        ) {
+
+          event.currentTarget
+            .classList
+            .remove(
+              'show'
+            );
+
+        }
+
+      }
+    );
+
+
+  $('prevMonthBtn')
+    ?.addEventListener(
+      'click',
+      () => {
+
+        profitCursor =
+          new Date(
+            profitCursor
+              .getFullYear(),
+
+            profitCursor
+              .getMonth()
+              - 1,
+
+            1
+          );
+
+
+        drawProfitCalendar();
+
+      }
+    );
+
+
+  $('nextMonthBtn')
+    ?.addEventListener(
+      'click',
+      () => {
+
+        profitCursor =
+          new Date(
+            profitCursor
+              .getFullYear(),
+
+            profitCursor
+              .getMonth()
+              + 1,
+
+            1
+          );
+
+
+        drawProfitCalendar();
+
+      }
+    );
+
+}
+
+
+document
+  .addEventListener(
+    'DOMContentLoaded',
+    () => {
+
+      MODE =
+        autoViewMarket();
+
+
+      applyModeUi();
+
+
+      bind();
+
+
+      refresh();
+
+
+      setInterval(
+        refresh,
+        5000
+      );
+
+    }
+  );
