@@ -1,14 +1,13 @@
 <!doctype html>
 <html lang="ko">
+
 <head>
+
   <meta charset="utf-8">
+
   <meta
     name="viewport"
     content="width=device-width,initial-scale=1"
-  >
-  <meta
-    name="theme-color"
-    content="#07111f"
   >
 
   <title>
@@ -17,21 +16,23 @@
 
   <link
     rel="stylesheet"
-    href="/static/styles.css?v=8"
+    href="/static/styles.css?v=9"
   >
 
   <style>
+
     .market-switch-wrap {
       position: fixed;
-      top: 18px;
-      right: 18px;
+      top: 16px;
+      right: 16px;
       z-index: 1600;
 
       display: flex;
       align-items: center;
-      gap: 9px;
 
-      padding: 8px 10px;
+      gap: 8px;
+
+      padding: 7px 9px;
 
       border-radius: 999px;
 
@@ -51,76 +52,36 @@
           229,
           .22
         );
-
-      box-shadow:
-        0 10px 26px
-        rgba(
-          0,
-          0,
-          0,
-          .28
-        );
-
-      backdrop-filter:
-        blur(14px);
-
-      -webkit-backdrop-filter:
-        blur(14px);
     }
 
     .market-switch-label {
-      min-width: 27px;
-
-      text-align: center;
-
       font-size: 11px;
 
       font-weight: 800;
 
       color: #91a8c8;
 
-      user-select: none;
+      cursor: pointer;
     }
 
     .market-switch-label.active {
-      color: #ffffff;
+      color: #fff;
     }
 
     #marketModeBtn {
       position: relative;
 
-      width: 56px;
-      min-width: 56px;
+      width: 54px;
+      height: 30px;
 
-      height: 32px;
-      min-height: 32px;
+      min-height: 30px;
 
       padding: 0;
 
-      border: 0;
-
       border-radius: 999px;
-
-      background:
-        linear-gradient(
-          135deg,
-          #1f6fff,
-          #00d4ff
-        );
-
-      cursor: pointer;
-
-      box-shadow:
-        inset 0 0 0 1px
-        rgba(
-          255,
-          255,
-          255,
-          .12
-        );
     }
 
-    #marketModeBtn::after {
+    #marketModeBtn:after {
       content: "";
 
       position: absolute;
@@ -128,59 +89,43 @@
       top: 4px;
       left: 4px;
 
-      width: 24px;
-      height: 24px;
+      width: 22px;
+      height: 22px;
 
       border-radius: 50%;
 
-      background: #ffffff;
+      background: #fff;
 
-      box-shadow:
-        0 3px 10px
-        rgba(
-          0,
-          0,
-          0,
-          .3
-        );
-
-      transition:
-        transform
-        .2s ease;
+      transition: .2s;
     }
 
-    #marketModeBtn.us {
-      background:
-        linear-gradient(
-          135deg,
-          #18a957,
-          #39d98a
-        );
-    }
-
-    #marketModeBtn.us::after {
+    #marketModeBtn.us:after {
       transform:
         translateX(
           24px
         );
     }
 
-    .session-panel {
-      margin-top: 12px;
+    .session-card,
+    .schedule-card {
+      margin:
+        0
+        0
+        14px;
 
       padding:
-        14px
-        16px;
+        11px
+        13px;
 
       border-radius:
-        16px;
+        14px;
 
       background:
         rgba(
           255,
           255,
           255,
-          .035
+          .04
         );
 
       border:
@@ -191,73 +136,124 @@
           196,
           .14
         );
+
+      font-size:
+        12px;
+
+      color:
+        #b8c8df;
     }
 
-    .mode-note {
-      margin-top: 10px;
+    .session-card[hidden] {
+      display: none;
+    }
 
-      color: #91a8c8;
+    .budget-options {
+      display: flex;
+
+      align-items: center;
+
+      gap: 8px;
+
+      margin-top: 10px;
 
       font-size: 12px;
 
-      line-height: 1.55;
+      color: #b8c8df;
     }
 
-    @media (
-      max-width: 640px
+    .budget-options input {
+      width: 18px;
+
+      height: 18px;
+    }
+
+    .fx-note {
+      margin-top: 8px;
+
+      font-size: 12px;
+
+      color: #91a8c8;
+    }
+
+    .index-spark {
+      width: 100%;
+
+      height: 48px;
+
+      display: block;
+
+      margin-top: 10px;
+    }
+
+    .index-spark polyline {
+      fill: none;
+
+      stroke:
+        currentColor;
+
+      stroke-width: 2;
+
+      vector-effect:
+        non-scaling-stroke;
+    }
+
+    .market .index-spark {
+      color: #6ed8ff;
+    }
+
+    .market .index-base {
+      stroke:
+        rgba(
+          255,
+          255,
+          255,
+          .08
+        );
+
+      stroke-width: 1;
+    }
+
+    @media(
+      max-width:640px
     ) {
+
       .market-switch-wrap {
         top: 10px;
+
         right: 8px;
-
-        gap: 6px;
-
-        padding:
-          6px
-          8px;
       }
 
       .market-switch-label {
         font-size: 10px;
-        min-width: 24px;
       }
 
       #marketModeBtn {
-        width: 50px;
-        min-width: 50px;
-
-        height: 30px;
-        min-height: 30px;
+        width: 48px;
       }
 
-      #marketModeBtn::after {
-        width: 22px;
-        height: 22px;
-      }
-
-      #marketModeBtn.us::after {
+      #marketModeBtn.us:after {
         transform:
           translateX(
-            20px
+            18px
           );
       }
 
-      .topbar {
-        padding-right:
-          126px;
-      }
     }
+
   </style>
+
 </head>
 
+
 <body>
+
 
 <aside class="side-nav">
 
   <button
     class="side-btn"
     data-scroll="homeSec"
-    type="button"
   >
     <span class="side-icon">
       ⌂
@@ -268,10 +264,10 @@
     </span>
   </button>
 
+
   <button
     class="side-btn"
     data-scroll="marketSec"
-    type="button"
   >
     <span class="side-icon">
       ◎
@@ -282,10 +278,10 @@
     </span>
   </button>
 
+
   <button
     class="side-btn"
     data-scroll="sectorSec"
-    type="button"
   >
     <span class="side-icon">
       ◈
@@ -296,10 +292,10 @@
     </span>
   </button>
 
+
   <button
     class="side-btn"
     data-scroll="scalpSec"
-    type="button"
   >
     <span class="side-icon">
       ⇡
@@ -310,10 +306,10 @@
     </span>
   </button>
 
+
   <button
     class="side-btn"
     data-scroll="smartSec"
-    type="button"
   >
     <span class="side-icon">
       ◉
@@ -324,10 +320,10 @@
     </span>
   </button>
 
+
   <button
     class="side-btn"
     data-scroll="holdingSec"
-    type="button"
   >
     <span class="side-icon">
       ▣
@@ -338,10 +334,10 @@
     </span>
   </button>
 
+
   <button
     class="side-btn"
     data-scroll="profitSec"
-    type="button"
   >
     <span class="side-icon">
       ₩
@@ -362,10 +358,7 @@
 
   <span
     id="krModeLabel"
-    class="
-      market-switch-label
-      active
-    "
+    class="market-switch-label"
   >
     국장
   </span>
@@ -373,7 +366,6 @@
   <button
     id="marketModeBtn"
     type="button"
-    aria-pressed="false"
     aria-label="국장과 미장 전환"
   ></button>
 
@@ -388,6 +380,7 @@
 
 
 <div class="app-shell">
+
 
 <header class="topbar">
 
@@ -408,11 +401,10 @@
       </h1>
 
       <p
-        id="subtitleText"
+        id="subtitle"
         class="subtitle"
       >
-        NHPLUG/KRX 기반
-        AI 모의투자 대시보드
+        NHPLUG 공식 데이터 기반 국장 모의투자
       </p>
 
     </div>
@@ -433,24 +425,23 @@
   <div class="hero-left">
 
     <div class="hero-chip">
-      ● LIVE SIGNAL ENGINE
+      ● SERVER PAPER AUTO TRADING
     </div>
 
     <h2>
-      AI가 시장을 분석하고
+      사이트를 닫아도 서버에서
       <br>
-      조건 충족 종목만 모의운용
+      조건 충족 종목을 모의매매
     </h2>
 
-    <p>
-      국장과 미장을 완전히 분리해
-      공식 시세로 후보를 분석합니다.
-      실제 증권사 주문은 전송하지 않습니다.
+    <p id="heroText">
+      국내 종목·지수만 표시합니다.
     </p>
 
     <div class="hero-stats">
 
       <div class="hero-stat">
+
         <span>
           가상 총자산
         </span>
@@ -458,24 +449,21 @@
         <strong id="equity">
           -
         </strong>
+
       </div>
 
       <div class="hero-stat">
+
         <span>
           연결 상태
         </span>
 
         <strong id="health">
-          연결 확인 중
+          확인 중
         </strong>
+
       </div>
 
-    </div>
-
-    <div class="mode-note">
-      <span id="cash">
-        가상현금 -
-      </span>
     </div>
 
   </div>
@@ -500,23 +488,14 @@
       <div class="ai-core">
       </div>
 
-      <div class="ai-node node-1">
-      </div>
-
-      <div class="ai-node node-2">
-      </div>
-
-      <div class="ai-node node-3">
-      </div>
-
       <div class="ai-label-box">
 
         <b>
           NEURAL MARKET ENGINE
         </b>
 
-        <span id="heroMarketText">
-          KRX / NXT · PAPER · AUTO SIGNAL
+        <span id="engineLabel">
+          KR · PAPER · NHPLUG
         </span>
 
       </div>
@@ -526,6 +505,14 @@
   </div>
 
 </section>
+
+
+<div
+  id="scheduleCard"
+  class="schedule-card"
+>
+  거래시간 확인 중
+</div>
 
 
 <section
@@ -542,10 +529,11 @@
     </h2>
 
     <span>
-      가상자금 기준
+      원화 기준 최대 1,000,000원
     </span>
 
   </div>
+
 
   <div class="budget-box">
 
@@ -554,18 +542,30 @@
       <input
         id="budget"
         inputmode="numeric"
-        value="200000"
-        placeholder="오늘 운용금액"
+        placeholder="비우면 자동 최대금액"
       >
 
-      <button
-        id="saveBudgetBtn"
-        type="button"
-      >
+      <button id="saveBudgetBtn">
         저장
       </button>
 
     </div>
+
+
+    <label class="budget-options">
+
+      <input
+        id="autoMaxIfUnset"
+        type="checkbox"
+        checked
+      >
+
+      <span>
+        운용금액 미설정 시 최대금액 자동운용
+      </span>
+
+    </label>
+
 
     <strong
       id="currentBudget"
@@ -574,10 +574,17 @@
       현재 운용값: -
     </strong>
 
+
+    <div
+      id="fxNote"
+      class="fx-note"
+    ></div>
+
+
     <small>
-      보유 원가 합이 설정 금액에 도달하면
-      신규매수를 차단하고,
-      매도한 금액만큼 다시 운용 가능합니다.
+      미장은 입력한 원화 운용금액을
+      당일 NHPLUG USD/KRW 환율로 환산해 매수합니다.
+      환율 수신 실패 시 미장 신규매수는 차단합니다.
     </small>
 
   </div>
@@ -597,20 +604,21 @@
     </h2>
 
     <span id="marketModeCaption">
-      국장 주요 지수
+      국장 주요 지수 · 그래프 포함
     </span>
 
   </div>
 
+
+  <div
+    id="sessionStatus"
+    class="session-card"
+  ></div>
+
+
   <div
     id="markets"
     class="market-grid"
-  ></div>
-
-  <div
-    id="sessionPanel"
-    class="session-panel"
-    style="display:none"
   ></div>
 
 </section>
@@ -628,7 +636,7 @@
     </h2>
 
     <span id="sectorCaption">
-      국내 주도 섹터
+      국내 주도섹터
     </span>
 
   </div>
@@ -648,33 +656,17 @@
 
   <div class="title-row">
 
-    <h2 id="flowTitle">
-      국내 수급 포착 후보
+    <h2 id="scalpTitle">
+      국내 수급 후보
     </h2>
 
-    <span id="flowCaption">
-      KRX / NXT 공식 시세
+    <span id="scalpCaption">
+      AI 점수 · 목표가(VI)
     </span>
 
   </div>
 
-  <div class="sub-panel">
-
-    <div class="sub-title-row">
-
-      <h3>
-        실시간 후보 순위
-      </h3>
-
-      <span>
-        AI 점수 · 현재가
-      </span>
-
-    </div>
-
-    <div id="scalpList">
-    </div>
-
+  <div id="scalpList">
   </div>
 
 </section>
@@ -688,7 +680,7 @@
   <div class="title-row">
 
     <h2 id="smartTitle">
-      스마트머니 + 저평가
+      국내 스마트머니 + 저평가
     </h2>
 
     <span id="smartCaption">
@@ -717,38 +709,12 @@
       현재 보유종목
     </h2>
 
-    <span id="holdingCaption">
-      국장 PAPER
+    <span id="heldCost">
     </span>
 
   </div>
 
-  <div
-    id="heldCost"
-    class="mode-note"
-  ></div>
-
   <div id="positions">
-  </div>
-
-
-  <div class="sub-panel">
-
-    <div class="sub-title-row">
-
-      <h3>
-        오늘 PAPER 매매내역
-      </h3>
-
-      <span>
-        실제 주문 전송 0건
-      </span>
-
-    </div>
-
-    <div id="tradeList">
-    </div>
-
   </div>
 
 </section>
@@ -771,12 +737,12 @@
 
   </div>
 
+
   <div class="calendar-toolbar">
 
     <button
       id="prevMonthBtn"
       class="month-btn"
-      type="button"
     >
       ‹
     </button>
@@ -788,7 +754,6 @@
     <button
       id="nextMonthBtn"
       class="month-btn"
-      type="button"
     >
       ›
     </button>
@@ -821,8 +786,7 @@
       id="profitSummary"
       class="empty"
     >
-      날짜를 누르면
-      그날의 수익 내역이 표시됩니다.
+      날짜를 누르면 그날의 수익 내역이 표시됩니다.
     </div>
 
     <div id="profitDetailList">
@@ -847,7 +811,6 @@
     <button
       id="closeModalBtn"
       class="x"
-      type="button"
     >
       ×
     </button>
@@ -860,8 +823,9 @@
 </div>
 
 
-<script src="/static/app.js?v=8">
+<script src="/static/app.js?v=9">
 </script>
+
 
 </body>
 </html>
