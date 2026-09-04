@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import html
 import os
 import re
 import threading
@@ -15,31 +14,25 @@ from engine import Quote
 KST = timezone(timedelta(hours=9))
 
 DEFAULT_CODES = [
-    "005930",
-    "000660",
-    "035420",
-    "035720",
-    "068270",
-    "012450",
-    "267260",
-    "042700",
+    "005930", "000660", "035420", "035720",
+    "068270", "012450", "267260", "042700",
 ]
 
 
-def walk(o):
-    if isinstance(o, dict):
-        yield o
-        for v in o.values():
-            yield from walk(v)
-    elif isinstance(o, list):
-        for v in o:
-            yield from walk(v)
+def walk(obj):
+    if isinstance(obj, dict):
+        yield obj
+        for value in obj.values():
+            yield from walk(value)
+    elif isinstance(obj, list):
+        for value in obj:
+            yield from walk(value)
 
 
-def num(v):
+def num(value):
     try:
         return float(
-            str(v)
+            str(value)
             .replace(",", "")
             .replace("+", "")
             .strip()
@@ -49,37 +42,42 @@ def num(v):
 
 
 def pick(data, keys):
-    for d in walk(data):
-        for k in keys:
-            if k in d and d[k] not in (None, ""):
-                return num(d[k])
+    for item in walk(data):
+        for key in keys:
+            if (
+                key in item
+                and item[key] not in (None, "")
+            ):
+                return num(item[key])
     return 0.0
 
 
 def pick_text(data, keys):
-    for d in walk(data):
-        for k in keys:
-            v = d.get(k)
-            if v not in (None, ""):
-                return str(v)
+    for item in walk(data):
+        for key in keys:
+            value = item.get(key)
+            if value not in (None, ""):
+                return str(value)
     return ""
 
 
 def code_of(data):
-    for d in walk(data):
-        for k in (
+    for item in walk(data):
+        for key in (
             "iem_cd",
             "stck_shrn_iscd",
             "code",
             "symbol",
             "tr_key",
         ):
-            m = re.search(
+            match = re.search(
                 r"\b(\d{6})\b",
-                str(d.get(k, "")),
+                str(item.get(key, "")),
             )
-            if m:
-                return m.group(1)
+
+            if match:
+                return match.group(1)
+
     return ""
 
 
@@ -99,152 +97,9 @@ def signed_value(value, sign):
     return value
 
 
-def _normalize_krx_text(raw: str) -> str:
-    raw = html.unescape(raw or "")
-
-    raw = raw.replace(
-        "\\u25b2",
-        "▲",
-    )
-
-    raw = raw.replace(
-        "\\u25bc",
-        "▼",
-    )
-
-    raw = raw.replace(
-        "\\n",
-        " ",
-    )
-
-    raw = raw.replace(
-        "\\r",
-        " ",
-    )
-
-    raw = raw.replace(
-        "\\t",
-        " ",
-    )
-
-    raw = re.sub(
-        r"(?s)<[^>]+>",
-        " ",
-        raw,
-    )
-
-    raw = raw.replace(
-        '"',
-        " ",
-    )
-
-    raw = raw.replace(
-        "'",
-        " ",
-    )
-
-    raw = raw.replace(
-        ":",
-        " ",
-    )
-
-    raw = raw.replace(
-        "=",
-        " ",
-    )
-
-    return re.sub(
-        r"\s+",
-        " ",
-        raw,
-    ).strip()
-
-
-def _parse_krx_index(
-    text: str,
-    label: str,
-):
-    text = _normalize_krx_text(
-        text
-    )
-
-    patterns = [
-        re.compile(
-            rf"\b{re.escape(label)}\b"
-            r".{0,80}?"
-            r"([\d,]+(?:\.\d+)?)"
-            r".{0,20}?"
-            r"([▲▼+\-])"
-            r"\s*([\d,]+(?:\.\d+)?)"
-            r".{0,20}?"
-            r"\(?\s*([\d.]+)\s*\)?",
-            re.I,
-        ),
-
-        re.compile(
-            rf"\b{re.escape(label)}\b"
-            r".{0,120}?"
-            r"([\d,]+(?:\.\d+)?)"
-            r".{0,80}?"
-            r"([+\-])"
-            r"\s*([\d,]+(?:\.\d+)?)"
-            r".{0,80}?"
-            r"([\d.]+)",
-            re.I,
-        ),
-    ]
-
-    for pattern in patterns:
-        m = pattern.search(
-            text
-        )
-
-        if not m:
-            continue
-
-        value = num(
-            m.group(1)
-        )
-
-        sign_token = (
-            m.group(2)
-        )
-
-        change = abs(
-            num(
-                m.group(3)
-            )
-        )
-
-        change_pct = abs(
-            num(
-                m.group(4)
-            )
-        )
-
-        if sign_token in (
-            "▼",
-            "-",
-        ):
-            change = -change
-            change_pct = (
-                -change_pct
-            )
-
-        if value > 0:
-            return (
-                value,
-                change,
-                change_pct,
-            )
-
-    return None
-
-
 class NHFeed:
 
     def __init__(self):
-
         self.quotes: Dict[
             str,
             Quote,
@@ -290,126 +145,8 @@ class NHFeed:
         }
 
 
-    def update_nxt_session(
-        self,
-    ):
-
-        now = datetime.now(
-            KST
-        )
-
-        if now.weekday() >= 5:
-
-            self.nxt = {
-                "session":
-                    "CLOSED",
-
-                "label":
-                    "NXT 휴장",
-
-                "open":
-                    False,
-
-                "updated_at":
-                    time.time(),
-            }
-
-            return
-
-        mins = (
-            now.hour * 60
-            + now.minute
-            + now.second / 60
-        )
-
-        if (
-            480
-            <= mins
-            < 530
-        ):
-            session = "PRE"
-            label = (
-                "NXT 프리마켓"
-            )
-            opened = True
-
-        elif (
-            530
-            <= mins
-            < 540.5
-        ):
-            session = "BREAK"
-            label = (
-                "NXT 메인마켓 대기"
-            )
-            opened = False
-
-        elif (
-            540.5
-            <= mins
-            < 920
-        ):
-            session = "MAIN"
-            label = (
-                "NXT 메인마켓"
-            )
-            opened = True
-
-        elif (
-            920
-            <= mins
-            < 940
-        ):
-            session = (
-                "AFTER_WAIT"
-            )
-            label = (
-                "NXT 애프터마켓 대기"
-            )
-            opened = False
-
-        elif (
-            940
-            <= mins
-            < 1200
-        ):
-            session = "AFTER"
-            label = (
-                "NXT 애프터마켓"
-            )
-            opened = True
-
-        else:
-            session = "CLOSED"
-            label = (
-                "NXT 장외시간"
-            )
-            opened = False
-
-        self.nxt = {
-            "session":
-                session,
-
-            "label":
-                label,
-
-            "open":
-                opened,
-
-            "updated_at":
-                time.time(),
-        }
-
-
-    def q(
-        self,
-        code,
-    ):
-
-        if (
-            code
-            not in self.quotes
-        ):
+    def q(self, code):
+        if code not in self.quotes:
             self.quotes[
                 code
             ] = Quote(
@@ -422,15 +159,67 @@ class NHFeed:
         ]
 
 
+    def update_nxt_session(self):
+        now = datetime.now(
+            KST
+        )
+
+        if now.weekday() >= 5:
+            session = "CLOSED"
+            label = "NXT 휴장"
+            opened = False
+
+        else:
+            mins = (
+                now.hour * 60
+                + now.minute
+                + now.second / 60
+            )
+
+            if 480 <= mins < 530:
+                session = "PRE"
+                label = "NXT 프리마켓"
+                opened = True
+
+            elif 530 <= mins < 540.5:
+                session = "BREAK"
+                label = "NXT 메인마켓 대기"
+                opened = False
+
+            elif 540.5 <= mins < 920:
+                session = "MAIN"
+                label = "NXT 메인마켓"
+                opened = True
+
+            elif 920 <= mins < 940:
+                session = "AFTER_WAIT"
+                label = "NXT 애프터마켓 대기"
+                opened = False
+
+            elif 940 <= mins < 1200:
+                session = "AFTER"
+                label = "NXT 애프터마켓"
+                opened = True
+
+            else:
+                session = "CLOSED"
+                label = "NXT 장외시간"
+                opened = False
+
+        self.nxt = {
+            "session": session,
+            "label": label,
+            "open": opened,
+            "updated_at": time.time(),
+        }
+
+
     def _apply(
         self,
         code,
         data,
     ):
-
-        q = self.q(
-            code
-        )
+        q = self.q(code)
 
         price = pick(
             data,
@@ -455,7 +244,6 @@ class NHFeed:
         )
 
         if price:
-
             q.mark(
                 round(price),
                 volume,
@@ -549,18 +337,13 @@ class NHFeed:
         )
 
         if strength:
-
             q.execution_strength = (
                 strength
             )
 
 
-    def load_master(
-        self,
-    ):
-
+    def load_master(self):
         try:
-
             from nhplug.instruments import (
                 load_master,
             )
@@ -581,12 +364,9 @@ class NHFeed:
                     c
                     for c in cols
                     if (
-                        "code"
-                        in c.lower()
-                        or "단축"
-                        in c
-                        or "종목코드"
-                        in c
+                        "code" in c.lower()
+                        or "단축" in c
+                        or "종목코드" in c
                     )
                 ),
                 None,
@@ -597,12 +377,9 @@ class NHFeed:
                     c
                     for c in cols
                     if (
-                        "name"
-                        in c.lower()
-                        or "종목명"
-                        in c
-                        or "한글"
-                        in c
+                        "name" in c.lower()
+                        or "종목명" in c
+                        or "한글" in c
                     )
                 ),
                 None,
@@ -613,12 +390,9 @@ class NHFeed:
                     c
                     for c in cols
                     if (
-                        "업종"
-                        in c
-                        or "sector"
-                        in c.lower()
-                        or "industry"
-                        in c.lower()
+                        "업종" in c
+                        or "sector" in c.lower()
+                        or "industry" in c.lower()
                     )
                 ),
                 None,
@@ -627,12 +401,10 @@ class NHFeed:
             arr = []
 
             if code_col:
-
                 for _, row in (
                     df.iterrows()
                 ):
-
-                    m = re.search(
+                    match = re.search(
                         r"(\d{6})",
                         str(
                             row.get(
@@ -642,11 +414,11 @@ class NHFeed:
                         ),
                     )
 
-                    if not m:
+                    if not match:
                         continue
 
                     code = (
-                        m.group(1)
+                        match.group(1)
                     )
 
                     q = self.q(
@@ -654,7 +426,6 @@ class NHFeed:
                     )
 
                     if name_col:
-
                         q.name = str(
                             row.get(
                                 name_col,
@@ -664,7 +435,6 @@ class NHFeed:
                         )
 
                     if sector_col:
-
                         q.sector = str(
                             row.get(
                                 sector_col,
@@ -686,10 +456,9 @@ class NHFeed:
                 or self.fixed[:]
             )
 
-        except Exception as e:
-
+        except Exception as exc:
             self.error = (
-                f"master: {e}"
+                f"master: {exc}"
             )
 
             self.all_codes = (
@@ -697,20 +466,14 @@ class NHFeed:
             )
 
 
-    def _market_order(
-        self,
-    ):
-
+    def _market_order(self):
         self.update_nxt_session()
 
-        if (
-            self.nxt[
-                "session"
-            ]
-            in (
-                "PRE",
-                "AFTER",
-            )
+        if self.nxt[
+            "session"
+        ] in (
+            "PRE",
+            "AFTER",
         ):
             return (
                 "NXT",
@@ -733,10 +496,7 @@ class NHFeed:
         )
 
 
-    def scanner(
-        self,
-    ):
-
+    def scanner(self):
         self.load_master()
 
         codes = (
@@ -750,7 +510,6 @@ class NHFeed:
         from nhplug import call
 
         while True:
-
             code = codes[
                 self.scan_index
                 % len(codes)
@@ -767,9 +526,7 @@ class NHFeed:
             for market_cd in (
                 self._market_order()
             ):
-
                 try:
-
                     data = call(
                         "/krstock/quote/v1/currentPrice",
                         {
@@ -792,16 +549,14 @@ class NHFeed:
                         ).price
                         > 0
                     ):
-
                         self.error = ""
                         success = True
                         break
 
-                except Exception as e:
-
+                except Exception as exc:
                     last_error = (
                         f"{market_cd} "
-                        f"{code}: {e}"
+                        f"{code}: {exc}"
                     )[:300]
 
                     if (
@@ -824,10 +579,7 @@ class NHFeed:
             )
 
 
-    def priority(
-        self,
-    ):
-
+    def priority(self):
         rows = []
 
         for (
@@ -836,7 +588,6 @@ class NHFeed:
         ) in list(
             self.quotes.items()
         ):
-
             if q.price <= 0:
                 continue
 
@@ -871,7 +622,6 @@ class NHFeed:
         ]
 
         for code in self.fixed:
-
             if code not in out:
                 out.append(
                     code
@@ -887,7 +637,6 @@ class NHFeed:
         self,
         msg,
     ):
-
         code = code_of(
             msg
         )
@@ -903,26 +652,19 @@ class NHFeed:
         self.connected = True
 
 
-    def websocket(
-        self,
-    ):
-
+    def websocket(self):
         try:
-
             from nhplug.realtime import (
                 subscribe,
             )
 
-        except Exception as e:
-
+        except Exception as exc:
             self.error = (
-                f"realtime import: {e}"
+                f"realtime import: {exc}"
             )
-
             return
 
         while True:
-
             keys = (
                 self.priority()
                 or self.fixed[:20]
@@ -933,22 +675,17 @@ class NHFeed:
                 continue
 
             try:
-
                 subscribe(
                     keys,
                     self.on_tick,
                     max_messages=300,
                 )
 
-            except Exception as e:
-
-                self.connected = (
-                    False
-                )
-
-                self.error = (
-                    str(e)[:300]
-                )
+            except Exception as exc:
+                self.connected = False
+                self.error = str(
+                    exc
+                )[:300]
 
                 time.sleep(2)
 
@@ -959,209 +696,354 @@ class NHFeed:
         value,
         change,
         change_pct,
-        status="NHPLUG",
+        status,
     ):
-
         return {
-            "label":
-                label,
-
-            "value":
-                value,
-
-            "change":
-                change,
-
-            "change_pct":
-                change_pct,
-
-            "status":
-                status,
+            "label": label,
+            "value": value,
+            "change": change,
+            "change_pct": change_pct,
+            "status": status,
         }
 
 
-    def _fetch_krx_page(
+    def _krx_rows(
         self,
+        market_code,
+        trd_dd,
     ):
-
-        urls = (
-            "https://index.krx.co.kr/",
-            "https://index.krx.co.kr/main/main.jsp",
+        url = (
+            "https://data.krx.co.kr/"
+            "comm/bldAttendant/"
+            "getJsonData.cmd"
         )
 
         headers = {
-
             "User-Agent":
-                (
-                    "Mozilla/5.0 "
-                    "(Linux; Android 16; Mobile) "
-                    "AppleWebKit/537.36 "
-                    "(KHTML, like Gecko) "
-                    "Chrome/140.0 "
-                    "Mobile Safari/537.36"
-                ),
+                "Mozilla/5.0",
 
             "Accept":
-                (
-                    "text/html,"
-                    "application/xhtml+xml,"
-                    "application/xml;q=0.9,"
-                    "image/avif,"
-                    "image/webp,"
-                    "*/*;q=0.8"
-                ),
+                "application/json, "
+                "text/plain, */*",
 
             "Accept-Language":
-                "ko-KR,ko;q=0.9,en;q=0.8",
+                "ko-KR,ko;q=0.9",
 
-            "Cache-Control":
-                "no-cache",
-
-            "Pragma":
-                "no-cache",
+            "Origin":
+                "https://data.krx.co.kr",
 
             "Referer":
-                "https://index.krx.co.kr/",
+                (
+                    "https://data.krx.co.kr/"
+                    "contents/MDC/MDI/"
+                    "mdiLoader/index.cmd"
+                ),
         }
 
-        errors = []
+        payload = {
+            "bld":
+                (
+                    "dbms/MDC/STAT/"
+                    "standard/"
+                    "MDCSTAT00101"
+                ),
 
-        with requests.Session() as session:
+            "locale":
+                "ko_KR",
 
-            for url in urls:
+            "trdDd":
+                trd_dd,
 
-                try:
+            "idxIndMidclssCd":
+                market_code,
+        }
 
-                    r = session.get(
-                        url,
-                        headers=headers,
-                        timeout=12,
-                        allow_redirects=True,
-                    )
+        response = requests.post(
+            url,
+            headers=headers,
+            data=payload,
+            timeout=12,
+        )
 
-                    r.raise_for_status()
+        response.raise_for_status()
 
-                    if (
-                        not r.encoding
-                        or (
-                            r.encoding.lower()
-                            == "iso-8859-1"
-                        )
-                    ):
-                        r.encoding = (
-                            r.apparent_encoding
-                            or "utf-8"
-                        )
+        text = (
+            response.text.strip()
+        )
 
-                    text = (
-                        r.text
-                        or ""
-                    )
+        if (
+            not text
+            or text.upper()
+            == "LOGOUT"
+        ):
+            raise RuntimeError(
+                "KRX data endpoint "
+                "returned LOGOUT/empty"
+            )
 
-                    if (
-                        "KOSPI"
-                        in text
-                        and "KOSDAQ"
-                        in text
-                    ):
-                        return text
+        data = response.json()
 
-                    errors.append(
-                        (
-                            f"{url} "
-                            "no-index-text"
-                        )
-                    )
+        rows = (
+            data.get("output")
+            or data.get(
+                "OutBlock_1"
+            )
+            or data.get(
+                "block1"
+            )
+            or []
+        )
 
-                except Exception as e:
+        if not isinstance(
+            rows,
+            list,
+        ):
+            raise RuntimeError(
+                "KRX index response "
+                "has no row list"
+            )
 
-                    errors.append(
-                        (
-                            f"{url} "
-                            f"{type(e).__name__}: "
-                            f"{e}"
-                        )
-                    )
+        return rows
 
-        raise RuntimeError(
-            " | ".join(
-                errors
-            )[:500]
+
+    @staticmethod
+    def _find_index_row(
+        rows,
+        exact_name,
+    ):
+        normalized = re.sub(
+            r"\s+",
+            "",
+            exact_name,
+        ).upper()
+
+        for row in rows:
+            name = str(
+                row.get(
+                    "IDX_NM"
+                )
+                or row.get(
+                    "IDX_NM_KOR"
+                )
+                or row.get(
+                    "idx_nm"
+                )
+                or ""
+            )
+
+            name_norm = re.sub(
+                r"\s+",
+                "",
+                name,
+            ).upper()
+
+            if (
+                name_norm
+                == normalized
+            ):
+                return row
+
+        return None
+
+
+    def _parse_index_row(
+        self,
+        row,
+        label,
+    ):
+        value = num(
+            row.get(
+                "CLSPRC_IDX"
+            )
+            or row.get(
+                "TDD_CLSPRC"
+            )
+            or row.get(
+                "close"
+            )
+        )
+
+        change = num(
+            row.get(
+                "CMPPREVDD_IDX"
+            )
+            or row.get(
+                "CMPPREVDD_PRC"
+            )
+            or row.get(
+                "change"
+            )
+        )
+
+        change_pct = num(
+            row.get(
+                "FLUC_RT"
+            )
+            or row.get(
+                "change_rate"
+            )
+        )
+
+        sign = str(
+            row.get(
+                "FLUC_TP_CD"
+            )
+            or row.get(
+                "fluc_tp_cd"
+            )
+            or ""
+        )
+
+        if sign in (
+            "2",
+            "4",
+            "5",
+            "-",
+            "▼",
+        ):
+            change = (
+                -abs(change)
+            )
+
+            change_pct = (
+                -abs(
+                    change_pct
+                )
+            )
+
+        elif sign in (
+            "1",
+            "3",
+            "+",
+            "▲",
+        ):
+            change = (
+                abs(change)
+            )
+
+            change_pct = (
+                abs(
+                    change_pct
+                )
+            )
+
+        if value <= 0:
+            raise RuntimeError(
+                f"{label} value missing"
+            )
+
+        return self._market_item(
+            label,
+            value,
+            change,
+            change_pct,
+            "KRX 공식",
         )
 
 
     def _read_krx_indices(
         self,
     ):
+        last_error = None
 
-        raw = (
-            self._fetch_krx_page()
-        )
+        today = datetime.now(
+            KST
+        ).date()
 
-        kospi = _parse_krx_index(
-            raw,
-            "KOSPI",
-        )
-
-        kosdaq = _parse_krx_index(
-            raw,
-            "KOSDAQ",
-        )
-
-        if (
-            not kospi
-            or not kosdaq
+        for offset in range(
+            0,
+            8,
         ):
-
-            normalized = (
-                _normalize_krx_text(
-                    raw
+            day = (
+                today
+                - timedelta(
+                    days=offset
                 )
             )
 
-            raise RuntimeError(
-                (
-                    "KRX parse failed: "
-                    + normalized[:1200]
+            if day.weekday() >= 5:
+                continue
+
+            trd_dd = day.strftime(
+                "%Y%m%d"
+            )
+
+            try:
+                kospi_rows = (
+                    self._krx_rows(
+                        "02",
+                        trd_dd,
+                    )
                 )
-            )
 
-        out = {}
+                kosdaq_rows = (
+                    self._krx_rows(
+                        "03",
+                        trd_dd,
+                    )
+                )
 
-        for (
-            key,
-            label,
-            parsed,
-        ) in (
-            (
-                "kospi",
-                "코스피",
-                kospi,
-            ),
-            (
-                "kosdaq",
-                "코스닥",
-                kosdaq,
-            ),
-        ):
+                kospi_row = (
+                    self._find_index_row(
+                        kospi_rows,
+                        "코스피",
+                    )
+                )
 
-            (
-                value,
-                change,
-                change_pct,
-            ) = parsed
+                if kospi_row is None:
+                    kospi_row = (
+                        self._find_index_row(
+                            kospi_rows,
+                            "KOSPI",
+                        )
+                    )
 
-            out[
-                key
-            ] = self._market_item(
-                label,
-                value,
-                change,
-                change_pct,
-                "KRX 공식",
-            )
+                kosdaq_row = (
+                    self._find_index_row(
+                        kosdaq_rows,
+                        "코스닥",
+                    )
+                )
 
-        return out
+                if kosdaq_row is None:
+                    kosdaq_row = (
+                        self._find_index_row(
+                            kosdaq_rows,
+                            "KOSDAQ",
+                        )
+                    )
+
+                if (
+                    kospi_row is None
+                    or kosdaq_row is None
+                ):
+                    raise RuntimeError(
+                        "KRX KOSPI/KOSDAQ "
+                        "representative row "
+                        "not found"
+                    )
+
+                return {
+                    "kospi":
+                        self._parse_index_row(
+                            kospi_row,
+                            "코스피",
+                        ),
+
+                    "kosdaq":
+                        self._parse_index_row(
+                            kosdaq_row,
+                            "코스닥",
+                        ),
+                }
+
+            except Exception as exc:
+                last_error = exc
+
+        raise RuntimeError(
+            "KRX index load failed: "
+            f"{last_error}"
+        )
 
 
     def _read_overseas_index(
@@ -1169,7 +1051,6 @@ class NHFeed:
         symbol,
         label,
     ):
-
         from nhplug import call
 
         today = datetime.now(
@@ -1179,7 +1060,8 @@ class NHFeed:
         )
 
         data = call(
-            "/gbstock/quote/v1/symbolIndexFxPeriod",
+            "/gbstock/quote/v1/"
+            "symbolIndexFxPeriod",
             {
                 "iem_cd":
                     symbol,
@@ -1251,123 +1133,107 @@ class NHFeed:
             value,
             change,
             change_pct,
-            "NHPLUG 해외지수",
+            "NHPLUG",
         )
 
 
-    def market_loop(
-        self,
-    ):
-
+    def market_loop(self):
         while True:
+            self.update_nxt_session()
+
+            new_market = {}
+            errors = {}
 
             try:
+                new_market.update(
+                    self._read_krx_indices()
+                )
 
-                self.update_nxt_session()
+            except Exception as exc:
+                errors[
+                    "krx_indices"
+                ] = str(
+                    exc
+                )[:500]
 
-                new_market = {}
-                errors = {}
+            symbols = (
+                (
+                    "nasdaq",
+                    "NH_NASDAQ_SYMBOL",
+                    "나스닥",
+                ),
+
+                (
+                    "sox",
+                    "NH_SOX_SYMBOL",
+                    "필라델피아 반도체",
+                ),
+
+                (
+                    "nasdaq_future",
+                    "NH_NASDAQ_FUTURE_SYMBOL",
+                    "나스닥 선물",
+                ),
+
+                (
+                    "kospi_night",
+                    "NH_KOSPI_NIGHT_SYMBOL",
+                    "코스피 야간선물",
+                ),
+            )
+
+            for (
+                key,
+                env_key,
+                label,
+            ) in symbols:
+
+                symbol = os.getenv(
+                    env_key,
+                    "",
+                ).strip()
+
+                if not symbol:
+                    continue
 
                 try:
-
-                    new_market.update(
-                        self._read_krx_indices()
+                    item = (
+                        self._read_overseas_index(
+                            symbol,
+                            label,
+                        )
                     )
 
-                except Exception as e:
-
-                    errors[
-                        "krx_indices"
-                    ] = str(e)[:500]
-
-                symbols = (
-                    (
-                        "nasdaq",
-                        "NH_NASDAQ_SYMBOL",
-                        "나스닥",
-                    ),
-
-                    (
-                        "sox",
-                        "NH_SOX_SYMBOL",
-                        "필라델피아 반도체",
-                    ),
-
-                    (
-                        "nasdaq_future",
-                        "NH_NASDAQ_FUTURE_SYMBOL",
-                        "나스닥 선물",
-                    ),
-
-                    (
-                        "kospi_night",
-                        "NH_KOSPI_NIGHT_SYMBOL",
-                        "코스피 야간선물",
-                    ),
-                )
-
-                for (
-                    key,
-                    env_key,
-                    label,
-                ) in symbols:
-
-                    symbol = os.getenv(
-                        env_key,
-                        "",
-                    ).strip()
-
-                    if not symbol:
-                        continue
-
-                    try:
-
-                        item = (
-                            self._read_overseas_index(
-                                symbol,
-                                label,
-                            )
-                        )
-
-                        if item:
-
-                            new_market[
-                                key
-                            ] = item
-
-                    except Exception as e:
-
-                        errors[
+                    if item:
+                        new_market[
                             key
-                        ] = str(e)[:300]
+                        ] = item
 
-                self.market.update(
-                    new_market
-                )
+                except Exception as exc:
+                    errors[
+                        key
+                    ] = str(
+                        exc
+                    )[:300]
 
-                self.market_errors = (
-                    errors
-                )
+            self.market.update(
+                new_market
+            )
 
-                self.market_updated_at = (
-                    time.time()
-                )
+            self.market_errors = (
+                errors
+            )
 
-            except Exception as e:
-
-                self.market_errors[
-                    "market_loop"
-                ] = str(e)[:500]
+            self.market_updated_at = (
+                time.time()
+            )
 
             time.sleep(
-                20
+                30
             )
 
 
-    def market_state(
-        self,
-    ):
-
+    def market_state(self):
         self.update_nxt_session()
 
         nxt_status = (
@@ -1385,13 +1251,11 @@ class NHFeed:
 
         krx_error = (
             self.market_errors.get(
-                "krx_indices",
-                "",
+                "krx_indices"
             )
         )
 
         return [
-
             self.market.get(
                 "kospi"
             )
@@ -1478,16 +1342,12 @@ class NHFeed:
         ]
 
 
-    def start(
-        self,
-    ):
-
+    def start(self):
         for target in (
             self.scanner,
             self.websocket,
             self.market_loop,
         ):
-
             threading.Thread(
                 target=target,
                 daemon=True,
