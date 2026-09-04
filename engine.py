@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from collections import deque
-from typing import Dict
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
+from typing import Dict, Optional
 import os
 import time
 
@@ -15,6 +16,10 @@ from indicators import (
     dmi_proxy,
 )
 
+KST = timezone(
+    timedelta(hours=9)
+)
+
 
 @dataclass
 class Quote:
@@ -22,21 +27,21 @@ class Quote:
     name: str = ""
     sector: str = ""
 
-    price: float = 0
-    open: float = 0
-    high: float = 0
-    low: float = 0
+    price: float = 0.0
+    open: float = 0.0
+    high: float = 0.0
+    low: float = 0.0
 
-    volume: float = 0
-    prev_volume: float = 0
+    volume: float = 0.0
+    prev_volume: float = 0.0
 
-    per: float = 0
-    pbr: float = 0
+    per: float = 0.0
+    pbr: float = 0.0
 
-    foreign_net: float = 0
-    institution_net: float = 0
+    foreign_net: float = 0.0
+    institution_net: float = 0.0
 
-    execution_strength: float = 100
+    execution_strength: float = 100.0
 
     prices: deque = field(
         default_factory=lambda: deque(
@@ -44,102 +49,149 @@ class Quote:
         )
     )
 
-    updated_at: float = 0
+    updated_at: float = 0.0
 
     def mark(
         self,
-        p,
-        v=0,
+        price,
+        volume=0,
     ):
-        if not p:
+        if not price:
             return
 
-        p = float(p)
+        price = float(
+            price
+        )
 
-        self.price = p
+        self.price = price
 
         if not self.open:
-            self.open = p
+            self.open = price
 
         self.high = max(
-            self.high or p,
-            p,
+            self.high or price,
+            price,
         )
 
         self.low = min(
-            self.low or p,
-            p,
+            self.low or price,
+            price,
         )
+
+        volume = float(
+            volume or 0
+        )
+
+        if (
+            self.volume
+            and volume > self.volume
+        ):
+            self.prev_volume = (
+                self.volume
+            )
 
         self.volume = max(
             self.volume,
-            float(v or 0),
+            volume,
         )
 
-        self.prices.append(p)
+        self.prices.append(
+            price
+        )
 
-        self.updated_at = time.time()
+        self.updated_at = (
+            time.time()
+        )
 
 
 @dataclass
 class Position:
+    market: str
     code: str
     name: str
+
     qty: int
-    avg_price: int
-    current_price: int
+
+    avg_price: float
+    current_price: float
+
+    fx_buy: float = 1.0
+    fx_current: float = 1.0
 
     @property
-    def cost(self):
+    def key(
+        self
+    ):
+        return (
+            f"{self.market}:"
+            f"{self.code}"
+        )
+
+    @property
+    def cost_krw(
+        self
+    ):
         return (
             self.qty
             * self.avg_price
+            * (
+                self.fx_buy
+                if self.market == "US"
+                else 1.0
+            )
         )
 
     @property
-    def value(self):
+    def value_krw(
+        self
+    ):
         return (
             self.qty
             * self.current_price
+            * (
+                self.fx_current
+                if self.market == "US"
+                else 1.0
+            )
         )
 
     @property
-    def pnl(self):
+    def pnl_krw(
+        self
+    ):
         return (
-            self.value
-            - self.cost
+            self.value_krw
+            - self.cost_krw
         )
 
     @property
-    def pnl_pct(self):
-        if not self.cost:
-            return 0
+    def pnl_pct(
+        self
+    ):
+        if not self.cost_krw:
+            return 0.0
 
         return (
-            self.pnl
-            / self.cost
+            self.pnl_krw
+            / self.cost_krw
             * 100
         )
 
 
 class PaperAccount:
-    def __init__(self):
-        self.initial_cash = int(
+
+    def __init__(
+        self
+    ):
+        self.initial_cash_krw = int(
             os.getenv(
                 "PAPER_INITIAL_CASH",
                 "1000000",
             )
         )
 
-        self.cash = (
-            self.initial_cash
-        )
-
-        self.daily_budget = int(
-            os.getenv(
-                "PAPER_DAILY_BUDGET",
-                "200000",
-            )
+        self.cash_krw = float(
+            self.initial_cash_krw
         )
 
         self.positions: Dict[
@@ -149,95 +201,272 @@ class PaperAccount:
 
         self.trades = []
 
-    def held_cost(self):
-        return sum(
-            p.cost
-            for p
-            in self.positions.values()
+        self.budget_day = ""
+
+        self.explicit_budget_krw: Optional[
+            int
+        ] = None
+
+        self.auto_max_if_unset = (
+            os.getenv(
+                "PAPER_AUTO_MAX_IF_UNSET",
+                "1",
+            ).strip()
+            != "0"
         )
 
-    def equity(self):
+    def ensure_budget_day(
+        self,
+        day_key: str,
+    ):
+        if (
+            day_key
+            and self.budget_day
+            != day_key
+        ):
+            self.budget_day = (
+                day_key
+            )
+
+            self.explicit_budget_krw = (
+                None
+            )
+
+    def set_budget(
+        self,
+        amount: Optional[int],
+        day_key: str,
+    ):
+        self.ensure_budget_day(
+            day_key
+        )
+
+        if amount is None:
+            self.explicit_budget_krw = (
+                None
+            )
+
+        else:
+            self.explicit_budget_krw = max(
+                0,
+                min(
+                    int(amount),
+                    self.initial_cash_krw,
+                ),
+            )
+
+    def set_auto_max(
+        self,
+        enabled: bool,
+    ):
+        self.auto_max_if_unset = bool(
+            enabled
+        )
+
+    def effective_budget_krw(
+        self,
+        day_key: str,
+    ):
+        self.ensure_budget_day(
+            day_key
+        )
+
+        if (
+            self.explicit_budget_krw
+            is not None
+        ):
+            return (
+                self.explicit_budget_krw
+            )
+
+        if self.auto_max_if_unset:
+            return (
+                self.initial_cash_krw
+            )
+
+        return 0
+
+    def held_cost_krw(
+        self,
+        market: Optional[str] = None,
+    ):
+        return sum(
+            p.cost_krw
+
+            for p in
+            self.positions.values()
+
+            if (
+                market is None
+                or p.market == market
+            )
+        )
+
+    def equity_krw(
+        self
+    ):
         return (
-            self.cash
+            self.cash_krw
             + sum(
-                p.value
+                p.value_krw
                 for p
                 in self.positions.values()
             )
         )
 
-    def set_budget(
+    def market_positions(
         self,
-        value,
+        market: str,
     ):
-        self.daily_budget = max(
-            0,
-            int(value),
-        )
+        return [
+            p
+
+            for p
+            in self.positions.values()
+
+            if p.market == market
+        ]
 
     def buy(
         self,
-        q: Quote,
+        quote: Quote,
         qty: int,
+        market: str,
+        fx_rate: float,
+        day_key: str,
     ):
-        cost = (
-            int(q.price)
-            * qty
+        market = (
+            market.upper()
         )
 
-        if qty < 1:
-            return None
-
-        if cost > self.cash:
-            return None
-
         if (
-            self.held_cost()
-            + cost
-            > self.daily_budget
+            qty < 1
+            or quote.price <= 0
         ):
             return None
 
-        if q.code in self.positions:
+        fx = float(
+            fx_rate
+            if market == "US"
+            else 1.0
+        )
+
+        if (
+            market == "US"
+            and fx <= 0
+        ):
             return None
 
-        self.cash -= cost
+        key = (
+            f"{market}:"
+            f"{quote.code}"
+        )
+
+        if key in self.positions:
+            return None
+
+        cost_krw = (
+            quote.price
+            * qty
+            * fx
+        )
+
+        budget = (
+            self.effective_budget_krw(
+                day_key
+            )
+        )
+
+        if (
+            cost_krw
+            > self.cash_krw
+        ):
+            return None
+
+        if (
+            self.held_cost_krw()
+            + cost_krw
+            > budget
+        ):
+            return None
+
+        self.cash_krw -= (
+            cost_krw
+        )
+
+        p = Position(
+            market=market,
+            code=quote.code,
+            name=(
+                quote.name
+                or quote.code
+            ),
+            qty=qty,
+            avg_price=float(
+                quote.price
+            ),
+            current_price=float(
+                quote.price
+            ),
+            fx_buy=fx,
+            fx_current=fx,
+        )
 
         self.positions[
-            q.code
-        ] = Position(
-            q.code,
-            q.name,
-            qty,
-            int(q.price),
-            int(q.price),
+            key
+        ] = p
+
+        now = datetime.now(
+            KST
         )
 
         trade = {
             "date":
-                time.strftime(
+                now.strftime(
                     "%Y-%m-%d"
                 ),
 
             "time":
-                time.strftime(
+                now.strftime(
                     "%H:%M:%S"
                 ),
+
+            "market":
+                market,
 
             "side":
                 "BUY",
 
             "code":
-                q.code,
+                p.code,
 
             "name":
-                q.name,
+                p.name,
 
             "qty":
                 qty,
 
             "price":
-                int(q.price),
+                p.avg_price,
+
+            "currency":
+                (
+                    "USD"
+                    if market == "US"
+                    else "KRW"
+                ),
+
+            "fx_rate":
+                (
+                    fx
+                    if market == "US"
+                    else None
+                ),
+
+            "gross_krw":
+                round(
+                    cost_krw
+                ),
 
             "pnl":
                 0,
@@ -255,70 +484,127 @@ class PaperAccount:
 
     def sell(
         self,
-        code,
-        price,
+        market: str,
+        code: str,
+        price: float,
+        fx_rate: float,
     ):
-        position = (
-            self.positions.get(
-                code
-            )
+        market = (
+            market.upper()
         )
 
-        if not position:
+        key = (
+            f"{market}:"
+            f"{code}"
+        )
+
+        p = self.positions.get(
+            key
+        )
+
+        if (
+            not p
+            or price <= 0
+        ):
             return None
 
-        proceeds = (
-            int(price)
-            * position.qty
+        fx = float(
+            fx_rate
+            if market == "US"
+            else 1.0
         )
 
-        pnl = (
-            proceeds
-            - position.cost
+        if (
+            market == "US"
+            and fx <= 0
+        ):
+            return None
+
+        proceeds_krw = (
+            float(price)
+            * p.qty
+            * fx
+        )
+
+        pnl_krw = (
+            proceeds_krw
+            - p.cost_krw
         )
 
         pnl_pct = (
-            pnl
-            / position.cost
+            pnl_krw
+            / p.cost_krw
             * 100
-            if position.cost
-            else 0
+            if p.cost_krw
+            else 0.0
         )
 
-        self.cash += proceeds
+        self.cash_krw += (
+            proceeds_krw
+        )
 
         del self.positions[
-            code
+            key
         ]
+
+        now = datetime.now(
+            KST
+        )
 
         trade = {
             "date":
-                time.strftime(
+                now.strftime(
                     "%Y-%m-%d"
                 ),
 
             "time":
-                time.strftime(
+                now.strftime(
                     "%H:%M:%S"
                 ),
+
+            "market":
+                market,
 
             "side":
                 "SELL",
 
             "code":
-                position.code,
+                p.code,
 
             "name":
-                position.name,
+                p.name,
 
             "qty":
-                position.qty,
+                p.qty,
 
             "price":
-                int(price),
+                float(
+                    price
+                ),
+
+            "currency":
+                (
+                    "USD"
+                    if market == "US"
+                    else "KRW"
+                ),
+
+            "fx_rate":
+                (
+                    fx
+                    if market == "US"
+                    else None
+                ),
+
+            "gross_krw":
+                round(
+                    proceeds_krw
+                ),
 
             "pnl":
-                pnl,
+                round(
+                    pnl_krw
+                ),
 
             "pnl_pct":
                 pnl_pct,
@@ -333,14 +619,33 @@ class PaperAccount:
 
     def mark(
         self,
-        code,
-        price,
+        market: str,
+        code: str,
+        price: float,
+        fx_rate: float,
     ):
-        if code in self.positions:
-            self.positions[
-                code
-            ].current_price = int(
-                price
+        key = (
+            f"{market.upper()}:"
+            f"{code}"
+        )
+
+        p = self.positions.get(
+            key
+        )
+
+        if not p:
+            return
+
+        p.current_price = float(
+            price
+        )
+
+        if (
+            p.market == "US"
+            and fx_rate > 0
+        ):
+            p.fx_current = float(
+                fx_rate
             )
 
 
@@ -348,11 +653,11 @@ def scalp_score(
     q: Quote,
     sector_score=0,
 ):
-    prices = list(
+    px = list(
         q.prices
     )
 
-    if len(prices) < 20:
+    if len(px) < 20:
         return (
             0,
             [
@@ -363,44 +668,39 @@ def scalp_score(
     score = 0
     why = []
 
-    m,
-    signal = macd(
-        prices
+    m, signal = macd(
+        px
     )
 
     rv = rsi(
-        prices
+        px
     )
 
     wr = williams_r(
-        prices
+        px
     )
 
     ma5 = sma(
-        prices,
+        px,
         5,
     )
 
     ma10 = sma(
-        prices,
+        px,
         10,
     )
 
     ma20 = sma(
-        prices,
+        px,
         20,
     )
 
-    mid,
-    upper,
-    _ = bollinger(
-        prices
+    mid, upper, _ = bollinger(
+        px
     )
 
-    pdi,
-    mdi,
-    adx = dmi_proxy(
-        prices
+    pdi, mdi, adx = dmi_proxy(
+        px
     )
 
     if m > signal:
@@ -409,7 +709,11 @@ def scalp_score(
             "MACD"
         )
 
-    if 50 <= rv <= 72:
+    if (
+        50
+        <= rv
+        <= 72
+    ):
         score += 10
 
         why.append(
@@ -501,8 +805,7 @@ def scalp_score(
         score += add
 
         why.append(
-            "주도섹터 "
-            f"+{add:.0f}"
+            f"주도섹터 +{add:.0f}"
         )
 
     return (
@@ -523,7 +826,7 @@ def scalp_score(
 def smart_score(
     q: Quote,
 ):
-    prices = list(
+    px = list(
         q.prices
     )
 
@@ -572,19 +875,20 @@ def smart_score(
             "기관 순매수"
         )
 
-    if len(prices) >= 20:
+    if len(px) >= 20:
+
         ma5 = sma(
-            prices,
+            px,
             5,
         )
 
         ma20 = sma(
-            prices,
+            px,
             20,
         )
 
         rv = rsi(
-            prices
+            px
         )
 
         if (
@@ -600,13 +904,11 @@ def smart_score(
             )
 
         if (
-            len(prices) >= 6
-            and prices[-6] > 0
+            len(px) >= 6
+            and px[-6] > 0
             and (
-                (
-                    prices[-1]
-                    / prices[-6]
-                )
+                px[-1]
+                / px[-6]
                 - 1
             )
             * 100
@@ -627,4 +929,4 @@ def smart_score(
             ),
         ),
         why,
-    )
+        )
