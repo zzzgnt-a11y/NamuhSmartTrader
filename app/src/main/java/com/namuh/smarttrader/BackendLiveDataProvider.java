@@ -71,8 +71,7 @@ public final class BackendLiveDataProvider implements LiveDataProvider {
         for (int i=0;i<a.length();i++) {
             JSONObject x = a.optJSONObject(i);
             if (x == null) continue;
-            MarketSnapshot m = new MarketSnapshot();
-            m.label = x.optString("label");
+            MarketSnapshot m = new MarketSnapshot(x.optString("label"), x.optString("symbol", ""));
             m.value = optDoubleObj(x, "value");
             m.changePct = optDoubleObj(x, "change_pct");
             m.sparkline.addAll(doubles(x.optJSONArray("sparkline")));
@@ -88,10 +87,13 @@ public final class BackendLiveDataProvider implements LiveDataProvider {
         for (int i=0;i<a.length();i++) {
             JSONObject x = a.optJSONObject(i);
             if (x == null) continue;
-            SectorSnapshot s = new SectorSnapshot();
-            s.sector = x.optString("sector");
-            s.changePct = optDoubleObj(x, "change_pct");
-            s.leader = x.optString("leader");
+            SectorSnapshot s = new SectorSnapshot(
+                    x.optString("sector"),
+                    optDoubleObj(x, "change_pct"),
+                    optDoubleObj(x, "score"),
+                    x.optString("leader"),
+                    true
+            );
             out.add(s);
         }
         return out;

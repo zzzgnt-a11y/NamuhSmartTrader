@@ -1,0 +1,4 @@
+v0.4.1 build fix
+- BackendLiveDataProvider: MarketSnapshot/SectorSnapshot constructor mismatch fixed
+- app/build.gradle: Java 17 compileOptions added
+- GitHub Actions: checkout/setup-java v5
