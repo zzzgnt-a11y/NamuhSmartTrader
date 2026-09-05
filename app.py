@@ -359,10 +359,14 @@ def _analysis_for_bars(q,market,bars):
     return scalp_analysis(temp,secmap.get(sector_name(q,market),0),stockmap.get(q.code,0),market)
 
 @app.get("/api/stock/{market}/{code}")
-def stock_detail(market:str,code:str,timeframe:str=Query("1m")):
+def stock_detail(market:str,code:str,timeframe:str=Query("1d")):
     market=normalize_market(market);code=code.upper()
     q=feed.quotes_for(market).get(code)
     if not q:raise HTTPException(404,"tracked stock not found")
+    # Detail pages must not wait for the background history loop. Pull the
+    # latest 30 official daily bars on demand when they are not warm yet.
+    try:feed.ensure_daily_bars(market,code,30)
+    except Exception:pass
     bars=feed.bars(market,code,timeframe)
     analysis=_analysis_for_bars(q,market,bars)
     scores={}
@@ -379,7 +383,7 @@ def stock_detail(market:str,code:str,timeframe:str=Query("1m")):
                 "execution_strength":q.execution_strength if market=="KR" else None,
                 "volume_ratio":round(_vol_ratio(q),1) if q.prev_day_volume>0 else None},
         "events":q.events if market=="KR" else [],
-        "daily_bars":list(q.daily_bars)[-20:],
+        "daily_bars":list(q.daily_bars)[-30:],
     }
 
 @app.get("/api/market-check")
