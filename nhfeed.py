@@ -63,24 +63,34 @@ def normalize_date(v):
     return ""
 
 def parse_daily_rows(data, market="KR"):
-    rows=first_list(data,("Output_0","output_0","Output_1","output_1","output"))
-    out=[]
-    for r in rows:
-        if not isinstance(r,dict):continue
-        date=normalize_date(r.get("bsop_date") or r.get("xymd") or r.get("date") or r.get("trade_date"))
-        close=num(r.get("stck_clpr") or r.get("ovrs_prpr") or r.get("close_prc") or r.get("close") or r.get("trdprc"))
-        if not date or close<=0:continue
-        out.append({
-            "date":date,
-            "open":num(r.get("stck_oprc") or r.get("open_prc") or r.get("open")) or close,
-            "high":num(r.get("stck_hgpr") or r.get("high") or r.get("high_prc")) or close,
-            "low":num(r.get("stck_lwpr") or r.get("low") or r.get("low_prc")) or close,
-            "close":close,
-            "volume":num(r.get("acml_vol") or r.get("acvol") or r.get("volume") or r.get("vol")),
-        })
-    # Some APIs return newest first.
-    out.sort(key=lambda x:x["date"])
-    return out
+    # NHPLUG endpoints do not all put history in the same output block.
+    # KR currentDaily normally uses Output_0 while overseas period uses
+    # Output_1. Parse every list and keep the richest dated OHLC series.
+    candidates=[]
+    for o in walk(data):
+        if not isinstance(o,dict):continue
+        for k in ("Output_0","output_0","Output_1","output_1","output"):
+            rows=o.get(k)
+            if not isinstance(rows,list):continue
+            out=[];seen=set()
+            for r in rows:
+                if not isinstance(r,dict):continue
+                date=normalize_date(r.get("bsop_date") or r.get("xymd") or r.get("date") or r.get("trade_date"))
+                close=num(r.get("stck_clpr") or r.get("ovrs_prpr") or r.get("close_prc") or r.get("close") or r.get("trdprc"))
+                if not date or close<=0 or date in seen:continue
+                seen.add(date)
+                out.append({
+                    "date":date,
+                    "open":num(r.get("stck_oprc") or r.get("ovrs_oprc") or r.get("open_prc") or r.get("open")) or close,
+                    "high":num(r.get("stck_hgpr") or r.get("ovrs_hgpr") or r.get("high") or r.get("high_prc")) or close,
+                    "low":num(r.get("stck_lwpr") or r.get("ovrs_lwpr") or r.get("low") or r.get("low_prc")) or close,
+                    "close":close,
+                    "volume":num(r.get("acml_vol") or r.get("acvol") or r.get("movolume") or r.get("volume") or r.get("vol")),
+                })
+            if out:
+                out.sort(key=lambda x:x["date"])
+                candidates.append(out)
+    return max(candidates,key=len) if candidates else []
 
 def aggregate_ticks(ticks,minutes=1):
     if not ticks:return []
@@ -124,6 +134,11 @@ class NHFeed:
         }
         self.nxt={"session":"CLOSED","label":"NXT 장외시간","open":False,"updated_at":0.0}
         self.krx_series={"kospi":[],"kosdaq":[]}
+        # Official historical curves used when markets are closed so cards do
+        # not turn into a repeated flat current-price line.
+        self.future_history={"kospi_night":[],"nasdaq_future":[]}
+        self.future_history_updated_at={"kospi_night":0.0,"nasdaq_future":0.0}
+        self.daily_fetch_attempt_at={}
         self._stop=threading.Event()
         self.program_realtime={"connected":False,"error":"","updated_at":0.0}
         self.investor_updated_at=0.0
@@ -328,27 +343,46 @@ class NHFeed:
                 if "429" in self.errors["US"]:time.sleep(1.5)
             self._stop.wait(.5)
 
-    def _fetch_kr_daily(self,code):
+    def _fetch_kr_daily(self,code,count=30):
         from nhplug import call
         last=None
+        # Official NHPLUG sample explicitly sends array_cnt as a string.
         for market_cd in self._market_order():
             try:
-                data=call("/krstock/quote/v1/currentDaily",{"market_cd":market_cd,"iem_cd":code,"array_cnt":12})
+                data=call("/krstock/quote/v1/currentDaily",{
+                    "market_cd":market_cd,"iem_cd":code,"array_cnt":str(max(1,int(count)))
+                })
                 bars=parse_daily_rows(data,"KR")
-                if bars:return bars
+                if bars:return bars[-count:]
             except Exception as exc:last=exc
         if last:raise last
         return []
 
-    def _fetch_us_daily(self,code):
+    def _fetch_us_daily(self,code,count=30):
         from nhplug import call
         end=datetime.now(KST).strftime("%Y%m%d")
-        # Official overseas period API; gubun=3 is daily in the stock-period contract.
+        # Official overseas stock period API: gubun=3 is daily and count is
+        # a 4-character string field.
         data=call("/gbstock/quote/v1/period",{
-            "iem_cd":code,"end_dt":end,"count":"0012","maxavg":"005",
+            "iem_cd":code,"end_dt":end,"count":f"{max(1,int(count)):04d}","maxavg":"005",
             "gubun":"3","xtick":"0001","today_cls":"0","market_cls":"0",
         })
-        return parse_daily_rows(data,"US")
+        return parse_daily_rows(data,"US")[-count:]
+
+    def ensure_daily_bars(self,market,code,count=30,force=False):
+        market="US" if str(market).upper()=="US" else "KR"
+        q=self.q(market,code);count=max(1,int(count));key=f"{market}:{str(code).upper()}"
+        if not force and len(q.daily_bars)>=count:
+            return list(q.daily_bars)[-count:]
+        now=time.time();last=self.daily_fetch_attempt_at.get(key,0.0)
+        # Stock detail refreshes every five seconds; do not turn that into a
+        # historical-API request storm if the upstream returns fewer bars.
+        if not force and now-last<60:
+            return list(q.daily_bars)[-count:]
+        self.daily_fetch_attempt_at[key]=now
+        bars=self._fetch_kr_daily(code,count) if market=="KR" else self._fetch_us_daily(code,count)
+        if bars:q.set_daily_bars(bars)
+        return list(q.daily_bars)[-count:]
 
     def history_loop(self):
         idx={"KR":0,"US":0}
@@ -357,7 +391,7 @@ class NHFeed:
                 codes=self.fixed[market]
                 code=codes[idx[market]%len(codes)];idx[market]+=1
                 try:
-                    bars=self._fetch_kr_daily(code) if market=="KR" else self._fetch_us_daily(code)
+                    bars=self._fetch_kr_daily(code,30) if market=="KR" else self._fetch_us_daily(code,30)
                     if bars:self.q(market,code).set_daily_bars(bars)
                     self.history_updated_at=time.time()
                 except Exception:
@@ -437,22 +471,32 @@ class NHFeed:
     def _read_symbol_period_one(self,symbol,label,status="종가 기준"):
         from nhplug import call
         today=datetime.now(KST).strftime("%Y%m%d")
+        # Official schema: array_cnt is a 4-character string. Using an int
+        # produces IGW40011 on this endpoint. Keep 30 trading-day closes so
+        # weekends/holidays still show a meaningful official curve.
         data=call("/gbstock/quote/v1/symbolIndexFxPeriod",{
-            "iem_cd":symbol,"end_dt":today,"array_cnt":12,"maxavg":"005","gubun":"1","xtick":"001","today_cls":"0","scale_change":"0"
+            "iem_cd":symbol,"end_dt":today,"array_cnt":"0030","maxavg":"005",
+            "gubun":"1","xtick":"001","today_cls":"0","scale_change":"0"
         })
-        value=pick(data,("close_prc","ovrs_prpr","last","close","prpr"))
+        value=pick(data,("ovrs_prpr","close_prc","last","close","prpr"))
         sign=pick_text(data,("prdy_vrss_sign","sign"))
         change=signed_value(pick(data,("prdy_vrss","change")),sign)
         pct=signed_value(pick(data,("prdy_ctrt","change_rate")),sign)
-        rows=first_list(data,("Output_1","output_1"));series=[];asof=""
+        rows=first_list(data,("Output_1","output_1"));dated=[]
         for r in rows:
-            v=num(r.get("close_prc") or r.get("ovrs_prpr") or r.get("close") or r.get("last"))
-            if v:series.append(v)
-            if not asof:asof=normalize_date(r.get("bsop_date") or r.get("xymd") or r.get("date"))
-        if not value and series:value=series[0]
+            if not isinstance(r,dict):continue
+            d=normalize_date(r.get("bsop_date") or r.get("xymd") or r.get("date"))
+            v=num(r.get("ovrs_prpr") or r.get("close_prc") or r.get("close") or r.get("last"))
+            if d and v>0:dated.append((d,v))
+        # The server can return newest-first; sort explicitly.
+        dated=sorted(dict(dated).items())[-30:]
+        series=[v for _,v in dated];asof=dated[-1][0] if dated else ""
+        if not value and series:value=series[-1]
         if value<=0:raise RuntimeError(f"{label} value missing for {symbol}")
+        if not series:series=[value-change if change and value-change>0 else value,value]
+        elif abs(series[-1]-value)>1e-9:series=(series+[value])[-30:]
         asof=asof or today
-        return self._market_item(label,value,change,pct,f"{status} · {asof[:4]}-{asof[4:6]}-{asof[6:]}","NHPLUG",list(reversed(series)),asof)
+        return self._market_item(label,value,change,pct,f"공식 30거래일 추이 · {asof[:4]}-{asof[4:6]}-{asof[6:]}","NHPLUG",series[-30:],asof)
 
     def _read_symbol_period(self,key,label,status="종가 기준"):
         errs=[]
@@ -471,8 +515,14 @@ class NHFeed:
         d,rv,rc,rp=m.groups();v=num(rv);ch=num(rc);pct=num(rp)
         if v<=0:raise RuntimeError("Nasdaq SOX 값이 0 이하")
         asof=datetime.strptime(d,"%m/%d/%Y").strftime("%Y%m%d");prev=v-ch
+        existing=self.market.get("sox",{}).get("series",[])
+        if len(existing)>=3:
+            series=list(existing)[-29:]
+            if not series or abs(series[-1]-v)>1e-9:series.append(v)
+        else:
+            series=[prev,v] if prev>0 else [v]
         return self._market_item("필라델피아 반도체지수",v,ch,pct,f"공식값 · {asof[:4]}-{asof[4:6]}-{asof[6:]}",
-                                 "Nasdaq 공식",[prev,v] if prev>0 else [v],asof)
+                                 "Nasdaq 공식",series[-30:],asof)
 
     def _discover_futures(self, force=False):
         """Resolve current futures symbols from NHPLUG masters.
@@ -554,6 +604,54 @@ class NHFeed:
         except Exception as exc:
             self.market_errors["future_master"]=str(exc)[:300]
 
+    def _refresh_kospi_night_history(self,force=False):
+        now=time.time()
+        if not force and self.future_history["kospi_night"] and now-self.future_history_updated_at["kospi_night"]<900:
+            return list(self.future_history["kospi_night"])
+        from nhplug import call
+        s=self.future_symbols.get("kospi_night","")
+        if not s:return list(self.future_history["kospi_night"])
+        data=call("/krfuture/quote/v1/nightPeriod",{
+            "iem_cd":s,"mrkt_div_cls_code":"F","edate":datetime.now(KST).strftime("%Y%m%d"),
+            "array_cnt":"0030","maxavg":"005","gubun":"1","xtick":"001",
+            "today_cls_code":"0","out1_scale_change":"0","out2_scale_change":"0"
+        })
+        rows=first_list(data,("Output_1","output_1"));dated=[]
+        for r in rows:
+            if not isinstance(r,dict):continue
+            d=normalize_date(r.get("bsop_date") or r.get("date"))
+            v=num(r.get("prpr") or r.get("clpr") or r.get("close"))
+            if d and v>0:dated.append((d,v))
+        dated=sorted(dict(dated).items())[-30:]
+        if dated:
+            self.future_history["kospi_night"]=[v for _,v in dated]
+            self.future_history_updated_at["kospi_night"]=now
+        return list(self.future_history["kospi_night"])
+
+    def _refresh_nasdaq_future_history(self,force=False):
+        now=time.time()
+        if not force and self.future_history["nasdaq_future"] and now-self.future_history_updated_at["nasdaq_future"]<900:
+            return list(self.future_history["nasdaq_future"])
+        from nhplug import call
+        s=self.future_symbols.get("nasdaq_future","")
+        e=self.future_symbols.get("nasdaq_future_exnm","FCME") or "FCME"
+        if not s:return list(self.future_history["nasdaq_future"])
+        start=(datetime.now(KST)-timedelta(days=60)).strftime("%Y%m%d")
+        data=call("/gbfuture/quote/v1/executionTrendDaily",{
+            "exnm":e,"iem_cd":s,"ssymd":start,"quotyn":"Y","req_cnt":"0030"
+        })
+        rows=first_list(data,("Output_0","output_0"));dated=[]
+        for r in rows:
+            if not isinstance(r,dict):continue
+            d=normalize_date(r.get("tymd") or r.get("bsop_date") or r.get("date"))
+            v=num(r.get("clos") or r.get("last") or r.get("close"))
+            if d and v>0:dated.append((d,v))
+        dated=sorted(dict(dated).items())[-30:]
+        if dated:
+            self.future_history["nasdaq_future"]=[v for _,v in dated]
+            self.future_history_updated_at["nasdaq_future"]=now
+        return list(self.future_history["nasdaq_future"])
+
     def _read_kospi_night(self):
         from nhplug import call
         s=self.future_symbols.get("kospi_night","")
@@ -566,10 +664,16 @@ class NHFeed:
             raise RuntimeError(f"{s} 야간선물 현재가 없음")
         ch=signed_value(pick(d,("vrss","prdy_vrss","diff","change")),sign)
         pct=signed_value(pick(d,("ctrt","prdy_ctrt","rate","change_rate")),sign)
-        old=self.market.get("kospi_night",{}).get("series",[])
+        try:series=self._refresh_kospi_night_history()
+        except Exception:series=list(self.future_history.get("kospi_night",[]))
+        if series:
+            if abs(series[-1]-v)>1e-9:series=(series+[v])[-30:]
+        else:
+            old=self.market.get("kospi_night",{}).get("series",[])
+            series=(old+[v])[-30:]
         return self._market_item(
-            "코스피 야간선물",v,ch,pct,"공식 조회 · 15초 갱신","NHPLUG",
-            (old+[v])[-30:],datetime.now(KST).strftime("%Y%m%d")
+            "코스피 야간선물",v,ch,pct,"공식 30거래일 추이 · 현재가 15초 갱신","NHPLUG",
+            series[-30:],datetime.now(KST).strftime("%Y%m%d")
         )
 
     def _read_nasdaq_future(self):
@@ -585,10 +689,16 @@ class NHFeed:
             raise RuntimeError(f"{s} 나스닥 선물 현재가 없음")
         ch=signed_value(pick(d,("diff","prdy_vrss","change")),sign)
         pct=signed_value(pick(d,("rate","prdy_ctrt","change_rate")),sign)
-        old=self.market.get("nasdaq_future",{}).get("series",[])
+        try:series=self._refresh_nasdaq_future_history()
+        except Exception:series=list(self.future_history.get("nasdaq_future",[]))
+        if series:
+            if abs(series[-1]-v)>1e-9:series=(series+[v])[-30:]
+        else:
+            old=self.market.get("nasdaq_future",{}).get("series",[])
+            series=(old+[v])[-30:]
         return self._market_item(
-            "나스닥 선물",v,ch,pct,"공식 조회 · 15초 갱신","NHPLUG",
-            (old+[v])[-30:],datetime.now(KST).strftime("%Y%m%d")
+            "나스닥 선물",v,ch,pct,"공식 30거래일 추이 · 현재가 15초 갱신","NHPLUG",
+            series[-30:],datetime.now(KST).strftime("%Y%m%d")
         )
 
     def reference_loop(self):
