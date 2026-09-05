@@ -1148,7 +1148,7 @@ class NHFeed:
             r"\s*"
             r"([\d,]+(?:\.\d+)?)?"
             r"\s*"
-            r"(?:\s*([\d.]+)\s*)?",
+            r"(?:\(\s*([\d.]+)\s*\))?",
             re.IGNORECASE,
         )
 
@@ -1687,7 +1687,7 @@ class NHFeed:
 
             change_match = re.search(
                 r"\bNet\s+Change\b"
-                r"(?!\s*%)"
+                r"(?!\s*\(%\))"
                 r"\s*\|?\s*"
                 r"([+-]?[\d,]+(?:\.\d+)?)",
                 text,
@@ -1695,7 +1695,7 @@ class NHFeed:
             )
 
             pct_match = re.search(
-                r"Net\s+Change\s*%"
+                r"Net\s+Change\s*\(%\)"
                 r"\s*\|?\s*"
                 r"([+-]?[\d.]+)%?",
                 text,
@@ -2329,4 +2329,30 @@ class NHFeed:
             "market_errors":
                 dict(
                     self.market_errors
-               
+                ),
+
+            "usdkrw":
+                self.usdkrw,
+
+            "usdkrw_asof":
+                self.usdkrw_asof,
+
+            "usdkrw_tradeable":
+                self.usdkrw_tradeable,
+
+            "usdkrw_source":
+                self.usdkrw_source,
+        }
+
+    def start(self):
+        for target in (
+            self.kr_scanner,
+            self.us_scanner,
+            self.krx_loop,
+            self.reference_loop,
+            self.futures_loop,
+        ):
+            threading.Thread(
+                target=target,
+                daemon=True,
+            ).start()
