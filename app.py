@@ -38,6 +38,10 @@ BUILD_ID=(os.getenv("RENDER_GIT_COMMIT") or os.getenv("GY_BUILD_ID") or "v30-loc
 protected={x.strip() for x in os.getenv("PROTECTED_CODES","").split(",") if x.strip()}
 cache_lock=threading.Lock()
 started=False
+coin_settings_lock=threading.RLock()
+coin_budget_explicit=None
+coin_auto_max_if_unset=True
+coin_reentry_until={}
 
 CACHE={
     "KR":{"sectors":[],"scalp":[],"smart":[],"stock_strength":{},"updated_at":0.0},
@@ -92,6 +96,33 @@ def _restore_coin():
     if isinstance(data,dict):
         try:coin_paper.restore(data)
         except Exception as exc:print("COIN PAPER RESTORE ERROR:",exc,flush=True)
+
+def _persist_coin_settings():
+    with coin_settings_lock:
+        store.save_json("coin_settings",{
+            "explicit_budget_krw":coin_budget_explicit,
+            "auto_max_if_unset":coin_auto_max_if_unset,
+        })
+
+def _restore_coin_settings():
+    global coin_budget_explicit,coin_auto_max_if_unset
+    data=store.load_json("coin_settings",None)
+    if not isinstance(data,dict):return
+    with coin_settings_lock:
+        raw=data.get("explicit_budget_krw")
+        coin_budget_explicit=None if raw is None else max(0,min(coin_paper.initial_cash_krw,int(raw)))
+        coin_auto_max_if_unset=bool(data.get("auto_max_if_unset",True))
+
+def coin_effective_budget():
+    with coin_settings_lock:
+        if coin_budget_explicit is None:
+            return coin_paper.initial_cash_krw if coin_auto_max_if_unset else 0
+        return max(0,min(coin_paper.initial_cash_krw,int(coin_budget_explicit)))
+
+def coin_available_budget():
+    cap=coin_effective_budget()
+    held=coin_paper.held_cost_krw()
+    return max(0.0,min(float(coin_paper.cash_krw),float(cap)-float(held)))
 
 def normalize_market(v):
     m=str(v).upper()
@@ -479,6 +510,51 @@ def ai_loop():
             print("AI LOOP ERROR:",exc,flush=True)
         time.sleep(5)
 
+def coin_ai_loop():
+    while True:
+        try:
+            now=time.time()
+            candidates=coin_feed.candidates(max(40,coin_feed.top_n))
+            score_map={str(x.get("code") or "").upper():x for x in candidates}
+            changed=False
+            for p in list(coin_paper.positions.values()):
+                q=coin_feed.quote(p.symbol)
+                if not q or q.price<=0:continue
+                coin_paper.mark(p.symbol,q.price)
+                reason=""
+                if p.pnl_pct>=3.0:reason="익절 +3%"
+                elif p.pnl_pct<=-1.5:reason="손절 -1.5%"
+                else:
+                    item=score_map.get(p.symbol)
+                    if item is not None and float(item.get("score") or 0)<46:reason="점수 46 미만"
+                if reason:
+                    if coin_paper.sell(p.symbol,q.price,reason):
+                        coin_reentry_until[p.symbol]=now+300
+                        changed=True
+            if changed:_persist_coin()
+
+            budget=coin_effective_budget()
+            if budget>=10_000 and coin_feed.connected and len(coin_paper.positions)<3:
+                for item in candidates:
+                    if float(item.get("score") or 0)<72:break
+                    symbol=str(item.get("code") or "").upper()
+                    if not symbol or f"COIN:{symbol}" in coin_paper.positions:continue
+                    if coin_reentry_until.get(symbol,0)>now:continue
+                    if float(item.get("fresh_age") or 9999)>30:continue
+                    if float(item.get("quote_volume") or 0)<1_000_000_000:continue
+                    q=coin_feed.quote(symbol)
+                    if not q or q.price<=0:continue
+                    available=coin_available_budget()
+                    if available<10_000:break
+                    per_position=max(10_000,float(budget)/3.0)
+                    spend=min(per_position,available)
+                    if coin_paper.buy(q,spend,"COIN_SCALP"):
+                        _persist_coin()
+                        break
+        except Exception as exc:
+            print("COIN AI LOOP ERROR:",str(exc)[:180],flush=True)
+        time.sleep(5)
+
 def nh_feed_bootstrap():
     from nhplug.auth import get_token
     delay=2
@@ -510,11 +586,13 @@ def start_background():
     started=True
     _restore_paper()
     _restore_coin()
+    _restore_coin_settings()
     coin_feed.start()
     threading.Thread(target=coin_feed_diagnostic,daemon=True).start()
     if os.getenv("NHPLUG_APP_KEY") and os.getenv("NHPLUG_APP_SECRET"):
         threading.Thread(target=nh_feed_bootstrap,daemon=True).start()
     threading.Thread(target=ai_loop,daemon=True).start()
+    threading.Thread(target=coin_ai_loop,daemon=True).start()
     events.start()
 
 @asynccontextmanager
@@ -595,6 +673,20 @@ def set_budget(data:BudgetRequest):
             "auto_max_if_unset":paper.auto_max_if_unset,"effective_budget":paper.effective_budget_krw(day),
             "initial_cash":paper.initial_cash_krw}
 
+@app.post("/api/coin/budget")
+def set_coin_budget(data:BudgetRequest):
+    global coin_budget_explicit,coin_auto_max_if_unset
+    amount=data.amount
+    if amount is not None and (amount<0 or amount>coin_paper.initial_cash_krw):
+        raise HTTPException(400,f"coin budget must be 0~{coin_paper.initial_cash_krw}")
+    with coin_settings_lock:
+        coin_budget_explicit=None if amount is None else int(amount)
+        coin_auto_max_if_unset=bool(data.auto_max_if_unset)
+    _persist_coin_settings()
+    return {"ok":True,"explicit_budget":coin_budget_explicit,
+            "auto_max_if_unset":coin_auto_max_if_unset,"effective_budget":coin_effective_budget(),
+            "available_budget":krw(coin_available_budget()),"initial_cash":coin_paper.initial_cash_krw}
+
 def paper_state(market):
     active=trading_window() or default_view_market();day=trading_day_key(active)
     # Account summary is global. Market switching changes analysis context only;
@@ -629,10 +721,13 @@ def coin_account_state():
     positions.sort(key=lambda x:(x.get("name",""),x.get("code","")))
     equity=coin_paper.equity_krw()
     return {"initial_cash":coin_paper.initial_cash_krw,"cash":krw(coin_paper.cash_krw),"equity":krw(equity),
-            "budget":coin_paper.initial_cash_krw,"effective_budget":coin_paper.initial_cash_krw,
+            "budget":coin_effective_budget(),"effective_budget":coin_effective_budget(),
+            "explicit_budget":coin_budget_explicit,"auto_max_if_unset":coin_auto_max_if_unset,
+            "available_budget":krw(coin_available_budget()),
             "held_cost":krw(coin_paper.held_cost_krw()),"market_held_cost":krw(coin_paper.held_cost_krw()),
             "positions":positions,"trades":list(coin_paper.trades)[:300],"account_scope":"COIN_ONLY",
-            "auto_trade_enabled":False,"unrealized_pnl":krw(coin_paper.unrealized_pnl_krw()),
+            "auto_trade_enabled":coin_effective_budget()>=10000 and coin_feed.connected,
+            "unrealized_pnl":krw(coin_paper.unrealized_pnl_krw()),
             "total_pnl":krw(equity-coin_paper.initial_cash_krw),"exchange":"Coinone"}
 
 def global_account_state():
@@ -789,11 +884,11 @@ def coin_state_api():
     }
 
 @app.get("/api/coin/chart/{symbol}")
-def coin_chart_api(symbol:str,interval:str=Query("1m"),size:int=Query(120,ge=20,le=500)):
+def coin_chart_api(symbol:str,interval:str=Query("1d"),size:int=Query(120,ge=20,le=500)):
     return coin_detail(symbol,interval,size)
 
 @app.get("/api/coin/{symbol}")
-def coin_detail(symbol:str,interval:str=Query("1m"),size:int=Query(120,ge=20,le=500)):
+def coin_detail(symbol:str,interval:str=Query("1d"),size:int=Query(120,ge=20,le=500)):
     symbol=str(symbol).upper()
     q=coin_feed.quote(symbol)
     if not q:
