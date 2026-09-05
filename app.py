@@ -114,17 +114,20 @@ def _restore_coin_settings():
     if not isinstance(data,dict):return
     with coin_settings_lock:
         raw=data.get("explicit_budget_krw")
-        coin_budget_explicit=None if raw is None else max(0,min(coin_paper.initial_cash_krw,int(raw)))
+        coin_budget_explicit=None if raw is None else max(0,int(raw))
         coin_auto_max_if_unset=bool(data.get("auto_max_if_unset",True))
         coin_auto_trade_enabled=bool(data.get("auto_trade_enabled",True))
         try:coin_entry_score=max(50.0,min(90.0,float(data.get("entry_score",66.0))))
         except Exception:coin_entry_score=66.0
 
 def coin_effective_budget():
+    # 기준자산 150만원은 시작 기준일 뿐이다. 실제 자동운용 한도는
+    # 현재 자산(equity)을 따라 움직여 수익/손실이 다음 진입금액에도 반영된다.
+    equity=max(0.0,float(coin_paper.equity_krw()))
     with coin_settings_lock:
         if coin_budget_explicit is None:
-            return coin_paper.initial_cash_krw if coin_auto_max_if_unset else 0
-        return max(0,min(coin_paper.initial_cash_krw,int(coin_budget_explicit)))
+            return equity if coin_auto_max_if_unset else 0
+        return max(0.0,min(equity,float(coin_budget_explicit)))
 
 def coin_available_budget():
     cap=coin_effective_budget()
@@ -692,8 +695,9 @@ def set_budget(data:BudgetRequest):
 def set_coin_budget(data:BudgetRequest):
     global coin_budget_explicit,coin_auto_max_if_unset
     amount=data.amount
-    if amount is not None and (amount<0 or amount>coin_paper.initial_cash_krw):
-        raise HTTPException(400,f"coin budget must be 0~{coin_paper.initial_cash_krw}")
+    current_equity=max(0,int(round(coin_paper.equity_krw())))
+    if amount is not None and (amount<0 or amount>current_equity):
+        raise HTTPException(400,f"coin budget must be 0~current equity ({current_equity})")
     with coin_settings_lock:
         coin_budget_explicit=None if amount is None else int(amount)
         coin_auto_max_if_unset=bool(data.auto_max_if_unset)
@@ -707,8 +711,9 @@ def set_coin_budget(data:BudgetRequest):
 def set_coin_settings(data:CoinSettingsRequest):
     global coin_budget_explicit,coin_auto_max_if_unset,coin_auto_trade_enabled,coin_entry_score
     amount=data.amount
-    if amount is not None and (amount<0 or amount>coin_paper.initial_cash_krw):
-        raise HTTPException(400,f"coin budget must be 0~{coin_paper.initial_cash_krw}")
+    current_equity=max(0,int(round(coin_paper.equity_krw())))
+    if amount is not None and (amount<0 or amount>current_equity):
+        raise HTTPException(400,f"coin budget must be 0~current equity ({current_equity})")
     score=float(data.entry_score)
     if score<50 or score>90:
         raise HTTPException(400,"coin entry score must be 50~90")
