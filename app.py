@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import math
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -34,7 +35,7 @@ coin_feed=CoinoneFeed(top_n=int(os.getenv("COIN_SCAN_TOP_N","40") or 40))
 coin_paper=CryptoPaperAccount(initial_cash_krw=int(os.getenv("COIN_PAPER_INITIAL_CASH","1500000") or 1500000))
 store=StateStore()
 events=DisclosureFeed(lambda:feed.quotes_for("KR"))
-BUILD_ID=(os.getenv("RENDER_GIT_COMMIT") or os.getenv("GY_BUILD_ID") or "v32-local")[:12]
+BUILD_ID=(os.getenv("RENDER_GIT_COMMIT") or os.getenv("GY_BUILD_ID") or "v33-local")[:12]
 protected={x.strip() for x in os.getenv("PROTECTED_CODES","").split(",") if x.strip()}
 cache_lock=threading.Lock()
 started=False
@@ -43,6 +44,7 @@ coin_budget_explicit=None
 coin_auto_max_if_unset=True
 coin_auto_trade_enabled=True
 coin_entry_score=66.0
+global_auto_trade_enabled=True
 coin_reentry_until={}
 
 CACHE={
@@ -120,6 +122,17 @@ def _restore_coin_settings():
         try:coin_entry_score=max(50.0,min(90.0,float(data.get("entry_score",66.0))))
         except Exception:coin_entry_score=66.0
 
+
+
+def _persist_global_settings():
+    store.save_json("global_settings",{"auto_trade_enabled":bool(global_auto_trade_enabled)})
+
+def _restore_global_settings():
+    global global_auto_trade_enabled
+    data=store.load_json("global_settings",None)
+    if isinstance(data,dict):
+        global_auto_trade_enabled=bool(data.get("auto_trade_enabled",True))
+
 def coin_effective_budget():
     # 기준자산 150만원은 시작 기준일 뿐이다. 실제 자동운용 한도는
     # 현재 자산(equity)을 따라 움직여 수익/손실이 다음 진입금액에도 반영된다.
@@ -133,6 +146,37 @@ def coin_available_budget():
     cap=coin_effective_budget()
     held=coin_paper.held_cost_krw()
     return max(0.0,min(float(coin_paper.cash_krw),float(cap)-float(held)))
+
+
+
+def coin_candidates(n=30):
+    items=[dict(x) for x in coin_feed.candidates(max(int(n or 30),coin_feed.top_n))]
+    if not items:return []
+    by_vol=sorted(items,key=lambda x:float(x.get("quote_volume") or 0),reverse=True)
+    rank_index={str(x.get("code")):i for i,x in enumerate(by_vol)}
+    max_vol=max((float(x.get("quote_volume") or 0) for x in by_vol),default=1.0) or 1.0
+    total=max(1,len(by_vol)-1)
+    for x in items:
+        change=float(x.get("change_pct") or 0);idx=rank_index.get(str(x.get("code")),len(by_vol)-1)
+        if change<=-2:momentum=0.0
+        elif change<1:momentum=max(0.0,min(12.0,(change+2)/3*12))
+        elif change<=8:momentum=12+(change-1)/7*18
+        elif change<=15:momentum=30-(change-8)/7*15
+        else:momentum=8.0
+        rank_score=30.0*(1.0-idx/total)
+        liquidity=15.0*math.sqrt(max(0.0,float(x.get("quote_volume") or 0))/max_vol)
+        power=max(0.0,min(15.0,(float(x.get("volume_power") or 0)-90)/45*15))
+        sp=x.get("spread_pct");spread_score=5.0 if sp is None else max(0.0,min(5.0,(0.7-float(sp))/0.7*5))
+        imbalance=max(0.0,min(5.0,(float(x.get("book_imbalance") or 0)+20)/60*5))
+        x["score_breakdown"]={
+            "거래대금순위":{"value":round(rank_score,1),"max":30},
+            "모멘텀":{"value":round(momentum,1),"max":30},
+            "유동성":{"value":round(liquidity,1),"max":15},
+            "체결강도":{"value":round(power,1),"max":15},
+            "스프레드":{"value":round(spread_score,1),"max":5},
+            "호가균형":{"value":round(imbalance,1),"max":5},
+        }
+    return items[:int(n or 30)]
 
 def normalize_market(v):
     m=str(v).upper()
@@ -511,11 +555,13 @@ def ai_loop():
             active=trading_window(now)
             if active=="KR":
                 mark_and_sell("KR",kr_scalp,kr_smart,now)
-                trade_scalp("KR",kr_scalp,now)
-                trade_smart_kr(kr_smart,now)
+                if global_auto_trade_enabled:
+                    trade_scalp("KR",kr_scalp,now)
+                    trade_smart_kr(kr_smart,now)
             elif active=="US":
                 mark_and_sell("US",us_scalp,[],now)
-                trade_scalp("US",us_scalp,now)
+                if global_auto_trade_enabled:
+                    trade_scalp("US",us_scalp,now)
         except Exception as exc:
             print("AI LOOP ERROR:",exc,flush=True)
         time.sleep(5)
@@ -524,7 +570,7 @@ def coin_ai_loop():
     while True:
         try:
             now=time.time()
-            candidates=coin_feed.candidates(max(40,coin_feed.top_n))
+            candidates=coin_candidates(max(40,coin_feed.top_n))
             score_map={str(x.get("code") or "").upper():x for x in candidates}
             changed=False
             for p in list(coin_paper.positions.values()):
@@ -544,7 +590,7 @@ def coin_ai_loop():
             if changed:_persist_coin()
 
             budget=coin_effective_budget()
-            if coin_auto_trade_enabled and budget>=10_000 and coin_feed.connected:
+            if global_auto_trade_enabled and budget>=10_000 and coin_feed.connected:
                 for item in candidates:
                     if float(item.get("score") or 0)<coin_entry_score:break
                     symbol=str(item.get("code") or "").upper()
@@ -599,6 +645,7 @@ def start_background():
     _restore_paper()
     _restore_coin()
     _restore_coin_settings()
+    _restore_global_settings()
     coin_feed.start()
     threading.Thread(target=coin_feed_diagnostic,daemon=True).start()
     if os.getenv("NHPLUG_APP_KEY") and os.getenv("NHPLUG_APP_SECRET"):
@@ -668,6 +715,7 @@ def health_payload():
             "krx_openapi_configured":h.get("krx_openapi_configured",False),"sector_catalog_count":h.get("sector_catalog_count",0),
             "sector_scan_count":h.get("sector_scan_count",0),"sector_universe_asof":h.get("sector_universe_asof",""),
             "coinone":ch,"coin_paper_initial_cash":coin_paper.initial_cash_krw,
+            "global_auto_trade_enabled":bool(global_auto_trade_enabled),
             "persistence":store.status(),"signal_count_30d":store.recent_signal_count(30),"build":BUILD_ID,"schedule":schedule_payload()}
 
 @app.get("/api/health")
@@ -683,6 +731,9 @@ class CoinSettingsRequest(BaseModel):
     auto_trade_enabled:bool=True
     entry_score:float=66.0
 
+class GlobalAutoTradeRequest(BaseModel):
+    enabled:bool=True
+
 @app.post("/api/budget")
 def set_budget(data:BudgetRequest):
     active=trading_window() or default_view_market();day=trading_day_key(active)
@@ -690,6 +741,14 @@ def set_budget(data:BudgetRequest):
     return {"ok":True,"budget_day":paper.budget_day,"explicit_budget":paper.explicit_budget_krw,
             "auto_max_if_unset":paper.auto_max_if_unset,"effective_budget":paper.effective_budget_krw(day),
             "initial_cash":paper.initial_cash_krw}
+
+@app.post("/api/auto-trade")
+def set_global_auto_trade(data:GlobalAutoTradeRequest):
+    global global_auto_trade_enabled
+    global_auto_trade_enabled=bool(data.enabled)
+    _persist_global_settings()
+    return {"ok":True,"enabled":global_auto_trade_enabled,
+            "behavior":"new_entries_only","position_management":"continues"}
 
 @app.post("/api/coin/budget")
 def set_coin_budget(data:BudgetRequest):
@@ -720,7 +779,7 @@ def set_coin_settings(data:CoinSettingsRequest):
     with coin_settings_lock:
         coin_budget_explicit=None if amount is None else int(amount)
         coin_auto_max_if_unset=bool(data.auto_max_if_unset)
-        coin_auto_trade_enabled=bool(data.auto_trade_enabled)
+        coin_auto_trade_enabled=True
         coin_entry_score=round(score,1)
     _persist_coin_settings()
     return {"ok":True,"explicit_budget":coin_budget_explicit,
@@ -747,7 +806,8 @@ def paper_state(market):
             "budget":paper.effective_budget_krw(day),"effective_budget":paper.effective_budget_krw(day),
             "auto_max_if_unset":paper.auto_max_if_unset,"held_cost":krw(paper.held_cost_krw()),
             "market_held_cost":krw(paper.held_cost_krw(market)),"positions":pos,"trades":trades,
-            "account_scope":"ALL","auto_trade_enabled":trading_window()==market,
+            "account_scope":"ALL","auto_trade_enabled":bool(global_auto_trade_enabled and trading_window()==market),
+            "global_auto_trade_enabled":bool(global_auto_trade_enabled),
             "usdkrw":feed.usdkrw,"usdkrw_asof":feed.usdkrw_asof}
 
 def coin_account_state():
@@ -768,8 +828,8 @@ def coin_account_state():
             "available_budget":krw(coin_available_budget()),
             "held_cost":krw(coin_paper.held_cost_krw()),"market_held_cost":krw(coin_paper.held_cost_krw()),
             "positions":positions,"trades":list(coin_paper.trades)[:300],"account_scope":"COIN_ONLY",
-            "auto_trade_enabled":bool(coin_auto_trade_enabled),"entry_score":coin_entry_score,
-            "position_limit":None,"position_count":len(positions),
+            "auto_trade_enabled":bool(global_auto_trade_enabled),"global_auto_trade_enabled":bool(global_auto_trade_enabled),
+            "entry_score":coin_entry_score,"position_limit":None,"position_count":len(positions),
             "unrealized_pnl":krw(coin_paper.unrealized_pnl_krw()),
             "total_pnl":krw(equity-coin_paper.initial_cash_krw),"exchange":"Coinone"}
 
@@ -792,7 +852,7 @@ def market_separation_check(market,scalp,smart,positions):
 def state(market:str=Query("KR")):
     market=normalize_market(market)
     if market=="COIN":
-        candidates=coin_feed.candidates(30)
+        candidates=coin_candidates(30)
         return {"mode":"COIN","health":health_payload(),
                 "market":{"exchange":"Coinone","quote_currency":"KRW","open":True,"status":"24시간 거래",
                           "updated_at":coin_feed.updated_at,"source":"Coinone Public API"},
@@ -800,6 +860,7 @@ def state(market:str=Query("KR")):
                 "sectors":[],"scalp":candidates,"smart":[],"candidate_scan_active":True,
                 "macro_events":[],"events":{"items":[]},"cache_updated_at":coin_feed.updated_at,
                 "paper":coin_account_state(),"global_account":global_account_state(),"build":BUILD_ID,
+                "global_auto_trade_enabled":bool(global_auto_trade_enabled),
                 "sector_coverage":{"catalog":0,"live":len(candidates),"asof":""},
                 "protected_codes":[],"market_separation":{"ok":True,"market":"COIN","bad_codes":[]}}
     scan_active=trading_window()==market
@@ -816,6 +877,7 @@ def state(market:str=Query("KR")):
             "session":feed.session_state(market),"sectors":sectors,"scalp":scalp,"smart":smart,
             "candidate_scan_active":scan_active,"macro_events":macro_calendar_payload(),
             "events":events.state(market),"cache_updated_at":updated,"paper":ps,"global_account":global_account_state(),"build":BUILD_ID,
+            "global_auto_trade_enabled":bool(global_auto_trade_enabled),
             "sector_coverage":{"catalog":health_payload().get("sector_catalog_count",0),"live":health_payload().get("sector_scan_count",0),
                                "asof":health_payload().get("sector_universe_asof","")},
             "protected_codes":sorted(protected) if market=="KR" else [],"market_separation":sep}
@@ -921,8 +983,9 @@ def coin_state_api():
         })
     return {
         "mode":"COIN","exchange":"Coinone","account":account,"overall":overall,
-        "health":coin_feed.health(),"market":market,"candidates":coin_feed.candidates(30),
-        "settings":{"entry_score":coin_entry_score,"auto_trade_enabled":coin_auto_trade_enabled,
+        "health":coin_feed.health(),"market":market,"candidates":coin_candidates(30),
+        "settings":{"entry_score":coin_entry_score,"auto_trade_enabled":bool(global_auto_trade_enabled),
+                    "global_auto_trade_enabled":bool(global_auto_trade_enabled),
                     "effective_budget":coin_effective_budget(),"position_limit":None},
         "source":"Coinone Public API","real_orders_enabled":False,"build":BUILD_ID,
     }
@@ -941,7 +1004,7 @@ def coin_detail(symbol:str,interval:str=Query("1d"),size:int=Query(120,ge=20,le=
     if not q:raise HTTPException(404,"coin not found on Coinone KRW market")
     try:bars=coin_feed.chart(symbol,interval,size)
     except Exception as exc:raise HTTPException(502,f"Coinone chart error: {str(exc)[:180]}")
-    candidate=next((x for x in coin_feed.candidates(max(30,coin_feed.top_n)) if x.get("code")==symbol),None)
+    candidate=next((x for x in coin_candidates(max(30,coin_feed.top_n)) if x.get("code")==symbol),None)
     return {"market":"COIN","exchange":"Coinone","code":symbol,"name":q.name or symbol,
             "price":q.price,"currency":"KRW","interval":interval,"bars":bars,"candidate":candidate,
             "change_pct":q.change_pct,"quote_volume":q.quote_volume,"target_volume":q.target_volume,
@@ -950,7 +1013,8 @@ def coin_detail(symbol:str,interval:str=Query("1d"),size:int=Query(120,ge=20,le=
             "quote":{"change_pct":q.change_pct,"quote_volume":q.quote_volume,"target_volume":q.target_volume,
                      "volume_power":q.volume_power,"ask_price":q.ask_price,"bid_price":q.bid_price,
                      "spread_pct":q.spread_pct,"book_imbalance":q.book_imbalance,"updated_at":q.updated_at},
-            "settings":{"entry_score":coin_entry_score,"auto_trade_enabled":coin_auto_trade_enabled,"position_limit":None},
+            "settings":{"entry_score":coin_entry_score,"auto_trade_enabled":bool(global_auto_trade_enabled),
+                        "global_auto_trade_enabled":bool(global_auto_trade_enabled),"position_limit":None},
             "source":"Coinone Public API","real_orders_enabled":False,"build":BUILD_ID}
 
 @app.get("/api/coin-account")
