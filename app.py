@@ -7,6 +7,7 @@ import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Query, HTTPException
@@ -62,6 +63,51 @@ def trading_day_key(market,now=None):
 def smart_buy_window(now=None):
     now=(now or datetime.now(KST)).astimezone(KST);m=now.hour*60+now.minute
     return now.weekday()<5 and 540<=m<920
+
+# High-impact macro calendar. Dates are sourced from the official Federal
+# Reserve and U.S. Bureau of Labor Statistics release schedules. The API
+# converts the official U.S. Eastern release time to KST so the dashboard
+# calendar is useful without the user doing timezone math.
+_FOMC_2026=[
+    ("2026-01-28","Jan 27-28",False),("2026-03-18","Mar 17-18",True),
+    ("2026-04-29","Apr 28-29",False),("2026-06-17","Jun 16-17",True),
+    ("2026-07-29","Jul 28-29",False),("2026-09-16","Sep 15-16",True),
+    ("2026-10-28","Oct 27-28",False),("2026-12-09","Dec 8-9",True),
+]
+_FOMC_2027=[
+    ("2027-01-27","Jan 26-27",False),("2027-03-17","Mar 16-17",True),
+    ("2027-04-28","Apr 27-28",False),("2027-06-09","Jun 8-9",True),
+    ("2027-07-28","Jul 27-28",False),("2027-09-15","Sep 14-15",True),
+    ("2027-10-27","Oct 26-27",False),("2027-12-08","Dec 7-8",True),
+]
+_CPI_2026=["2026-01-13","2026-02-13","2026-03-11","2026-04-10","2026-05-12","2026-06-10","2026-07-14","2026-08-12","2026-09-11","2026-10-14","2026-11-10","2026-12-10"]
+_PPI_2026=["2026-01-14","2026-01-30","2026-02-27","2026-03-18","2026-04-14","2026-05-13","2026-06-11","2026-07-15","2026-08-13","2026-09-10","2026-10-15","2026-11-13","2026-12-15"]
+_NFP_2026=["2026-01-09","2026-02-11","2026-03-06","2026-04-03","2026-05-08","2026-06-05","2026-07-02","2026-08-07","2026-09-04","2026-10-02","2026-11-06","2026-12-04"]
+
+def _macro_event(us_date,et_time,label,title,source,url,importance="high",note=""):
+    et=ZoneInfo("America/New_York")
+    dt=datetime.strptime(f"{us_date} {et_time}","%Y-%m-%d %H:%M").replace(tzinfo=et).astimezone(KST)
+    return {
+        "date":dt.strftime("%Y-%m-%d"),"time_kst":dt.strftime("%H:%M"),
+        "official_date":us_date,"official_time_et":et_time,"label":label,"title":title,
+        "importance":importance,"source":source,"url":url,"note":note,
+    }
+
+def macro_calendar_payload():
+    out=[]
+    fed_url="https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"
+    bls_url="https://www.bls.gov/schedule/"
+    for us_date,meeting,sep in _FOMC_2026+_FOMC_2027:
+        title="FOMC 금리결정 · 기자회견"+(" · SEP" if sep else "")
+        out.append(_macro_event(us_date,"14:00","FOMC",title,"Federal Reserve",fed_url,"critical",f"미국 현지 회의 {meeting}"))
+    for d in _CPI_2026:
+        out.append(_macro_event(d,"08:30","CPI","미국 소비자물가지수(CPI)","U.S. BLS",bls_url,"critical"))
+    for d in _PPI_2026:
+        out.append(_macro_event(d,"08:30","PPI","미국 생산자물가지수(PPI)","U.S. BLS",bls_url,"high"))
+    for d in _NFP_2026:
+        out.append(_macro_event(d,"08:30","NFP","미국 고용보고서(Employment Situation)","U.S. BLS",bls_url,"critical"))
+    out.sort(key=lambda x:(x["date"],x["time_kst"],x["label"]))
+    return out
 
 def schedule_payload(now=None):
     now=(now.astimezone(KST) if now else datetime.now(KST));active=trading_window(now);ss=scalp_session(now)
@@ -279,6 +325,17 @@ app.mount("/static",StaticFiles(directory="static"),name="static")
 def home():
     return FileResponse("static/index.html",headers={"Cache-Control":"no-store, max-age=0"})
 
+INDEX_KEYS={
+    "KR":{"kospi","kosdaq","kospi_night","nasdaq_future","sox"},
+    "US":{"sp500","nasdaq","nasdaq_future","sox"},
+}
+
+@app.get("/index/{market}/{key}")
+def index_page(market:str,key:str):
+    market=normalize_market(market);key=str(key).lower()
+    if key not in INDEX_KEYS[market]:raise HTTPException(404,"index not available in this market mode")
+    return FileResponse("static/index-detail.html",headers={"Cache-Control":"no-store, max-age=0"})
+
 @app.get("/stock/{market}/{code}")
 def stock_page(market:str,code:str):
     market=normalize_market(market)
@@ -336,11 +393,17 @@ def market_separation_check(market,scalp,smart,positions):
 @app.get("/api/state")
 def state(market:str=Query("KR")):
     market=normalize_market(market)
+    scan_active=trading_window()==market
     with cache_lock:
-        c=CACHE[market];sectors=list(c["sectors"]);scalp=list(c["scalp"][:30]);smart=list(c["smart"][:30]) if market=="KR" else [];updated=c["updated_at"]
+        c=CACHE[market];sectors=list(c["sectors"]);updated=c["updated_at"]
+        # Keep the analysis cache warm in the background, but do not fill the
+        # closed-market dashboard with zero/stale candidate cards.
+        scalp=list(c["scalp"][:30]) if scan_active else []
+        smart=(list(c["smart"][:30]) if market=="KR" and scan_active else [])
     ps=paper_state(market);sep=market_separation_check(market,scalp,smart,ps["positions"])
     return {"mode":market,"health":health_payload(),"schedule":schedule_payload(),"market":feed.market_state(market),
             "session":feed.session_state(market),"sectors":sectors,"scalp":scalp,"smart":smart,
+            "candidate_scan_active":scan_active,"macro_events":macro_calendar_payload(),
             "events":events.state(market),"cache_updated_at":updated,"paper":ps,
             "protected_codes":sorted(protected) if market=="KR" else [],"market_separation":sep}
 
@@ -384,6 +447,22 @@ def stock_detail(market:str,code:str,timeframe:str=Query("1d")):
                 "volume_ratio":round(_vol_ratio(q),1) if q.prev_day_volume>0 else None},
         "events":q.events if market=="KR" else [],
         "daily_bars":list(q.daily_bars)[-30:],
+    }
+
+@app.get("/api/index/{market}/{key}")
+def index_detail(market:str,key:str,timeframe:str=Query("1d")):
+    market=normalize_market(market);key=str(key).lower();tf=str(timeframe).lower()
+    if key not in INDEX_KEYS[market]:raise HTTPException(404,"index not available in this market mode")
+    if tf not in ("1m","3m","1d"):raise HTTPException(400,"timeframe must be 1m, 3m or 1d")
+    item=feed.market_item(key)
+    if not item:raise HTTPException(404,"index data not ready")
+    bars=feed.market_bars(key,tf)
+    return {
+        "market":market,"key":key,"label":item.get("label",key),"value":item.get("value"),
+        "change":item.get("change"),"change_pct":item.get("change_pct"),"status":item.get("status",""),
+        "source":item.get("source",""),"asof":item.get("asof",""),"timeframe":tf,"bars":bars,
+        "market_open":feed.market_open_for_key(key),
+        "note":"1·3분봉은 서버가 공식 시세를 수신한 시점부터 집계됩니다." if tf in ("1m","3m") else "공식 일별 OHLC 데이터",
     }
 
 @app.get("/api/market-check")
