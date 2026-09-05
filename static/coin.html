@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#f6f3ff">
+  <title>GY Trading OS · COIN</title>
+  <link rel="stylesheet" href="/static/styles.css?v=31">
+</head>
+<body class="coin-body" data-market="COIN">
+  <div class="ambient ambient-a"></div><div class="ambient ambient-b"></div><div class="ambient ambient-c"></div>
+  <header class="topbar">
+    <a class="brand" href="/coin"><span class="brand-mark">GY</span><span><b>TRADING OS</b><small>COINONE · OFFICIAL DATA</small></span></a>
+    <nav class="desktop-nav">
+      <button data-scroll="coinMarketSec">MARKET</button><button data-scroll="coinSignalSec">SIGNAL</button>
+      <button data-scroll="coinHoldingSec">PORTFOLIO</button><button data-scroll="coinTradeSec">TRADES</button>
+    </nav>
+    <div class="top-actions">
+      <div class="live-chip"><i></i><span id="updatedClock">수신 대기</span></div>
+      <div class="market-switch market-switch-3" aria-label="시장 전환">
+        <button id="krModeLabel" class="mode-label">KR</button>
+        <button id="usModeLabel" class="mode-label">US</button>
+        <button id="coinModeLabel" class="mode-label active">COIN</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="page coin-page">
+    <section class="hero coin-hero-unified">
+      <div class="hero-copy">
+        <div class="eyebrow">GY / LIVE COIN MARKET</div>
+        <h1>GY AUTOMATED<br><em>TRADING SYSTEM</em></h1>
+        <p>Coinone 공식 데이터 기반 24시간 코인 자동 모의투자</p>
+        <div class="session-pill">COIN · 24시간 거래 · 자동매매</div>
+      </div>
+      <div class="hero-console coin-console">
+        <div class="console-glow"></div>
+        <div class="console-head"><span>ENGINE STATUS</span><b>COIN · VIOLET MODE · 모의</b></div>
+        <div class="big-equity"><small>자산</small><strong id="coinEquity">-</strong></div>
+        <div class="hero-metrics">
+          <div><span>API</span><b id="coinHealth">확인 중</b></div>
+          <div><span>운용금액</span><b id="heroCoinBudget">-</b></div>
+          <div><span>손익</span><b id="coinPnl">-</b></div>
+          <div><span>TOP SIGNAL</span><b id="coinTopSignal">분석 중</b></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="control-strip coin-control-strip">
+      <div class="budget-control">
+        <div><small>코인 운용금액</small><strong id="currentCoinBudget">현재 운용값: -</strong></div>
+        <div class="budget-line"><input id="coinBudget" inputmode="numeric" placeholder="비우면 150만원 자동"><button id="saveCoinBudgetBtn">SAVE</button></div>
+        <label><input id="coinAutoMaxIfUnset" type="checkbox" checked> 미설정 시 150만원 자동운용</label>
+      </div>
+      <div class="control-stat"><small>LEADING SIGNAL</small><strong id="coinLeadingSignal">분석 중</strong><span>72점 이상 진입 · 최대 3종목</span></div>
+      <div class="control-stat"><small>MODE</small><strong>Coinone KRW · 24시간</strong><span id="coinHealthSub">공식 데이터 연결 확인 중</span></div>
+    </section>
+
+    <section class="coin-account-strip coin-account-strip-4">
+      <div><small>기준자산</small><strong id="accountInitial">₩1,500,000</strong><span>코인 전용 계좌</span></div>
+      <div><small>현금</small><strong id="accountCash">-</strong><span>코인 전용 잔액</span></div>
+      <div><small>보유원가</small><strong id="accountHeld">-</strong><span>최대 3종목</span></div>
+      <div><small>추가 운용가능</small><strong id="accountAvailable">-</strong><span>설정 한도 기준</span></div>
+    </section>
+
+    <section id="coinMarketSec" class="section-shell coin-market-shell">
+      <div class="section-head"><div><span class="section-index">01</span><div><small>COINONE KRW RADAR</small><h2>거래대금 상위</h2></div></div><b>코인 클릭 → 차트</b></div>
+      <div id="coinMarketGrid" class="coin-market-grid"></div>
+    </section>
+
+    <section id="coinSignalSec" class="section-shell signals-shell">
+      <div class="section-head"><div><span class="section-index">02</span><div><small>COIN SIGNAL BOARD</small><h2>코인 단타 탐지</h2></div></div><b>거래대금 · 모멘텀 · 체결강도 · 호가</b></div>
+      <div class="coin-rule-line"><span>진입 ≥ 72</span><span>익절 +3%</span><span>손절 -1.5%</span><span>점수 &lt; 46 청산</span><span>5분 재진입 대기</span></div>
+      <div id="coinCandidateList" class="coin-candidate-grid"></div>
+    </section>
+
+    <section id="coinHoldingSec" class="section-shell">
+      <div class="section-head"><div><span class="section-index">03</span><div><small>COIN PORTFOLIO</small><h2>코인 보유</h2></div></div><b id="coinHoldingSummary">-</b></div>
+      <div id="coinPositions" class="positions-grid"></div>
+    </section>
+
+    <section id="coinTradeSec" class="section-shell">
+      <div class="section-head"><div><span class="section-index">04</span><div><small>COIN TRADE HISTORY</small><h2>코인 거래내역</h2></div></div><b>코인 계좌 전용 내역</b></div>
+      <div id="coinTrades" class="coin-trade-list"></div>
+    </section>
+  </main>
+
+  <nav class="mobile-dock coin-dock"><button data-scroll="coinMarketSec">◎<small>마켓</small></button><button data-scroll="coinSignalSec">↗<small>신호</small></button><button data-scroll="coinHoldingSec">▣<small>보유</small></button><button data-scroll="coinTradeSec">◫<small>내역</small></button></nav>
+  <script src="/static/coin.js?v=31"></script>
+</body>
+</html>
