@@ -1,0 +1,26 @@
+GY v33 적용 파일
+
+GitHub 저장소 루트에 업로드:
+- runtime_server.py
+- render.yaml (기존 파일 덮어쓰기)
+
+GitHub static 폴더에 업로드:
+- static/v33.js
+- static/coin-v33.js
+- static/coin-detail-v33.js
+- static/v33.css
+
+적용 내용:
+- 휴대폰/브라우저와 무관한 서버 자동매매 루프
+- 전체 자동매매 스위치: OFF 시 신규매수만 중지, 기존 보유 익절/손절/청산 계속
+- Render Postgres DATABASE_URL 연결(Blueprint fromDatabase)
+- 주식/코인 상태 및 거래내역 DB 저장/복구
+- 코인 거래내역: 체결가/매수가/매도가/매수금액/매도금액/실현손익
+- 보유종목: 평균매수가/현재가/평가손익/수익률
+- KR+US 기존 손익캘린더 유지 + COIN 손익캘린더 추가
+- 상단 자산 → 운용자산 → 손익 → 신호 흐름 통일
+- 코인 상세 총점 + 거래대금순위/모멘텀/유동성/체결강도/스프레드/호가균형 막대
+
+주의:
+- Render Web Service가 Free 플랜이면 유휴 시 sleep될 수 있어 24시간 상시 실행은 보장되지 않음.
+- 완전한 24시간 운영은 Render 서비스 플랜을 Starter 이상으로 전환해야 함.
