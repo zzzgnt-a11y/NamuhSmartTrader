@@ -16,18 +16,21 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from engine import (
-    PaperAccount, Quote, scalp_analysis, smart_analysis, smart_buy_eligibility,
+    PaperAccount, Position, Quote, scalp_analysis, smart_analysis, smart_buy_eligibility,
     scalp_session, must_force_sell_pre
 )
 from nhfeed import NHFeed, aggregate_ticks
 from events import DisclosureFeed
+from state_store import StateStore
 
 load_dotenv()
 KST=timezone(timedelta(hours=9))
 MARKETS=("KR","US")
 feed=NHFeed()
 paper=PaperAccount()
+store=StateStore()
 events=DisclosureFeed(lambda:feed.quotes_for("KR"))
+BUILD_ID=(os.getenv("RENDER_GIT_COMMIT") or os.getenv("GY_BUILD_ID") or "v27-local")[:12]
 protected={x.strip() for x in os.getenv("PROTECTED_CODES","").split(",") if x.strip()}
 cache_lock=threading.Lock()
 started=False
@@ -42,6 +45,40 @@ SECTOR_FALLBACK={
     "012450":"방산","267260":"전력기기","005380":"자동차","000270":"자동차",
     "105560":"금융","055550":"금융","086790":"금융","028260":"지주","207940":"바이오",
 }
+
+def _paper_payload():
+    return {
+        "cash_krw":paper.cash_krw,"budget_day":paper.budget_day,
+        "explicit_budget_krw":paper.explicit_budget_krw,"auto_max_if_unset":paper.auto_max_if_unset,
+        "positions":[{
+            "market":p.market,"code":p.code,"name":p.name,"qty":p.qty,"avg_price":p.avg_price,
+            "current_price":p.current_price,"fx_buy":p.fx_buy,"fx_current":p.fx_current,
+            "strategy":p.strategy,"entry_session":p.entry_session,"entry_ts":p.entry_ts,
+        } for p in paper.positions.values()],
+        "trades":paper.trades[:1000],
+    }
+
+def _persist_paper():
+    store.save_json("paper_account",_paper_payload())
+
+def _restore_paper():
+    data=store.load_json("paper_account",None)
+    if not isinstance(data,dict):return
+    try:
+        paper.cash_krw=float(data.get("cash_krw",paper.initial_cash_krw))
+        paper.budget_day=str(data.get("budget_day") or "")
+        paper.explicit_budget_krw=data.get("explicit_budget_krw")
+        paper.auto_max_if_unset=bool(data.get("auto_max_if_unset",paper.auto_max_if_unset))
+        paper.positions.clear()
+        for x in data.get("positions") or []:
+            pos=Position(str(x["market"]),str(x["code"]),str(x.get("name") or x["code"]),int(x["qty"]),
+                         float(x["avg_price"]),float(x.get("current_price") or x["avg_price"]),
+                         float(x.get("fx_buy") or 1),float(x.get("fx_current") or 1),
+                         str(x.get("strategy") or "SCALP"),str(x.get("entry_session") or ""),float(x.get("entry_ts") or 0))
+            paper.positions[pos.key]=pos
+        paper.trades=list(data.get("trades") or [])[:1000]
+    except Exception as exc:
+        print("PAPER RESTORE ERROR:",exc,flush=True)
 
 def normalize_market(v):return "US" if str(v).upper()=="US" else "KR"
 def krw(v):return int(round(float(v or 0)))
@@ -126,12 +163,14 @@ def sector_name(q,market):
 def _vol_ratio(q):
     return (q.volume/q.prev_day_volume*100) if q.prev_day_volume>0 else 0.0
 
+def _clamp(v,lo=0.0,hi=100.0):
+    return max(lo,min(hi,float(v or 0)))
+
 def build_sector_context(market):
     groups={}
     for q in list(feed.quotes_for(market).values()):
         if q.price<=0 or q.open<=0:continue
-        sec=sector_name(q,market);g=groups.setdefault(sec,[])
-        g.append(q)
+        sec=sector_name(q,market);groups.setdefault(sec,[]).append(q)
     sectors=[];stock_strength={}
     for sec,qs in groups.items():
         changes=[(q.price/q.open-1)*100 for q in qs if q.open>0]
@@ -139,54 +178,149 @@ def build_sector_context(market):
         breadth=sum(x>0 for x in changes)/len(changes)*100 if changes else 0
         vols=[_vol_ratio(q) for q in qs if _vol_ratio(q)>0]
         avg_vol=sum(vols)/len(vols) if vols else 0
+        # Convert investor net quantities into an approximate flow value so a
+        # 1-share high-price stock and a 1-share low-price stock are comparable.
+        fval=sum(q.price*max(0,float(q.foreign_net or 0)) for q in qs) if market=="KR" else 0
+        ival=sum(q.price*max(0,float(q.institution_net or 0)) for q in qs) if market=="KR" else 0
+        pval=sum(q.price*max(0,float(q.program_net or 0)) for q in qs) if market=="KR" else 0
+        person_exit=sum(q.price*max(0,-float(getattr(q,"person_net",0) or 0)) for q in qs) if market=="KR" else 0
         f=sum(q.foreign_net for q in qs) if market=="KR" else 0
         i=sum(q.institution_net for q in qs) if market=="KR" else 0
         p=sum(q.program_net for q in qs) if market=="KR" else 0
+        person=sum(float(getattr(q,"person_net",0) or 0) for q in qs) if market=="KR" else 0
         money=sum(q.price*q.volume for q in qs)
-        leader=max(qs,key=lambda q:(q.price/q.open-1) if q.open else -999)
+        turnover_sorted=sorted(q.price*q.volume for q in qs)
+
+        leader=None;leader_strength=-1.0
+        for q in qs:
+            ch=((q.price/q.open)-1)*100 if q.open else -10
+            vr=_vol_ratio(q);turn=q.price*q.volume
+            pct_rank=((turnover_sorted.index(turn)+1)/len(turnover_sorted)) if turnover_sorted else 0
+            momentum=_clamp((ch+1.0)/7.0*25,0,25)
+            volume_score=_clamp(vr/200*20,0,20)
+            turnover_score=20*pct_rank
+            execution=_clamp((float(q.execution_strength or 0)-80)/70*15,0,15) if market=="KR" else 7.5
+            flow_dirs=sum(x>0 for x in (q.foreign_net,q.institution_net,q.program_net)) if market=="KR" else 1
+            flow_score=5*flow_dirs
+            relative=_clamp((ch-avg+1)/4*5,0,5)
+            strength=_clamp(momentum+volume_score+turnover_score+execution+flow_score+relative)
+            q.leader_strength=round(strength,1)
+            if strength>leader_strength:leader=q;leader_strength=strength
+        leader=leader or qs[0]
+        leader_change=((leader.price/leader.open)-1)*100 if leader.open else 0
+        leader_vr=_vol_ratio(leader)
+
         if market=="KR":
-            # Flow-heavy sector score: direction + breadth + volume + price momentum.
-            flow=(1.5 if f>0 else 0)+(1.5 if i>0 else 0)+(1.0 if p>0 else 0)
-            score=flow
-            score+=min(2,max(0,(breadth-40)/30))
-            score+=min(2,max(0,(avg_vol-30)/70*2))
-            score+=min(2,max(0,(avg+0.5)*1.2))
+            direction=(1.5 if f>0 else 0)+(1.5 if i>0 else 0)+(1.0 if p>0 else 0)
+            score=direction+min(2,max(0,(breadth-40)/30))+min(2,max(0,(avg_vol-30)/70*2))+min(2,max(0,(avg+0.5)*1.2))
         else:
             score=min(10,max(0,(avg+1)*2.2)+(1 if money>0 else 0))
         score=round(max(0,min(10,score)),1)
-        sectors.append({"sector":sec,"change_pct":avg,"leader":leader.name or leader.code,"score":score,
-                        "foreign_net":f if market=="KR" else None,
-                        "institution_net":i if market=="KR" else None,
-                        "program_net":p if market=="KR" else None,
-                        "volume_ratio":avg_vol,"breadth":breadth})
-        # Strong stocks inside a strong sector: relative volume + actual three-way flow direction.
+        sectors.append({
+            "sector":sec,"change_pct":avg,"score":score,"strength_score":round(score*10,1),
+            "leader":leader.name or leader.code,"leader_code":leader.code,"leader_strength":round(leader_strength,1),
+            "leader_change_pct":leader_change,"leader_volume_ratio":leader_vr,
+            "foreign_net":f if market=="KR" else None,"institution_net":i if market=="KR" else None,
+            "program_net":p if market=="KR" else None,"person_net":person if market=="KR" else None,
+            "flow_value":{"foreign":fval,"institution":ival,"program":pval,"person_exit":person_exit},
+            "volume_ratio":avg_vol,"breadth":breadth,"live_count":len(qs),
+            "catalog_count":len(feed.sector_catalog.get(sec,[])) if market=="KR" else len(qs),
+        })
         sorted_vol=sorted(qs,key=_vol_ratio)
         for q in qs:
             vrank=(sorted_vol.index(q)+1)/len(sorted_vol) if sorted_vol else 0
             if market=="KR":
                 dirs=sum(x>0 for x in (q.foreign_net,q.institution_net,q.program_net))/3
-                s=2.5*vrank+2.5*dirs
-            else:
-                s=2.5*vrank
-            stock_strength[q.code]=round(max(0,min(5,s)),1)
-    sectors.sort(key=lambda x:x["score"],reverse=True)
-    return sectors[:12],{x["sector"]:x["score"] for x in sectors},stock_strength
+                leader_bonus=float(getattr(q,"leader_strength",0))/100
+                ss=2.0*vrank+2.0*dirs+1.0*leader_bonus
+            else:ss=2.5*vrank
+            stock_strength[q.code]=round(max(0,min(5,ss)),1)
 
-def candidate(q,market,smart=False,secmap=None,stockmap=None,now=None):
+    # Every flow tab is independently normalized to 100. Program flow is not
+    # added as literal money to foreign/institution because the groups overlap.
+    if market=="KR" and sectors:
+        totals={k:sum(max(0,float(x["flow_value"][k] or 0)) for x in sectors) for k in ("foreign","institution","program","person_exit")}
+        for x in sectors:
+            shares={k:(x["flow_value"][k]/totals[k]*100 if totals[k]>0 else 0.0) for k in totals}
+            composite_raw=(shares["foreign"]*0.35+shares["institution"]*0.35+shares["program"]*0.20+shares["person_exit"]*0.10)
+            x["flow_share"]={**{k:round(v,1) for k,v in shares.items()},"composite_raw":composite_raw}
+        comp_total=sum(x["flow_share"]["composite_raw"] for x in sectors)
+        for x in sectors:
+            x["flow_share"]["composite"]=round(x["flow_share"]["composite_raw"]/comp_total*100,1) if comp_total>0 else 0.0
+            x["flow_share"].pop("composite_raw",None)
+    else:
+        for x in sectors:x["flow_share"]={"composite":round(100/len(sectors),1) if sectors else 0}
+    sectors.sort(key=lambda x:(x.get("flow_share",{}).get("composite",0),x["score"]),reverse=True)
+    return sectors[:24],{x["sector"]:x["score"] for x in sectors},stock_strength
+
+def _smart14_analysis(q):
+    base=smart_analysis(q)
+    rows=list(getattr(q,"investor_daily",[]) or [])[-14:]
+    if len(rows)<5:
+        out=dict(base);out["investor_14d"]={"days":len(rows),"ready":False}
+        out["reasons"]=list(base.get("reasons") or [])+[f"14거래일 수급 축적 {len(rows)}/14"]
+        return out
+    def acc(which):
+        vals=[float(r.get(which,0) or 0) for r in rows]
+        total=sum(vals);positive=sum(v>0 for v in vals)/len(vals)
+        pts=0.0
+        if total>0:
+            pts=15+8*positive
+            recent=sum(vals[-5:]);prev=sum(vals[-10:-5]) if len(vals)>=10 else sum(vals[:-5])
+            if recent>=prev:pts+=7
+        return round(min(30,max(0,pts)),1),total,positive
+    foreign,fsum,fpos=acc("foreign");institution,isum,ipos=acc("institution")
+    prog_vals=[float(r.get("program",0) or 0) for r in rows];psum=sum(prog_vals)
+    prog=0.0
+    if psum>0:
+        prog=7.0
+        if sum(prog_vals[-5:])>=sum(prog_vals[-10:-5]):prog=10.0
+    persons=[float(r.get("person",0) or 0) for r in rows];person_sum=sum(persons)
+    person_bonus=0.0
+    if fsum>0 and isum>0 and person_sum<0:
+        person_bonus=2.0
+        if sum(v<0 for v in persons)/len(persons)>=0.60:person_bonus+=1.0
+        if sum(persons[-5:])<sum(persons[-10:-5]):person_bonus+=1.0
+        if sum(float(r.get("foreign",0) or 0)+float(r.get("institution",0) or 0) for r in rows[-5:])>0:person_bonus+=1.0
+    b=base.get("breakdown",{})
+    score=foreign+institution+prog+float(b.get("가격위치",0))+float(b.get("엘리어트",0))+float(b.get("가치",0))+person_bonus
+    reasons=[
+        f"14일 외국인 매집 +{foreign:.1f}",f"14일 기관 매집 +{institution:.1f}",f"14일 프로그램 +{prog:.1f}",
+        f"14일 개인 {'순매도' if person_sum<0 else '순매수'} {abs(person_sum):,.0f}주 · 보너스 +{person_bonus:.1f}",
+    ]+[r for r in base.get("reasons",[]) if not (r.startswith("외국인 매집") or r.startswith("기관 매집") or r.startswith("프로그램"))]
+    return {
+        "score":round(min(100,max(0,score)),1),"reasons":reasons,
+        "breakdown":{**b,"외국인매집":foreign,"기관매집":institution,"프로그램":prog,"개인이탈":person_bonus},
+        "investor_14d":{"days":len(rows),"ready":len(rows)>=14,"foreign_sum":fsum,"institution_sum":isum,
+                        "program_sum":psum,"person_sum":person_sum,"foreign_positive_ratio":round(fpos*100,1),
+                        "institution_positive_ratio":round(ipos*100,1),"person_exit_bonus":person_bonus},
+    }
+
+def candidate(q,market,smart=False,secmap=None,stockmap=None,leadermap=None,sector_rankmap=None,now=None):
     sec=sector_name(q,market)
     if smart:
-        a=smart_analysis(q)
+        a=_smart14_analysis(q)
         eligible,rank,elig_reason=smart_buy_eligibility(q,now)
     else:
         a=scalp_analysis(q,(secmap or {}).get(sec,0),(stockmap or {}).get(q.code,0),market,now)
         eligible=rank=None;elig_reason=""
     vi_pre=q.open*1.10*0.997 if market=="KR" and q.open else None
+    is_leader=(leadermap or {}).get(sec)==q.code if not smart else False
+    sector_score=float((secmap or {}).get(sec,0) or 0)
+    sector_rank=(sector_rankmap or {}).get(sec)
+    # Priority affects scan/order only. The raw strategy score and 72-point entry threshold stay unchanged.
+    leader_strength=float(getattr(q,"leader_strength",0) or 0)
+    priority_score=(float(a["score"])+(6.0 if is_leader else 0.0)+min(4.0,sector_score*0.40)+leader_strength*0.04) if not smart else float(a["score"])
+    reasons=list(a["reasons"])
+    if is_leader:
+        reasons.insert(0,"섹터 대장주 우선 감지")
     return {
         "market":market,"code":q.code,"name":q.name or q.code,"sector":sec,
         "currency":"KRW" if market=="KR" else "USD",
         "price":krw(q.price) if market=="KR" else round(float(q.price),4),
         "open":krw(q.open) if market=="KR" else round(float(q.open),4),
-        "score":a["score"],"score_breakdown":a.get("breakdown",{}),"phase":a.get("phase",""),
+        "score":a["score"],"priority_score":round(priority_score,1),"score_breakdown":a.get("breakdown",{}),"phase":a.get("phase",""),
+        "sector_score":sector_score,"sector_rank":sector_rank,"is_sector_leader":is_leader,"leader_strength":round(leader_strength,1),
         "execution_strength":q.execution_strength,
         "per":q.per if smart else None,"pbr":q.pbr if smart else None,
         "foreign_net":q.foreign_net if market=="KR" else None,
@@ -194,26 +328,37 @@ def candidate(q,market,smart=False,secmap=None,stockmap=None,now=None):
         "program_net":q.program_net if market=="KR" else None,
         "volume_ratio":round(_vol_ratio(q),1) if q.prev_day_volume>0 else None,
         "vi_pre":krw(vi_pre) if vi_pre else None,
-        "reasons":a["reasons"],
+        "reasons":reasons,
         "series":[krw(x) if market=="KR" else round(float(x),4) for x in list(q.prices)[-24:]],
         "smart_buy_eligible":eligible if smart else None,
         "smart_close_rank":rank if smart else None,
         "smart_eligibility_reason":elig_reason if smart else None,
-        "event":q.events[0] if q.events else None,
+        "event":q.events[0] if q.events else None,"investor_14d":a.get("investor_14d") if smart else None,
     }
 
 def rebuild_cache(market,now=None):
     market=normalize_market(market)
     sectors,secmap,stockmap=build_sector_context(market)
+    leadermap={x["sector"]:x.get("leader_code") for x in sectors if x.get("leader_code")}
+    sector_rankmap={x["sector"]:i+1 for i,x in enumerate(sectors)}
     quotes=[q for q in feed.quotes_for(market).values() if q.price>0]
     scalp=[];smart=[]
     for q in quotes:
         try:
-            scalp.append(candidate(q,market,False,secmap,stockmap,now))
+            scalp.append(candidate(q,market,False,secmap,stockmap,leadermap,sector_rankmap,now))
             if market=="KR":smart.append(candidate(q,market,True,now=now))
         except Exception:
             continue
-    scalp.sort(key=lambda x:x["score"],reverse=True);smart.sort(key=lambda x:x["score"],reverse=True)
+    # Keep the 72-point gate intact. Among valid candidates, strong-sector leaders are scanned first.
+    scalp.sort(key=lambda x:(x["score"]>=72,x.get("priority_score",x["score"]),x["score"]),reverse=True)
+    smart.sort(key=lambda x:x["score"],reverse=True)
+    stamp=(now or datetime.now(KST)).astimezone(KST) if isinstance((now or datetime.now(KST)),datetime) else datetime.now(KST)
+    minute=stamp.strftime("%Y%m%d%H%M")
+    for strategy,items in (("SCALP",scalp[:12]),("SMART",smart[:12] if market=="KR" else [])):
+        for item in items:
+            if float(item.get("score",0))<72:continue
+            payload={k:item.get(k) for k in ("market","code","name","sector","price","score","priority_score","score_breakdown","is_sector_leader","leader_strength","investor_14d")}
+            store.record_signal(f"{market}:{strategy}:{item['code']}:{minute}",market,strategy,item["code"],payload,stamp.timestamp())
     with cache_lock:
         CACHE[market]={"sectors":sectors,"scalp":scalp[:50],"smart":smart[:50] if market=="KR" else [],
                        "stock_strength":stockmap,"updated_at":time.time()}
@@ -227,17 +372,33 @@ def mark_and_sell(market,scalp_candidates,smart_candidates,now=None):
     quotes=feed.quotes_for(market)
     scalp_map={x["code"]:x["score"] for x in scalp_candidates}
     smart_map={x["code"]:x["score"] for x in smart_candidates}
+    # KR VI pre-line is the same conservative threshold used by the entry filter.
+    # If that line is closer than the normal +3% target, take profit there first.
+    item_map={x["code"]:x for x in scalp_candidates}
+    item_map.update({x["code"]:x for x in smart_candidates})
     for p in list(paper.market_positions(market)):
         q=quotes.get(p.code)
         if not q or q.price<=0:continue
         paper.mark(market,p.code,q.price,fx)
         score=(smart_map if p.strategy=="SMART" else scalp_map).get(p.code,50)
         reason=""
+        vi_pre=None
+        if market=="KR":
+            vi_pre=(item_map.get(p.code) or {}).get("vi_pre")
+        vi_take=bool(
+            market=="KR"
+            and vi_pre
+            and float(vi_pre)>float(p.avg_price)
+            and float(vi_pre)<=float(p.avg_price)*1.03
+            and float(q.price)>=float(vi_pre)
+        )
         if market=="KR" and must_force_sell_pre(p,now):reason="08:49 프리세션 강제청산"
-        elif p.pnl_pct>=2.5:reason="목표수익 도달"
+        elif vi_take:reason="VI 직전 익절"
+        elif p.pnl_pct>=3.0:reason="목표수익 +3% 도달"
         elif p.pnl_pct<=-1.5:reason="손절 기준 도달"
         elif score<46:reason="AI 점수 이탈"
-        if reason:paper.sell(market,p.code,q.price,fx,reason)
+        if reason:
+            if paper.sell(market,p.code,q.price,fx,reason):_persist_paper()
 
 def _buy_one(market,item,strategy,entry_session,now=None):
     q=feed.quotes_for(market).get(item["code"])
@@ -250,7 +411,9 @@ def _buy_one(market,item,strategy,entry_session,now=None):
     if remain<unit:return False
     target=min(remain,max(unit,budget/2));qty=int(target//unit)
     if qty<1:return False
-    return paper.buy(q,qty,market,fx,day,strategy=strategy,entry_session=entry_session) is not None
+    ok=paper.buy(q,qty,market,fx,day,strategy=strategy,entry_session=entry_session) is not None
+    if ok:_persist_paper()
+    return ok
 
 def trade_scalp(market,candidates,now=None):
     now=(now or datetime.now(KST)).astimezone(KST)
@@ -265,6 +428,8 @@ def trade_scalp(market,candidates,now=None):
         if market=="KR" and code in protected:continue
         if f"{market}:{code}" in paper.positions:continue
         if market=="KR" and item.get("vi_pre") and item["price"]>=item["vi_pre"]:continue
+        fresh,_=feed.entry_data_status(market,code,now.timestamp())
+        if not fresh:continue
         if _buy_one(market,item,"SCALP",session,now):break
 
 def trade_smart_kr(candidates,now=None):
@@ -275,6 +440,8 @@ def trade_smart_kr(candidates,now=None):
         if not item.get("smart_buy_eligible"):continue
         code=item["code"]
         if code in protected or f"KR:{code}" in paper.positions:continue
+        fresh,_=feed.entry_data_status("KR",code,now.timestamp())
+        if not fresh:continue
         if _buy_one("KR",item,"SMART","NEXT_DAY_CLOSE_SIGNAL",now):break
 
 def ai_loop():
@@ -309,6 +476,7 @@ def start_background():
     global started
     if started:return
     started=True
+    _restore_paper()
     if os.getenv("NHPLUG_APP_KEY") and os.getenv("NHPLUG_APP_SECRET"):
         threading.Thread(target=nh_feed_bootstrap,daemon=True).start()
     threading.Thread(target=ai_loop,daemon=True).start()
@@ -320,6 +488,15 @@ async def lifespan(_app):
 
 app=FastAPI(title="GY 모의투자 시스템",lifespan=lifespan)
 app.mount("/static",StaticFiles(directory="static"),name="static")
+
+@app.middleware("http")
+async def gy_headers(request,call_next):
+    response=await call_next(request)
+    if request.url.path=="/" or request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"]="no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"]="no-cache"
+    response.headers["X-GY-Build"]=BUILD_ID
+    return response
 
 @app.get("/")
 def home():
@@ -351,7 +528,10 @@ def health_payload():
             "market_updated_at":h["market_updated_at"],"market_errors":h["market_errors"],"usdkrw":h["usdkrw"],
             "usdkrw_asof":h["usdkrw_asof"],"program_realtime":h.get("program_realtime",{}),
             "investor_updated_at":h.get("investor_updated_at",0),"history_updated_at":h.get("history_updated_at",0),
-            "future_symbols":h.get("future_symbols",{}),"schedule":schedule_payload()}
+            "future_symbols":h.get("future_symbols",{}),"market_daily_error":h.get("market_daily_error",{}),
+            "krx_openapi_configured":h.get("krx_openapi_configured",False),"sector_catalog_count":h.get("sector_catalog_count",0),
+            "sector_scan_count":h.get("sector_scan_count",0),"sector_universe_asof":h.get("sector_universe_asof",""),
+            "persistence":store.status(),"signal_count_30d":store.recent_signal_count(30),"build":BUILD_ID,"schedule":schedule_payload()}
 
 @app.get("/api/health")
 def health():return health_payload()
@@ -363,7 +543,7 @@ class BudgetRequest(BaseModel):
 @app.post("/api/budget")
 def set_budget(data:BudgetRequest):
     active=trading_window() or default_view_market();day=trading_day_key(active)
-    paper.set_auto_max(data.auto_max_if_unset);paper.set_budget(data.amount,day)
+    paper.set_auto_max(data.auto_max_if_unset);paper.set_budget(data.amount,day);_persist_paper()
     return {"ok":True,"budget_day":paper.budget_day,"explicit_budget":paper.explicit_budget_krw,
             "auto_max_if_unset":paper.auto_max_if_unset,"effective_budget":paper.effective_budget_krw(day),
             "initial_cash":paper.initial_cash_krw}
@@ -404,7 +584,9 @@ def state(market:str=Query("KR")):
     return {"mode":market,"health":health_payload(),"schedule":schedule_payload(),"market":feed.market_state(market),
             "session":feed.session_state(market),"sectors":sectors,"scalp":scalp,"smart":smart,
             "candidate_scan_active":scan_active,"macro_events":macro_calendar_payload(),
-            "events":events.state(market),"cache_updated_at":updated,"paper":ps,
+            "events":events.state(market),"cache_updated_at":updated,"paper":ps,"build":BUILD_ID,
+            "sector_coverage":{"catalog":health_payload().get("sector_catalog_count",0),"live":health_payload().get("sector_scan_count",0),
+                               "asof":health_payload().get("sector_universe_asof","")},
             "protected_codes":sorted(protected) if market=="KR" else [],"market_separation":sep}
 
 def _analysis_for_bars(q,market,bars):
@@ -442,27 +624,50 @@ def stock_detail(market:str,code:str,timeframe:str=Query("1d")):
         "bars":bars,"scores":scores,"analysis":analysis,
         "flow":{"foreign_net":q.foreign_net if market=="KR" else None,
                 "institution_net":q.institution_net if market=="KR" else None,
-                "program_net":q.program_net if market=="KR" else None,
+                "program_net":q.program_net if market=="KR" else None,"person_net":getattr(q,"person_net",None) if market=="KR" else None,
                 "execution_strength":q.execution_strength if market=="KR" else None,
                 "volume_ratio":round(_vol_ratio(q),1) if q.prev_day_volume>0 else None},
         "events":q.events if market=="KR" else [],
-        "daily_bars":list(q.daily_bars)[-30:],
+        "daily_bars":list(q.daily_bars)[-30:],"investor_14d":list(getattr(q,"investor_daily",[]) or [])[-14:] if market=="KR" else [],
     }
+
+@app.get("/api/sector/{market}/{sector:path}")
+def sector_detail(market:str,sector:str):
+    market=normalize_market(market)
+    with cache_lock:
+        summary=next((x for x in CACHE[market]["sectors"] if x.get("sector")==sector),None)
+    if market=="KR":
+        members=feed.sector_members(sector)
+    else:
+        members=[]
+        for q in feed.quotes_for("US").values():
+            if sector_name(q,"US")==sector:
+                members.append({"code":q.code,"name":q.name or q.code,"live":q.price>0,"price":q.price,
+                                "change_pct":((q.price/q.open)-1)*100 if q.open else None,"volume_ratio":_vol_ratio(q)})
+    return {"market":market,"sector":sector,"summary":summary,"members":members,"count":len(members),"build":BUILD_ID}
 
 @app.get("/api/index/{market}/{key}")
 def index_detail(market:str,key:str,timeframe:str=Query("1d")):
     market=normalize_market(market);key=str(key).lower();tf=str(timeframe).lower()
     if key not in INDEX_KEYS[market]:raise HTTPException(404,"index not available in this market mode")
-    if tf not in ("1m","3m","1d"):raise HTTPException(400,"timeframe must be 1m, 3m or 1d")
+    if tf not in ("1d","d","day"):
+        raise HTTPException(400,"index chart supports daily candles only")
     item=feed.market_item(key)
     if not item:raise HTTPException(404,"index data not ready")
-    bars=feed.market_bars(key,tf)
+    if key in ("kospi","kosdaq") and not feed.market_bars(key,"1d"):
+        try:feed.refresh_market_daily(key,force=True)
+        except Exception:pass
+    bars=feed.market_bars(key,"1d")
+    daily_error=getattr(feed,"market_daily_error",{}).get(key,"")
+    if key in ("kospi","kosdaq") and not bars:
+        note=("KRX OPEN API 인증키(KRX_OPENAPI_KEY) 연결 필요" if not getattr(feed,"krx_openapi_key","") else (daily_error or "KRX 공식 일봉 수신 대기"))
+    else:
+        note="공식 일별 OHLC · 최근 거래일 기준"
     return {
         "market":market,"key":key,"label":item.get("label",key),"value":item.get("value"),
         "change":item.get("change"),"change_pct":item.get("change_pct"),"status":item.get("status",""),
-        "source":item.get("source",""),"asof":item.get("asof",""),"timeframe":tf,"bars":bars,
-        "market_open":feed.market_open_for_key(key),
-        "note":"1·3분봉은 서버가 공식 시세를 수신한 시점부터 집계됩니다." if tf in ("1m","3m") else "공식 일별 OHLC 데이터",
+        "source":item.get("source",""),"asof":item.get("asof",""),"timeframe":"1d","bars":bars,
+        "market_open":feed.market_open_for_key(key),"note":note,"daily_error":daily_error,"build":BUILD_ID,
     }
 
 @app.get("/api/market-check")
