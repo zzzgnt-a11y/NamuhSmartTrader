@@ -22,15 +22,19 @@ from engine import (
 from nhfeed import NHFeed, aggregate_ticks
 from events import DisclosureFeed
 from state_store import StateStore
+from coinone_feed import CoinoneFeed, CryptoPaperAccount
 
 load_dotenv()
 KST=timezone(timedelta(hours=9))
 MARKETS=("KR","US")
+SUPPORTED_MODES=("KR","US","COIN")
 feed=NHFeed()
 paper=PaperAccount()
+coin_feed=CoinoneFeed(top_n=int(os.getenv("COIN_SCAN_TOP_N","40") or 40))
+coin_paper=CryptoPaperAccount(initial_cash_krw=int(os.getenv("COIN_PAPER_INITIAL_CASH","1500000") or 1500000))
 store=StateStore()
 events=DisclosureFeed(lambda:feed.quotes_for("KR"))
-BUILD_ID=(os.getenv("RENDER_GIT_COMMIT") or os.getenv("GY_BUILD_ID") or "v27-local")[:12]
+BUILD_ID=(os.getenv("RENDER_GIT_COMMIT") or os.getenv("GY_BUILD_ID") or "v30-local")[:12]
 protected={x.strip() for x in os.getenv("PROTECTED_CODES","").split(",") if x.strip()}
 cache_lock=threading.Lock()
 started=False
@@ -80,7 +84,20 @@ def _restore_paper():
     except Exception as exc:
         print("PAPER RESTORE ERROR:",exc,flush=True)
 
-def normalize_market(v):return "US" if str(v).upper()=="US" else "KR"
+def _persist_coin():
+    store.save_json("coin_paper_account",coin_paper.payload())
+
+def _restore_coin():
+    data=store.load_json("coin_paper_account",None)
+    if isinstance(data,dict):
+        try:coin_paper.restore(data)
+        except Exception as exc:print("COIN PAPER RESTORE ERROR:",exc,flush=True)
+
+def normalize_market(v):
+    m=str(v).upper()
+    if m=="US":return "US"
+    if m=="COIN":return "COIN"
+    return "KR"
 def krw(v):return int(round(float(v or 0)))
 
 def trading_window(now:Optional[datetime]=None):
@@ -477,6 +494,8 @@ def start_background():
     if started:return
     started=True
     _restore_paper()
+    _restore_coin()
+    coin_feed.start()
     if os.getenv("NHPLUG_APP_KEY") and os.getenv("NHPLUG_APP_SECRET"):
         threading.Thread(target=nh_feed_bootstrap,daemon=True).start()
     threading.Thread(target=ai_loop,daemon=True).start()
@@ -510,18 +529,19 @@ INDEX_KEYS={
 @app.get("/index/{market}/{key}")
 def index_page(market:str,key:str):
     market=normalize_market(market);key=str(key).lower()
-    if key not in INDEX_KEYS[market]:raise HTTPException(404,"index not available in this market mode")
+    if market not in INDEX_KEYS or key not in INDEX_KEYS[market]:raise HTTPException(404,"index not available in this market mode")
     return FileResponse("static/index-detail.html",headers={"Cache-Control":"no-store, max-age=0"})
 
 @app.get("/stock/{market}/{code}")
 def stock_page(market:str,code:str):
     market=normalize_market(market)
+    if market not in ("KR","US"):raise HTTPException(404)
     if market=="KR" and not re.fullmatch(r"\d{6}",code):raise HTTPException(404)
     if market=="US" and not re.fullmatch(r"[A-Za-z0-9.\-]{1,12}",code):raise HTTPException(404)
     return FileResponse("static/stock.html",headers={"Cache-Control":"no-store, max-age=0"})
 
 def health_payload():
-    h=feed.health()
+    h=feed.health();ch=coin_feed.health()
     return {"ok":True,"nh_configured":bool(os.getenv("NHPLUG_APP_KEY") and os.getenv("NHPLUG_APP_SECRET")),
             "nh_realtime":h["nh_realtime"],"realtime":h["realtime"],"errors":h["errors"],"orders_sent":0,
             "kr_tracked":h["kr_tracked"],"kr_priced":h["kr_priced"],"us_tracked":h["us_tracked"],"us_priced":h["us_priced"],
@@ -531,6 +551,7 @@ def health_payload():
             "future_symbols":h.get("future_symbols",{}),"market_daily_error":h.get("market_daily_error",{}),
             "krx_openapi_configured":h.get("krx_openapi_configured",False),"sector_catalog_count":h.get("sector_catalog_count",0),
             "sector_scan_count":h.get("sector_scan_count",0),"sector_universe_asof":h.get("sector_universe_asof",""),
+            "coinone":ch,"coin_paper_initial_cash":coin_paper.initial_cash_krw,
             "persistence":store.status(),"signal_count_30d":store.recent_signal_count(30),"build":BUILD_ID,"schedule":schedule_payload()}
 
 @app.get("/api/health")
@@ -569,6 +590,35 @@ def paper_state(market):
             "account_scope":"ALL","auto_trade_enabled":trading_window()==market,
             "usdkrw":feed.usdkrw,"usdkrw_asof":feed.usdkrw_asof}
 
+def coin_account_state():
+    for p in list(coin_paper.positions.values()):
+        q=coin_feed.quote(p.symbol)
+        if q and q.price>0:coin_paper.mark(p.symbol,q.price)
+    positions=[]
+    for p in coin_paper.positions.values():
+        positions.append({"market":"COIN","code":p.symbol,"name":p.name,"qty":p.qty,"avg_price":p.avg_price,
+                          "current_price":p.current_price,"currency":"KRW","cost_krw":krw(p.cost_krw),
+                          "value_krw":krw(p.value_krw),"pnl":krw(p.pnl_krw),"pnl_pct":p.pnl_pct,
+                          "strategy":p.strategy,"entry_session":"24H"})
+    positions.sort(key=lambda x:(x.get("name",""),x.get("code","")))
+    equity=coin_paper.equity_krw()
+    return {"initial_cash":coin_paper.initial_cash_krw,"cash":krw(coin_paper.cash_krw),"equity":krw(equity),
+            "budget":coin_paper.initial_cash_krw,"effective_budget":coin_paper.initial_cash_krw,
+            "held_cost":krw(coin_paper.held_cost_krw()),"market_held_cost":krw(coin_paper.held_cost_krw()),
+            "positions":positions,"trades":list(coin_paper.trades)[:300],"account_scope":"COIN_ONLY",
+            "auto_trade_enabled":False,"unrealized_pnl":krw(coin_paper.unrealized_pnl_krw()),
+            "total_pnl":krw(equity-coin_paper.initial_cash_krw),"exchange":"Coinone"}
+
+def global_account_state():
+    stock_equity=paper.equity_krw();coin_equity=coin_paper.equity_krw()
+    return {"initial_cash":krw(paper.initial_cash_krw+coin_paper.initial_cash_krw),
+            "equity":krw(stock_equity+coin_equity),
+            "pnl":krw((stock_equity-paper.initial_cash_krw)+(coin_equity-coin_paper.initial_cash_krw)),
+            "stock_equity":krw(stock_equity),"coin_equity":krw(coin_equity),
+            "stock_cash":krw(paper.cash_krw),"coin_cash":krw(coin_paper.cash_krw),
+            "stock_initial_cash":paper.initial_cash_krw,"coin_initial_cash":coin_paper.initial_cash_krw,
+            "account_separation":True}
+
 def market_separation_check(market,scalp,smart,positions):
     codes=[str(x.get("code","")) for x in scalp+smart+positions]
     bad=[c for c in codes if (re.fullmatch(r"\d{6}",c) if market=="US" else (c and not re.fullmatch(r"\d{6}",c)))]
@@ -577,6 +627,17 @@ def market_separation_check(market,scalp,smart,positions):
 @app.get("/api/state")
 def state(market:str=Query("KR")):
     market=normalize_market(market)
+    if market=="COIN":
+        candidates=coin_feed.candidates(30)
+        return {"mode":"COIN","health":health_payload(),
+                "market":{"exchange":"Coinone","quote_currency":"KRW","open":True,"status":"24시간 거래",
+                          "updated_at":coin_feed.updated_at,"source":"Coinone Public API"},
+                "session":{"name":"Coinone","label":"24시간 거래","open":True,"status":"거래중"},
+                "sectors":[],"scalp":candidates,"smart":[],"candidate_scan_active":True,
+                "macro_events":[],"events":{"items":[]},"cache_updated_at":coin_feed.updated_at,
+                "paper":coin_account_state(),"global_account":global_account_state(),"build":BUILD_ID,
+                "sector_coverage":{"catalog":0,"live":len(candidates),"asof":""},
+                "protected_codes":[],"market_separation":{"ok":True,"market":"COIN","bad_codes":[]}}
     scan_active=trading_window()==market
     with cache_lock:
         c=CACHE[market];sectors=list(c["sectors"]);updated=c["updated_at"]
@@ -590,7 +651,7 @@ def state(market:str=Query("KR")):
     return {"mode":market,"health":health_payload(),"schedule":schedule_payload(),"market":feed.market_state(market),
             "session":feed.session_state(market),"sectors":sectors,"scalp":scalp,"smart":smart,
             "candidate_scan_active":scan_active,"macro_events":macro_calendar_payload(),
-            "events":events.state(market),"cache_updated_at":updated,"paper":ps,"build":BUILD_ID,
+            "events":events.state(market),"cache_updated_at":updated,"paper":ps,"global_account":global_account_state(),"build":BUILD_ID,
             "sector_coverage":{"catalog":health_payload().get("sector_catalog_count",0),"live":health_payload().get("sector_scan_count",0),
                                "asof":health_payload().get("sector_universe_asof","")},
             "protected_codes":sorted(protected) if market=="KR" else [],"market_separation":sep}
@@ -612,6 +673,7 @@ def _analysis_for_bars(q,market,bars):
 @app.get("/api/stock/{market}/{code}")
 def stock_detail(market:str,code:str,timeframe:str=Query("1d")):
     market=normalize_market(market);code=code.upper()
+    if market not in ("KR","US"):raise HTTPException(404,"stock market only")
     q=feed.quotes_for(market).get(code)
     if not q:raise HTTPException(404,"tracked stock not found")
     # Detail pages must not wait for the background history loop. Pull the
@@ -640,6 +702,7 @@ def stock_detail(market:str,code:str,timeframe:str=Query("1d")):
 @app.get("/api/sector/{market}/{sector:path}")
 def sector_detail(market:str,sector:str):
     market=normalize_market(market)
+    if market not in ("KR","US"):raise HTTPException(404,"sector not available in this market mode")
     with cache_lock:
         summary=next((x for x in CACHE[market]["sectors"] if x.get("sector")==sector),None)
     if market=="KR":
@@ -655,27 +718,48 @@ def sector_detail(market:str,sector:str):
 @app.get("/api/index/{market}/{key}")
 def index_detail(market:str,key:str,timeframe:str=Query("1d")):
     market=normalize_market(market);key=str(key).lower();tf=str(timeframe).lower()
-    if key not in INDEX_KEYS[market]:raise HTTPException(404,"index not available in this market mode")
+    if market not in INDEX_KEYS or key not in INDEX_KEYS[market]:raise HTTPException(404,"index not available in this market mode")
     if tf not in ("1d","d","day"):
-        raise HTTPException(400,"index chart supports daily candles only")
+        raise HTTPException(400,"index chart supports daily data only")
     item=feed.market_item(key)
     if not item:raise HTTPException(404,"index data not ready")
-    if key in ("kospi","kosdaq") and not feed.market_bars(key,"1d"):
-        try:feed.refresh_market_daily(key,force=True)
-        except Exception:pass
+    # Never make the browser wait on a live KRX fetch. KOSPI/KOSDAQ daily
+    # history is prefetched by NHFeed in a dedicated background loop.
     bars=feed.market_bars(key,"1d")
     daily_error=getattr(feed,"market_daily_error",{}).get(key,"")
     daily_source=getattr(feed,"market_daily_source",{}).get(key,"")
     if key in ("kospi","kosdaq") and not bars:
-        note=daily_error or "KRX 공식 일봉 수신 대기"
+        note=daily_error or "KRX 1D 데이터 수신 대기"
     else:
-        note=f"공식 일별 OHLC · {daily_source or item.get('source','공식 데이터')} · 최근 거래일 기준"
+        note=f"1D OHLC · {daily_source or item.get('source','공식 데이터')} · 최근 거래일 기준"
     return {
         "market":market,"key":key,"label":item.get("label",key),"value":item.get("value"),
         "change":item.get("change"),"change_pct":item.get("change_pct"),"status":item.get("status",""),
         "source":item.get("source",""),"daily_source":daily_source,"asof":item.get("asof",""),"timeframe":"1d","bars":bars,
         "market_open":feed.market_open_for_key(key),"note":note,"daily_error":daily_error,"build":BUILD_ID,
     }
+
+@app.get("/api/coin/{symbol}")
+def coin_detail(symbol:str,interval:str=Query("1m"),size:int=Query(120,ge=20,le=500)):
+    symbol=str(symbol).upper()
+    q=coin_feed.quote(symbol)
+    if not q:
+        try:coin_feed.refresh_rest();q=coin_feed.quote(symbol)
+        except Exception:pass
+    if not q:raise HTTPException(404,"coin not found on Coinone KRW market")
+    try:bars=coin_feed.chart(symbol,interval,size)
+    except Exception as exc:raise HTTPException(502,f"Coinone chart error: {str(exc)[:180]}")
+    candidate=next((x for x in coin_feed.candidates(max(30,coin_feed.top_n)) if x.get("code")==symbol),None)
+    return {"market":"COIN","exchange":"Coinone","code":symbol,"name":q.name or symbol,
+            "price":q.price,"currency":"KRW","interval":interval,"bars":bars,"candidate":candidate,
+            "quote":{"change_pct":q.change_pct,"quote_volume":q.quote_volume,"target_volume":q.target_volume,
+                     "volume_power":q.volume_power,"ask_price":q.ask_price,"bid_price":q.bid_price,
+                     "spread_pct":q.spread_pct,"book_imbalance":q.book_imbalance,"updated_at":q.updated_at},
+            "source":"Coinone Public API","real_orders_enabled":False,"build":BUILD_ID}
+
+@app.get("/api/coin-account")
+def coin_account():
+    return {"paper":coin_account_state(),"global_account":global_account_state(),"health":coin_feed.health(),"build":BUILD_ID}
 
 @app.get("/api/market-check")
 def market_check():
