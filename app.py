@@ -276,14 +276,15 @@ app=FastAPI(title="GY 모의투자 시스템",lifespan=lifespan)
 app.mount("/static",StaticFiles(directory="static"),name="static")
 
 @app.get("/")
-def home():return FileResponse("static/index.html")
+def home():
+    return FileResponse("static/index.html",headers={"Cache-Control":"no-store, max-age=0"})
 
 @app.get("/stock/{market}/{code}")
 def stock_page(market:str,code:str):
     market=normalize_market(market)
     if market=="KR" and not re.fullmatch(r"\d{6}",code):raise HTTPException(404)
     if market=="US" and not re.fullmatch(r"[A-Za-z0-9.\-]{1,12}",code):raise HTTPException(404)
-    return FileResponse("static/stock.html")
+    return FileResponse("static/stock.html",headers={"Cache-Control":"no-store, max-age=0"})
 
 def health_payload():
     h=feed.health()
@@ -293,7 +294,7 @@ def health_payload():
             "market_updated_at":h["market_updated_at"],"market_errors":h["market_errors"],"usdkrw":h["usdkrw"],
             "usdkrw_asof":h["usdkrw_asof"],"program_realtime":h.get("program_realtime",{}),
             "investor_updated_at":h.get("investor_updated_at",0),"history_updated_at":h.get("history_updated_at",0),
-            "schedule":schedule_payload()}
+            "future_symbols":h.get("future_symbols",{}),"schedule":schedule_payload()}
 
 @app.get("/api/health")
 def health():return health_payload()
