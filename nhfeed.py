@@ -161,6 +161,7 @@ class NHFeed:
         self.krx_http=requests.Session();self.krx_http_warmed_at=0.0;self.krx_logged_in=False
         self.krx_openapi_key=os.getenv("KRX_OPENAPI_KEY","").strip()
         self.market_daily_error={"kospi":"","kosdaq":""}
+        self.market_daily_source={"kospi":"","kosdaq":""}
         self.kr_master_meta={}
         self.sector_catalog={}
         self.sector_scan_limit=max(15,min(500,int(os.getenv("KR_SECTOR_SCAN_LIMIT","160") or 160)))
@@ -229,7 +230,10 @@ class NHFeed:
         for b in bars or []:
             d=normalize_date(b.get("date") or b.get("time"));c=num(b.get("close"))
             if not d or c<=0 or d in seen:continue
-            seen.add(d);o=num(b.get("open")) or c;h=num(b.get("high")) or c;l=num(b.get("low")) or c
+            o=num(b.get("open"));h=num(b.get("high"));l=num(b.get("low"))
+            # Never synthesize a candle from close-only data.
+            if min(o,h,l,c)<=0:continue
+            seen.add(d)
             clean.append({"time":d,"open":o,"high":h,"low":l,"close":c,"volume":num(b.get("volume"))})
         clean.sort(key=lambda x:x["time"]);q=self.market_daily_bars.setdefault(key,deque(maxlen=120));q.clear();q.extend(clean[-120:])
         if clean:self.market_daily_updated_at[key]=time.time()
@@ -670,18 +674,39 @@ class NHFeed:
             return False
 
     def _krx_post(self,payload):
+        """Read KRX Information Data System JSON.
+
+        This is still KRX-origin data (not a third-party quote source). The
+        formal KRX OPEN API remains preferred when KRX_OPENAPI_KEY is present,
+        while this path keeps the public KRX website as an official-data
+        fallback. Browser-equivalent headers and the standard form fields are
+        included because the KRX endpoint can otherwise return an empty body.
+        """
         self._krx_warm_session()
-        headers={"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131 Safari/537.36",
-                 "Referer":"https://data.krx.co.kr/contents/MDC/MDI/outerLoader/index.cmd",
-                 "X-Requested-With":"XMLHttpRequest"}
+        headers={
+            "User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131 Safari/537.36",
+            "Accept":"application/json, text/javascript, */*; q=0.01",
+            "Accept-Language":"ko-KR,ko;q=0.9,en-US;q=0.7,en;q=0.6",
+            "Content-Type":"application/x-www-form-urlencoded; charset=UTF-8",
+            "Origin":"https://data.krx.co.kr",
+            "Referer":"https://data.krx.co.kr/contents/MDC/MDI/mdiLoader/index.cmd?menuId=MDC0201",
+            "X-Requested-With":"XMLHttpRequest",
+            "Cache-Control":"no-cache",
+            "Pragma":"no-cache",
+        }
+        body={"locale":"ko_KR","share":"2","money":"3","csvxls_isNo":"false",**dict(payload)}
         url="https://data.krx.co.kr/comm/bldAttendant/getJsonData.cmd"
-        r=self.krx_http.post(url,data=payload,headers=headers,timeout=12);r.raise_for_status()
+        r=self.krx_http.post(url,data=body,headers=headers,timeout=12);r.raise_for_status()
+        ctype=(r.headers.get("Content-Type") or "").lower()
         try:j=r.json()
-        except Exception:raise RuntimeError("KRX JSON 응답 아님")
-        # 2026 KRX session policy can require login for some data calls. If
-        # credentials are configured, transparently log in and retry once.
+        except Exception:
+            raise RuntimeError(f"KRX JSON 응답 아님 ({ctype or 'unknown content-type'})")
+        # Some KRX sessions can ask for a login. If credentials were explicitly
+        # configured, log in and retry once. Never substitute non-KRX data.
         if (j.get("_error_code") or j.get("_error_message")) and self._krx_login_if_configured():
-            r=self.krx_http.post(url,data=payload,headers=headers,timeout=12);r.raise_for_status();j=r.json()
+            r=self.krx_http.post(url,data=body,headers=headers,timeout=12);r.raise_for_status();j=r.json()
+        if j.get("_error_code") or j.get("_error_message"):
+            raise RuntimeError(str(j.get("_error_message") or j.get("_error_code"))[:220])
         return j
 
     @staticmethod
@@ -691,8 +716,9 @@ class NHFeed:
             if not isinstance(x,dict):continue
             d=normalize_date(x.get("TRD_DD"));c=num(x.get("CLSPRC_IDX"))
             if not d or c<=0:continue
-            out.append({"date":d,"open":num(x.get("OPNPRC_IDX")) or c,"high":num(x.get("HGPRC_IDX")) or c,
-                        "low":num(x.get("LWPRC_IDX")) or c,"close":c,"volume":num(x.get("ACC_TRDVOL"))})
+            o=num(x.get("OPNPRC_IDX"));h=num(x.get("HGPRC_IDX"));l=num(x.get("LWPRC_IDX"))
+            if min(o,h,l,c)<=0:continue
+            out.append({"date":d,"open":o,"high":h,"low":l,"close":c,"volume":num(x.get("ACC_TRDVOL"))})
         out.sort(key=lambda x:x["date"]);return out
 
     def _fetch_krx_index_daily_openapi(self,key,count=40):
@@ -716,47 +742,95 @@ class NHFeed:
             if chosen:
                 c=num(chosen.get("CLSPRC_IDX"))
                 if c>0:
-                    got.append({"date":normalize_date(chosen.get("BAS_DD") or d),
-                                "open":num(chosen.get("OPNPRC_IDX")) or c,
-                                "high":num(chosen.get("HGPRC_IDX")) or c,
-                                "low":num(chosen.get("LWPRC_IDX")) or c,
-                                "close":c,"volume":num(chosen.get("ACC_TRDVOL"))})
+                    o=num(chosen.get("OPNPRC_IDX"));h=num(chosen.get("HGPRC_IDX"));l=num(chosen.get("LWPRC_IDX"))
+                    if min(o,h,l,c)>0:
+                        got.append({"date":normalize_date(chosen.get("BAS_DD") or d),
+                                    "open":o,"high":h,"low":l,"close":c,
+                                    "volume":num(chosen.get("ACC_TRDVOL"))})
             if len(got)>=count:break
         got.sort(key=lambda x:x["date"])
         if got:self.market_daily_error[key]=""
         return got[-count:]
 
-    def _fetch_krx_index_daily(self,key,count=40):
-        official=self._fetch_krx_index_daily_openapi(key,count)
-        if official:return official
+    def _fetch_krx_index_daily_web(self,key,count=40):
+        """KRX official website daily index OHLC fallback.
+
+        KOSPI ticker = 1/001, KOSDAQ ticker = 2/001. MDCSTAT00301 is
+        the KRX individual-index OHLCV time-series dataset used by the KRX
+        information system. No candle is emitted unless true O/H/L/C exists.
+        """
         code={"kospi":("1","001","02","코스피"),"kosdaq":("2","001","03","코스닥")}.get(key)
         if not code:return []
-        end=datetime.now(KST).strftime("%Y%m%d");start=(datetime.now(KST)-timedelta(days=100)).strftime("%Y%m%d")
-        payload={"bld":"dbms/MDC/STAT/standard/MDCSTAT00301","indIdx":code[0],"indIdx2":code[1],"strtDd":start,"endDd":end}
-        j=self._krx_post(payload);rows=j.get("output") or j.get("OutBlock_1") or j.get("output1") or []
-        out=self._parse_krx_index_rows(rows)
-        if out:return out[-count:]
-        # Some KRX sessions intermittently return an empty range response.
-        # Fallback stays on KRX official data: request daily all-index snapshots
-        # and extract only the exact KOSPI/KOSDAQ row. No synthetic candles.
+        end=datetime.now(KST).strftime("%Y%m%d")
+        # ~140 calendar days comfortably covers 40 trading days.
+        start=(datetime.now(KST)-timedelta(days=max(140,count*4))).strftime("%Y%m%d")
+        payload={
+            "bld":"dbms/MDC/STAT/standard/MDCSTAT00301",
+            "indIdx":code[0],"indIdx2":code[1],
+            "strtDd":start,"endDd":end,
+        }
+        try:
+            j=self._krx_post(payload)
+            rows=j.get("output") or j.get("OutBlock_1") or j.get("output1") or []
+            out=self._parse_krx_index_rows(rows)
+            if out:
+                self.market_daily_source[key]="KRX 정보데이터시스템"
+                self.market_daily_error[key]=""
+                return out[-count:]
+        except Exception as exc:
+            self.market_daily_error[key]=f"KRX 정보데이터시스템: {exc}"[:220]
+
+        # Cross-sectional daily index snapshots are a second KRX-only fallback.
+        # Newer KRX pages use MDCSTAT00601; MDCSTAT00101 is retained for
+        # compatibility with older sessions. Limit calls so an outage cannot
+        # create a request storm.
         got=[];d=datetime.now(KST);tries=0
-        while len(got)<min(count,12) and tries<16:
+        while len(got)<min(count,15) and tries<22:
             tries+=1
             if d.weekday()<5:
-                q={"bld":"dbms/MDC/STAT/standard/MDCSTAT00101","idxIndMidclssCd":code[2],"trdDd":d.strftime("%Y%m%d")}
-                try:
-                    jj=self._krx_post(q);rr=jj.get("output") or []
-                    exact=[]
-                    for x in rr:
-                        if not isinstance(x,dict):continue
-                        nm=str(x.get("IDX_NM") or x.get("IDX_IND_NM") or "").strip()
-                        if nm==code[3]:
-                            y=dict(x);y["TRD_DD"]=d.strftime("%Y%m%d");exact.append(y);break
-                    got.extend(self._parse_krx_index_rows(exact))
-                except Exception:
-                    pass
+                for bld in ("dbms/MDC/STAT/standard/MDCSTAT00601","dbms/MDC/STAT/standard/MDCSTAT00101"):
+                    q={"bld":bld,"idxIndMidclssCd":code[2],"trdDd":d.strftime("%Y%m%d")}
+                    try:
+                        jj=self._krx_post(q);rr=jj.get("output") or jj.get("OutBlock_1") or []
+                        chosen=None
+                        for x in rr:
+                            if not isinstance(x,dict):continue
+                            nm=str(x.get("IDX_NM") or x.get("IDX_IND_NM") or "").strip()
+                            if nm==code[3]:
+                                chosen=dict(x);chosen["TRD_DD"]=d.strftime("%Y%m%d");break
+                        if chosen:
+                            parsed=self._parse_krx_index_rows([chosen])
+                            if parsed:got.extend(parsed);break
+                    except Exception:
+                        continue
             d-=timedelta(days=1)
-        got.sort(key=lambda x:x["date"]);return got[-count:]
+        # dedupe by date in case both snapshot endpoints returned the same row
+        uniq={x["date"]:x for x in got}
+        out=[uniq[k] for k in sorted(uniq)]
+        if out:
+            self.market_daily_source[key]="KRX 정보데이터시스템"
+            self.market_daily_error[key]=""
+        return out[-count:]
+
+    def _fetch_krx_index_daily(self,key,count=40):
+        # 1) Formal KRX OPEN API when the user has an approved key.
+        official=self._fetch_krx_index_daily_openapi(key,count)
+        if official:
+            self.market_daily_source[key]="KRX OPEN API"
+            return official
+        openapi_error=self.market_daily_error.get(key,"") if self.krx_openapi_key else ""
+
+        # 2) KRX's own Information Data System. This is not a third-party
+        # market-data substitute; it is an official KRX-origin fallback.
+        web=self._fetch_krx_index_daily_web(key,count)
+        if web:return web
+        web_error=self.market_daily_error.get(key,"")
+
+        if openapi_error and web_error:
+            self.market_daily_error[key]=f"OPEN API: {openapi_error} | {web_error}"[:220]
+        elif not web_error:
+            self.market_daily_error[key]="KRX 공식 일봉 응답이 비어 있음"
+        return []
 
     def _refresh_krx_daily(self,force=False):
         now=time.time()
@@ -836,11 +910,11 @@ class NHFeed:
             d=normalize_date(r.get("bsop_date") or r.get("xymd") or r.get("date"))
             v=num(r.get("ovrs_prpr") or r.get("close_prc") or r.get("close") or r.get("last"))
             if d and v>0:
-                dated.append((d,v));daily.append({"date":d,
-                    "open":num(r.get("ovrs_oprc") or r.get("open_prc") or r.get("open")) or v,
-                    "high":num(r.get("ovrs_hgpr") or r.get("high") or r.get("high_prc")) or v,
-                    "low":num(r.get("ovrs_lwpr") or r.get("low") or r.get("low_prc")) or v,
-                    "close":v,"volume":num(r.get("vol") or r.get("acml_vol") or r.get("volume"))})
+                dated.append((d,v))
+                o=num(r.get("ovrs_oprc") or r.get("open_prc") or r.get("open"));h=num(r.get("ovrs_hgpr") or r.get("high") or r.get("high_prc"));l=num(r.get("ovrs_lwpr") or r.get("low") or r.get("low_prc"))
+                if min(o,h,l,v)>0:
+                    daily.append({"date":d,"open":o,"high":h,"low":l,"close":v,
+                                  "volume":num(r.get("vol") or r.get("acml_vol") or r.get("volume"))})
         self._set_market_daily_bars(key,daily)
         # The server can return newest-first; sort explicitly.
         dated=sorted(dict(dated).items())[-30:]
@@ -975,8 +1049,9 @@ class NHFeed:
             if not isinstance(r,dict):continue
             d=normalize_date(r.get("bsop_date") or r.get("date"));v=num(r.get("prpr") or r.get("clpr") or r.get("close"))
             if d and v>0:
-                dated.append((d,v));daily.append({"date":d,"open":num(r.get("oprc")) or v,"high":num(r.get("hgpr")) or v,
-                    "low":num(r.get("lwpr")) or v,"close":v,"volume":num(r.get("vol"))})
+                dated.append((d,v));o=num(r.get("oprc"));h=num(r.get("hgpr"));l=num(r.get("lwpr"))
+                if min(o,h,l,v)>0:
+                    daily.append({"date":d,"open":o,"high":h,"low":l,"close":v,"volume":num(r.get("vol"))})
         dated=sorted(dict(dated).items())[-30:]
         if dated:
             self.future_history["kospi_night"]=[v for _,v in dated];self._set_market_daily_bars("kospi_night",daily)
@@ -1000,8 +1075,9 @@ class NHFeed:
             if not isinstance(r,dict):continue
             d=normalize_date(r.get("tymd") or r.get("bsop_date") or r.get("date"));v=num(r.get("clos") or r.get("last") or r.get("close"))
             if d and v>0:
-                dated.append((d,v));daily.append({"date":d,"open":num(r.get("open")) or v,"high":num(r.get("high")) or v,
-                    "low":num(r.get("low")) or v,"close":v,"volume":num(r.get("tvol"))})
+                dated.append((d,v));o=num(r.get("open"));h=num(r.get("high"));l=num(r.get("low"))
+                if min(o,h,l,v)>0:
+                    daily.append({"date":d,"open":o,"high":h,"low":l,"close":v,"volume":num(r.get("tvol"))})
         dated=sorted(dict(dated).items())[-30:]
         if dated:
             self.future_history["nasdaq_future"]=[v for _,v in dated];self._set_market_daily_bars("nasdaq_future",daily)
@@ -1129,6 +1205,7 @@ class NHFeed:
                 "usdkrw_source":self.usdkrw_source,"program_realtime":dict(self.program_realtime),
                 "investor_updated_at":self.investor_updated_at,"history_updated_at":self.history_updated_at,
                 "future_symbols":dict(self.future_symbols),"market_daily_error":dict(self.market_daily_error),
+                "market_daily_source":dict(self.market_daily_source),
                 "krx_openapi_configured":bool(self.krx_openapi_key),"sector_catalog_count":sum(len(v) for v in self.sector_catalog.values()),
                 "sector_scan_count":len(self.code_lists["KR"] or self.fixed["KR"]),"sector_universe_asof":self.sector_universe_asof}
 
