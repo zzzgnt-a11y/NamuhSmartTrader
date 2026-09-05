@@ -1,0 +1,15 @@
+GY 주식 자동 모의매매 24시간 실행 패치
+
+1) 기존 프로젝트에서 app.py, nhfeed.py, state_store.py, requirements.txt를 이 파일들로 교체
+2) Render Start Command:
+   uvicorn app:app --host 0.0.0.0 --port $PORT --workers 1
+3) 환경변수:
+   AUTO_TRADING_ENABLED=1
+   AUTO_LOOP_SECONDS=5
+   DATABASE_URL=<Render Postgres 연결주소>   # 재배포/재시작 후 상태 유지 권장
+   NHPLUG_APP_KEY=<기존 값>
+   NHPLUG_APP_SECRET=<기존 값>
+4) /api/health 에서 auto_trading_enabled, loop.last_ok, persistence.durable 확인
+
+주의: 현재 app.py의 매매 계정은 PaperAccount이므로 실제 주문이 아니라 자동 모의매매입니다.
+실계좌 주문은 별도의 주문 API 연동이 필요합니다.
