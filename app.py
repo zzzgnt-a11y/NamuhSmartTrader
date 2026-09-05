@@ -4,156 +4,331 @@ import os
 import re
 import threading
 import time
-from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
+
+from contextlib import (
+    asynccontextmanager,
+)
+
+from datetime import (
+    datetime,
+    timedelta,
+    timezone,
+)
+
 from typing import Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Query
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
 
-from engine import PaperAccount, scalp_score, smart_score
-from indicators import rsi
-from nhfeed import NHFeed
+from fastapi import (
+    FastAPI,
+    Query,
+)
+
+from fastapi.responses import (
+    FileResponse,
+)
+
+from fastapi.staticfiles import (
+    StaticFiles,
+)
+
+from pydantic import (
+    BaseModel,
+)
+
+from engine import (
+    PaperAccount,
+    scalp_score,
+    smart_score,
+)
+
+from nhfeed import (
+    NHFeed,
+)
+
 
 load_dotenv()
 
-KST = timezone(timedelta(hours=9))
-MARKETS = ("KR", "US")
+
+KST = timezone(
+    timedelta(
+        hours=9
+    )
+)
+
+
+MARKETS = (
+    "KR",
+    "US",
+)
+
 
 feed = NHFeed()
+
 paper = PaperAccount()
+
 
 protected = {
     x.strip()
-    for x in os.getenv("PROTECTED_CODES", "").split(",")
+
+    for x
+    in os.getenv(
+        "PROTECTED_CODES",
+        "",
+    ).split(
+        ","
+    )
+
     if x.strip()
 }
 
-cache_lock = threading.Lock()
+
+cache_lock = (
+    threading.Lock()
+)
+
+
 started = False
 
+
 CACHE = {
-    "KR": {"sectors": [], "scalp": [], "smart": [], "updated_at": 0.0},
-    "US": {"sectors": [], "scalp": [], "smart": [], "updated_at": 0.0},
+    "KR": {
+        "sectors": [],
+        "scalp": [],
+        "smart": [],
+        "updated_at": 0.0,
+    },
+
+    "US": {
+        "sectors": [],
+        "scalp": [],
+        "smart": [],
+        "updated_at": 0.0,
+    },
 }
+
 
 SECTOR_FALLBACK = {
-    "005930": "반도체",
-    "000660": "반도체",
-    "042700": "반도체",
-    "035420": "인터넷/AI",
-    "035720": "인터넷/AI",
-    "068270": "바이오",
-    "012450": "방산",
-    "267260": "전력기기",
+    "005930":
+        "반도체",
+
+    "000660":
+        "반도체",
+
+    "042700":
+        "반도체",
+
+    "035420":
+        "인터넷/AI",
+
+    "035720":
+        "인터넷/AI",
+
+    "068270":
+        "바이오",
+
+    "012450":
+        "방산",
+
+    "267260":
+        "전력기기",
 }
 
 
-def normalize_market(value):
-    return "US" if str(value).upper() == "US" else "KR"
-
-
-def krw(value):
-    return int(round(float(value or 0)))
-
-
-def _int_env(name: str, default: int, minimum: int = 0, maximum: int = 100):
-    try:
-        value = int(os.getenv(name, str(default)))
-    except Exception:
-        value = default
-    return max(minimum, min(maximum, value))
-
-
-def buy_score_threshold(market: str):
+def normalize_market(
+    value
+):
     return (
-        _int_env("US_BUY_SCORE", 70, 0, 100)
-        if market == "US"
-        else _int_env("KR_BUY_SCORE", 72, 0, 100)
+        "US"
+        if str(
+            value
+        ).upper()
+        == "US"
+        else "KR"
     )
 
 
-def trading_window(now: Optional[datetime] = None):
-    now = now.astimezone(KST) if now else datetime.now(KST)
-    h = now.hour + now.minute / 60
+def krw(
+    value
+):
+    return int(
+        round(
+            float(
+                value or 0
+            )
+        )
+    )
 
-    if 8 <= h < 20 and now.weekday() < 5:
+
+def trading_window(
+    now: Optional[
+        datetime
+    ] = None,
+):
+    now = (
+        now.astimezone(
+            KST
+        )
+        if now
+        else datetime.now(
+            KST
+        )
+    )
+
+    h = (
+        now.hour
+        + now.minute
+        / 60
+    )
+
+    if (
+        8
+        <= h
+        < 20
+        and now.weekday()
+        < 5
+    ):
         return "KR"
 
-    if h >= 20 and now.weekday() < 5:
+    if (
+        h >= 20
+        and now.weekday()
+        < 5
+    ):
         return "US"
 
     if (
         h < 6
         and (
-            now - timedelta(days=1)
-        ).weekday() < 5
+            now
+            - timedelta(
+                days=1
+            )
+        ).weekday()
+        < 5
     ):
         return "US"
 
     return None
 
 
-def default_view_market(now: Optional[datetime] = None):
-    now = now.astimezone(KST) if now else datetime.now(KST)
+def default_view_market(
+    now: Optional[
+        datetime
+    ] = None,
+):
+    active = (
+        trading_window(
+            now
+        )
+    )
 
     return (
-        "US"
-        if (
-            now.hour >= 20
-            or now.hour < 6
-        )
-        else "KR"
+        active
+        or "KR"
     )
 
 
 def trading_day_key(
     market: str,
-    now: Optional[datetime] = None,
+    now: Optional[
+        datetime
+    ] = None,
 ):
-    now = now.astimezone(KST) if now else datetime.now(KST)
+    now = (
+        now.astimezone(
+            KST
+        )
+        if now
+        else datetime.now(
+            KST
+        )
+    )
 
     if (
         market == "US"
         and now.hour < 6
     ):
-        now -= timedelta(days=1)
+        now = (
+            now
+            - timedelta(
+                days=1
+            )
+        )
 
-    return now.strftime("%Y-%m-%d")
+    return now.strftime(
+        "%Y-%m-%d"
+    )
 
 
-def schedule_payload(now: Optional[datetime] = None):
-    now = now.astimezone(KST) if now else datetime.now(KST)
+def schedule_payload(
+    now: Optional[
+        datetime
+    ] = None,
+):
+    now = (
+        now.astimezone(
+            KST
+        )
+        if now
+        else datetime.now(
+            KST
+        )
+    )
 
-    active = trading_window(now)
+    active = (
+        trading_window(
+            now
+        )
+    )
 
     return {
-        "kst": now.isoformat(),
-        "active_market": active,
-        "default_view": default_view_market(now),
-        "kr_hours": "08:00~20:00 KST",
-        "us_hours": "20:00~06:00 KST",
-        "trading_enabled": active is not None,
-        "label": (
-            "국장 자동매매 시간"
-            if active == "KR"
-            else "미장 자동매매 시간"
-            if active == "US"
-            else "자동매매 대기시간"
-        ),
+        "kst":
+            now.isoformat(),
+
+        "active_market":
+            active,
+
+        "default_view":
+            default_view_market(
+                now
+            ),
+
+        "kr_hours":
+            "08:00~20:00 KST",
+
+        "us_hours":
+            "20:00~06:00 KST",
+
+        "trading_enabled":
+            active is not None,
+
+        "label":
+            (
+                "국장 자동매매 시간"
+                if active == "KR"
+
+                else
+                "미장 자동매매 시간"
+                if active == "US"
+
+                else
+                "자동매매 대기시간"
+            ),
     }
 
 
-def build_sectors(market: str):
+def build_sectors(
+    market: str,
+):
     agg = {}
 
     for q in list(
-        feed.quotes_for(
+        feed
+        .quotes_for(
             market
-        ).values()
+        )
+        .values()
     ):
         if (
             q.price <= 0
@@ -176,48 +351,93 @@ def build_sectors(market: str):
         item = agg.setdefault(
             sector,
             {
-                "sector": sector,
-                "sum": 0.0,
-                "n": 0,
-                "money": 0.0,
-                "leader": "",
-                "best": -999.0,
+                "sector":
+                    sector,
+
+                "sum":
+                    0.0,
+
+                "n":
+                    0,
+
+                "money":
+                    0.0,
+
+                "leader":
+                    "",
+
+                "best":
+                    -999.0,
             },
         )
 
         change = (
-            q.price / q.open - 1
+            (
+                q.price
+                / q.open
+            )
+            - 1
         ) * 100
 
-        item["sum"] += change
-        item["n"] += 1
-        item["money"] += (
-            q.price * q.volume
+        item[
+            "sum"
+        ] += change
+
+        item[
+            "n"
+        ] += 1
+
+        item[
+            "money"
+        ] += (
+            q.price
+            * q.volume
         )
 
-        if change > item["best"]:
-            item["best"] = change
-            item["leader"] = q.name
+        if (
+            change
+            > item[
+                "best"
+            ]
+        ):
+            item[
+                "best"
+            ] = change
+
+            item[
+                "leader"
+            ] = q.name
 
     out = []
 
-    for item in agg.values():
-        if not item["n"]:
+    for item in (
+        agg.values()
+    ):
+        if not item[
+            "n"
+        ]:
             continue
 
         avg = (
-            item["sum"]
-            / item["n"]
+            item[
+                "sum"
+            ]
+            / item[
+                "n"
+            ]
         )
 
         score = max(
             0,
             min(
                 15,
-                avg * 2
+                avg
+                * 2
                 + (
                     2
-                    if item["money"] > 0
+                    if item[
+                        "money"
+                    ] > 0
                     else 0
                 ),
             ),
@@ -225,245 +445,31 @@ def build_sectors(market: str):
 
         out.append(
             {
-                "sector": item["sector"],
-                "change_pct": avg,
-                "leader": item["leader"],
-                "score": score,
+                "sector":
+                    item[
+                        "sector"
+                    ],
+
+                "change_pct":
+                    avg,
+
+                "leader":
+                    item[
+                        "leader"
+                    ],
+
+                "score":
+                    score,
             }
         )
 
     return sorted(
         out,
-        key=lambda x: x["score"],
+        key=lambda x: x[
+            "score"
+        ],
         reverse=True,
     )[:8]
-
-
-def _tail_avg(px, n):
-    if len(px) < n:
-        return None
-
-    return sum(px[-n:]) / n
-
-
-def us_scalp_score(q, sector_score=0):
-    px = list(q.prices)
-
-    if len(px) < 20:
-        return (
-            0,
-            [
-                f"미장 1분봉 준비 중 {len(px)}/20"
-            ],
-        )
-
-    score, why = scalp_score(
-        q,
-        sector_score,
-    )
-
-    why = list(why)
-
-    last = px[-1]
-    ma5 = _tail_avg(px, 5)
-    ma20 = _tail_avg(px, 20)
-
-    if (
-        ma5
-        and ma20
-        and last >= ma5 >= ma20
-    ):
-        score += 8
-        why.append(
-            "미장 단기추세"
-        )
-
-    if (
-        len(px) >= 6
-        and px[-6] > 0
-    ):
-        momentum = (
-            last / px[-6] - 1
-        ) * 100
-
-        if (
-            0.05
-            <= momentum
-            <= 3.0
-        ):
-            score += 6
-
-            why.append(
-                f"5분 모멘텀 {momentum:.2f}%"
-            )
-
-        elif momentum > 5.0:
-            score -= 4
-
-            why.append(
-                "단기 과열 감점"
-            )
-
-    if q.open > 0:
-        day_move = (
-            q.price / q.open - 1
-        ) * 100
-
-        if (
-            0
-            <= day_move
-            <= 4
-        ):
-            score += 5
-
-            why.append(
-                f"세션 추세 {day_move:.2f}%"
-            )
-
-        elif day_move > 7:
-            score -= 5
-
-            why.append(
-                "세션 과열 감점"
-            )
-
-    if (
-        0
-        < q.per
-        <= 40
-    ):
-        score += 4
-
-        why.append(
-            "PER 범위 양호"
-        )
-
-    return (
-        max(
-            0,
-            min(
-                100,
-                round(score, 1),
-            ),
-        ),
-        why,
-    )
-
-
-def us_smart_score(q):
-    px = list(q.prices)
-
-    score, why = smart_score(q)
-    why = list(why)
-
-    if len(px) < 20:
-        if not why:
-            why.append(
-                f"미장 1분봉 준비 중 {len(px)}/20"
-            )
-
-        return (
-            max(
-                0,
-                min(
-                    100,
-                    round(score, 1),
-                ),
-            ),
-            why,
-        )
-
-    last = px[-1]
-    ma5 = _tail_avg(px, 5)
-    ma20 = _tail_avg(px, 20)
-    rv = rsi(px)
-
-    if (
-        ma5
-        and ma20
-        and last >= ma5 >= ma20
-    ):
-        score += 12
-        why.append(
-            "미장 5>20 추세"
-        )
-
-    if (
-        45
-        <= rv
-        <= 68
-    ):
-        score += 10
-        why.append(
-            f"RSI {rv:.0f}"
-        )
-
-    if px[-20] > 0:
-        ret20 = (
-            last / px[-20] - 1
-        ) * 100
-
-        if (
-            0
-            <= ret20
-            <= 12
-        ):
-            score += 10
-            why.append(
-                f"20봉 누적 {ret20:.2f}%"
-            )
-
-        elif ret20 > 18:
-            score -= 6
-            why.append(
-                "20봉 과열 감점"
-            )
-
-    if q.open > 0:
-        day_move = (
-            q.price / q.open - 1
-        ) * 100
-
-        if (
-            -1
-            <= day_move
-            <= 5
-        ):
-            score += 6
-            why.append(
-                "세션 가격 안정"
-            )
-
-    if (
-        0
-        < q.per
-        <= 40
-    ):
-        score += 8
-        why.append(
-            "미장 PER 범위"
-        )
-
-    if (
-        0
-        < q.pbr
-        <= 5
-    ):
-        score += 4
-        why.append(
-            "미장 PBR 범위"
-        )
-
-    return (
-        max(
-            0,
-            min(
-                100,
-                round(score, 1),
-            ),
-        ),
-        why,
-    )
 
 
 def candidate(
@@ -484,39 +490,30 @@ def candidate(
         )
     )
 
-    sector_score = (
-        secmap.get(
-            sector,
-            0,
-        )
-        if secmap
-        else 0
-    )
+    if smart:
 
-    if market == "US":
         (
             score,
             why,
-        ) = (
-            us_smart_score(q)
-            if smart
-            else us_scalp_score(
-                q,
-                sector_score,
-            )
+        ) = smart_score(
+            q
         )
 
     else:
+
         (
             score,
             why,
-        ) = (
-            smart_score(q)
-            if smart
-            else scalp_score(
-                q,
-                sector_score,
-            )
+        ) = scalp_score(
+            q,
+            (
+                secmap.get(
+                    sector,
+                    0,
+                )
+                if secmap
+                else 0
+            ),
         )
 
     vi_pre = (
@@ -538,7 +535,8 @@ def candidate(
             q.code,
 
         "name":
-            q.name or q.code,
+            q.name
+            or q.code,
 
         "sector":
             sector,
@@ -552,20 +550,28 @@ def candidate(
 
         "price":
             (
-                krw(q.price)
+                krw(
+                    q.price
+                )
                 if market == "KR"
                 else round(
-                    float(q.price),
+                    float(
+                        q.price
+                    ),
                     4,
                 )
             ),
 
         "open":
             (
-                krw(q.open)
+                krw(
+                    q.open
+                )
                 if market == "KR"
                 else round(
-                    float(q.open),
+                    float(
+                        q.open
+                    ),
                     4,
                 )
             ),
@@ -598,7 +604,9 @@ def candidate(
 
         "vi_pre":
             (
-                krw(vi_pre)
+                krw(
+                    vi_pre
+                )
                 if vi_pre
                 else None
             ),
@@ -609,13 +617,18 @@ def candidate(
         "series":
             [
                 (
-                    krw(x)
+                    krw(
+                        x
+                    )
                     if market == "KR"
                     else round(
-                        float(x),
+                        float(
+                            x
+                        ),
                         4,
                     )
                 )
+
                 for x
                 in list(
                     q.prices
@@ -624,38 +637,54 @@ def candidate(
     }
 
 
-def rebuild_cache(market: str):
-    market = normalize_market(
-        market
+def rebuild_cache(
+    market: str,
+):
+    market = (
+        normalize_market(
+            market
+        )
     )
 
-    sectors = build_sectors(
-        market
+    sectors = (
+        build_sectors(
+            market
+        )
     )
 
     secmap = {
-        x["sector"]:
-            x["score"]
+        x[
+            "sector"
+        ]:
+            x[
+                "score"
+            ]
+
         for x
         in sectors
     }
 
     quotes = [
         q
+
         for q
         in feed
         .quotes_for(
             market
         )
         .values()
+
         if q.price > 0
     ]
 
     scalp = []
+
     smart = []
 
     for q in quotes:
+
         try:
+
             scalp.append(
                 candidate(
                     q,
@@ -673,28 +702,25 @@ def rebuild_cache(market: str):
                 )
             )
 
-        except Exception as exc:
-            print(
-                "CANDIDATE ERROR:",
-                market,
-                q.code,
-                exc,
-                flush=True,
-            )
+        except Exception:
+            continue
 
     scalp.sort(
-        key=lambda x:
-            x["score"],
+        key=lambda x: x[
+            "score"
+        ],
         reverse=True,
     )
 
     smart.sort(
-        key=lambda x:
-            x["score"],
+        key=lambda x: x[
+            "score"
+        ],
         reverse=True,
     )
 
     with cache_lock:
+
         CACHE[
             market
         ] = {
@@ -702,10 +728,14 @@ def rebuild_cache(market: str):
                 sectors,
 
             "scalp":
-                scalp[:50],
+                scalp[
+                    :50
+                ],
 
             "smart":
-                smart[:50],
+                smart[
+                    :50
+                ],
 
             "updated_at":
                 time.time(),
@@ -718,8 +748,10 @@ def trade_market(
     market: str,
     candidates,
 ):
-    day_key = trading_day_key(
-        market
+    day_key = (
+        trading_day_key(
+            market
+        )
     )
 
     paper.ensure_budget_day(
@@ -734,10 +766,7 @@ def trade_market(
 
     if (
         market == "US"
-        and (
-            not feed.usdkrw_tradeable
-            or fx <= 0
-        )
+        and fx <= 0
     ):
         return
 
@@ -748,8 +777,13 @@ def trade_market(
     )
 
     score_map = {
-        x["code"]:
-            x["score"]
+        x[
+            "code"
+        ]:
+            x[
+                "score"
+            ]
+
         for x
         in candidates
     }
@@ -759,6 +793,7 @@ def trade_market(
             market
         )
     ):
+
         q = quotes.get(
             p.code
         )
@@ -776,9 +811,11 @@ def trade_market(
             fx,
         )
 
-        score = score_map.get(
-            p.code,
-            50,
+        score = (
+            score_map.get(
+                p.code,
+                50,
+            )
         )
 
         if (
@@ -786,6 +823,7 @@ def trade_market(
             or p.pnl_pct <= -1.5
             or score < 46
         ):
+
             paper.sell(
                 market,
                 p.code,
@@ -793,25 +831,23 @@ def trade_market(
                 fx,
             )
 
-    threshold = (
-        buy_score_threshold(
-            market
-        )
-    )
-
     for item in candidates:
+
         if (
             len(
                 paper.market_positions(
                     market
                 )
             ) >= 3
-            or item["score"]
-            < threshold
+            or item[
+                "score"
+            ] < 72
         ):
             break
 
-        code = item["code"]
+        code = item[
+            "code"
+        ]
 
         if (
             market == "KR"
@@ -832,8 +868,7 @@ def trade_market(
             )
             and item[
                 "price"
-            ]
-            >= item[
+            ] >= item[
                 "vi_pre"
             ]
         ):
@@ -859,8 +894,7 @@ def trade_market(
         )
 
         budget = (
-            paper
-            .effective_budget_krw(
+            paper.effective_budget_krw(
                 day_key
             )
         )
@@ -873,14 +907,18 @@ def trade_market(
             ),
         )
 
-        if remain < unit_krw:
+        if (
+            remain
+            < unit_krw
+        ):
             continue
 
         target = min(
             remain,
             max(
                 unit_krw,
-                budget / 2,
+                budget
+                / 2,
             ),
         )
 
@@ -890,6 +928,7 @@ def trade_market(
         )
 
         if qty >= 1:
+
             paper.buy(
                 q,
                 qty,
@@ -899,9 +938,12 @@ def trade_market(
             )
 
 
-def ai_loop():
+def ai_loop(
+):
     while True:
+
         try:
+
             kr_candidates = (
                 rebuild_cache(
                     "KR"
@@ -919,34 +961,44 @@ def ai_loop():
             )
 
             if active == "KR":
+
                 trade_market(
                     "KR",
                     kr_candidates,
                 )
 
             elif active == "US":
+
                 trade_market(
                     "US",
                     us_candidates,
                 )
 
         except Exception as exc:
+
             print(
                 "AI LOOP ERROR:",
                 exc,
                 flush=True,
             )
 
-        time.sleep(5)
+        time.sleep(
+            5
+        )
 
 
-def nh_feed_bootstrap():
-    from nhplug.auth import get_token
+def nh_feed_bootstrap(
+):
+    from nhplug.auth import (
+        get_token,
+    )
 
     delay = 2
 
     while True:
+
         try:
+
             get_token()
 
             print(
@@ -960,21 +1012,28 @@ def nh_feed_bootstrap():
             return
 
         except Exception as exc:
+
             print(
                 "NH AUTH WAIT:",
-                str(exc),
+                str(
+                    exc
+                ),
                 flush=True,
             )
 
-            time.sleep(delay)
+            time.sleep(
+                delay
+            )
 
             delay = min(
-                delay * 2,
+                delay
+                * 2,
                 60,
             )
 
 
-def start_background():
+def start_background(
+):
     global started
 
     if started:
@@ -990,6 +1049,7 @@ def start_background():
             "NHPLUG_APP_SECRET"
         )
     ):
+
         threading.Thread(
             target=
                 nh_feed_bootstrap,
@@ -1003,7 +1063,9 @@ def start_background():
 
 
 @asynccontextmanager
-async def lifespan(_app):
+async def lifespan(
+    _app
+):
     start_background()
 
     yield
@@ -1015,6 +1077,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
 app.mount(
     "/static",
     StaticFiles(
@@ -1025,13 +1088,15 @@ app.mount(
 
 
 @app.get("/")
-def home():
+def home(
+):
     return FileResponse(
         "static/index.html"
     )
 
 
-def health_payload():
+def health_payload(
+):
     h = feed.health()
 
     return {
@@ -1049,82 +1114,62 @@ def health_payload():
             ),
 
         "nh_realtime":
-            h["nh_realtime"],
+            h[
+                "nh_realtime"
+            ],
 
         "realtime":
-            h["realtime"],
+            h[
+                "realtime"
+            ],
 
         "errors":
-            h["errors"],
+            h[
+                "errors"
+            ],
 
         "orders_sent":
             0,
 
         "kr_tracked":
-            h["kr_tracked"],
+            h[
+                "kr_tracked"
+            ],
 
         "kr_priced":
-            h["kr_priced"],
+            h[
+                "kr_priced"
+            ],
 
         "us_tracked":
-            h["us_tracked"],
+            h[
+                "us_tracked"
+            ],
 
         "us_priced":
-            h["us_priced"],
-
-        "us_warmup_done":
-            h.get(
-                "us_warmup_done",
-                0,
-            ),
-
-        "us_warmup_total":
-            h.get(
-                "us_warmup_total",
-                0,
-            ),
-
-        "us_warmup_errors":
-            h.get(
-                "us_warmup_errors",
-                {},
-            ),
+            h[
+                "us_priced"
+            ],
 
         "market_updated_at":
-            h["market_updated_at"],
+            h[
+                "market_updated_at"
+            ],
 
         "market_errors":
-            h["market_errors"],
+            h[
+                "market_errors"
+            ],
 
         "usdkrw":
-            h["usdkrw"],
+            h[
+                "usdkrw"
+            ],
 
         "usdkrw_asof":
-            h["usdkrw_asof"],
-
-        "usdkrw_tradeable":
-            h.get(
-                "usdkrw_tradeable",
-                False,
-            ),
-
-        "usdkrw_source":
-            h.get(
-                "usdkrw_source",
-                "",
-            ),
-
-        "buy_score_threshold":
-            {
-                "KR":
-                    buy_score_threshold(
-                        "KR"
-                    ),
-                "US":
-                    buy_score_threshold(
-                        "US"
-                    ),
-            },
+            h[
+                "usdkrw_asof"
+            ],
 
         "schedule":
             schedule_payload(),
@@ -1134,7 +1179,8 @@ def health_payload():
 @app.get(
     "/api/health"
 )
-def health():
+def health(
+):
     return (
         health_payload()
     )
@@ -1147,7 +1193,9 @@ class BudgetRequest(
         int
     ] = None
 
-    auto_max_if_unset: bool = True
+    auto_max_if_unset: bool = (
+        True
+    )
 
 
 @app.post(
@@ -1177,8 +1225,7 @@ def set_budget(
     )
 
     effective = (
-        paper
-        .effective_budget_krw(
+        paper.effective_budget_krw(
             day_key
         )
     )
@@ -1219,8 +1266,7 @@ def paper_state(
     )
 
     effective_budget = (
-        paper
-        .effective_budget_krw(
+        paper.effective_budget_krw(
             day_key
         )
     )
@@ -1232,6 +1278,7 @@ def paper_state(
             market
         )
     ):
+
         positions.append(
             {
                 "market":
@@ -1295,12 +1342,16 @@ def paper_state(
 
     trades = [
         t
+
         for t
         in paper.trades
+
         if t.get(
             "market"
         ) == market
-    ][:100]
+    ][
+        :100
+    ]
 
     return {
         "initial_cash":
@@ -1360,9 +1411,6 @@ def paper_state(
 
         "usdkrw_asof":
             feed.usdkrw_asof,
-
-        "usdkrw_tradeable":
-            feed.usdkrw_tradeable,
     }
 
 
@@ -1379,6 +1427,7 @@ def market_separation_check(
                 "",
             )
         )
+
         for x
         in (
             scalp
@@ -1388,10 +1437,13 @@ def market_separation_check(
     ]
 
     if market == "US":
+
         bad = [
             c
+
             for c
             in codes
+
             if re.fullmatch(
                 r"\d{6}",
                 c,
@@ -1399,10 +1451,13 @@ def market_separation_check(
         ]
 
     else:
+
         bad = [
             c
+
             for c
             in codes
+
             if (
                 c
                 and not
@@ -1444,28 +1499,37 @@ def state(
     )
 
     with cache_lock:
+
         c = CACHE[
             market
         ]
 
         sectors = list(
-            c["sectors"]
+            c[
+                "sectors"
+            ]
         )
 
         scalp = list(
-            c["scalp"][
+            c[
+                "scalp"
+            ][
                 :30
             ]
         )
 
         smart = list(
-            c["smart"][
+            c[
+                "smart"
+            ][
                 :30
             ]
         )
 
         updated_at = (
-            c["updated_at"]
+            c[
+                "updated_at"
+            ]
         )
 
     pstate = (
@@ -1537,23 +1601,30 @@ def state(
 @app.get(
     "/api/market-check"
 )
-def market_check():
+def market_check(
+):
     out = {}
 
     for market in MARKETS:
+
         with cache_lock:
+
             c = CACHE[
                 market
             ]
 
             scalp = list(
-                c["scalp"][
+                c[
+                    "scalp"
+                ][
                     :30
                 ]
             )
 
             smart = list(
-                c["smart"][
+                c[
+                    "smart"
+                ][
                     :30
                 ]
             )
@@ -1578,15 +1649,23 @@ def market_check():
         )
 
     kr_labels = [
-        x["label"]
-        for x in feed.market_state(
+        x[
+            "label"
+        ]
+
+        for x
+        in feed.market_state(
             "KR"
         )
     ]
 
     us_labels = [
-        x["label"]
-        for x in feed.market_state(
+        x[
+            "label"
+        ]
+
+        for x
+        in feed.market_state(
             "US"
         )
     ]
@@ -1594,34 +1673,47 @@ def market_check():
     checks = {
         "market_separation":
             (
-                out["KR"]["ok"]
-                and out["US"]["ok"]
+                out[
+                    "KR"
+                ][
+                    "ok"
+                ]
+                and out[
+                    "US"
+                ][
+                    "ok"
+                ]
             ),
 
         "kr_index_order":
-            kr_labels
-            == [
-                "코스피",
-                "코스닥",
-                "코스피 야간선물",
-                "나스닥 선물",
-                "필라델피아 반도체지수",
-            ],
+            (
+                kr_labels
+                == [
+                    "코스피",
+                    "코스닥",
+                    "코스피 야간선물",
+                    "나스닥 선물",
+                    "필라델피아 반도체지수",
+                ]
+            ),
 
         "us_index_order":
-            us_labels
-            == [
-                "S&P500",
-                "나스닥",
-                "나스닥 선물",
-                "필라델피아 반도체지수",
-            ],
+            (
+                us_labels
+                == [
+                    "S&P500",
+                    "나스닥",
+                    "나스닥 선물",
+                    "필라델피아 반도체지수",
+                ]
+            ),
 
         "nxt_not_index":
             (
                 "NXT"
                 not in kr_labels
-                and "NXT"
+                and
+                "NXT"
                 not in us_labels
             ),
 
@@ -1652,6 +1744,7 @@ def market_check():
 
 
 if __name__ == "__main__":
+
     import uvicorn
 
     uvicorn.run(
@@ -1667,4 +1760,4 @@ if __name__ == "__main__":
             )
         ),
         reload=False,
-    )
+        )
