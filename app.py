@@ -550,20 +550,24 @@ def set_budget(data:BudgetRequest):
 
 def paper_state(market):
     active=trading_window() or default_view_market();day=trading_day_key(active)
+    # Account summary is global. Market switching changes analysis context only;
+    # holdings/profit always represent the combined KR + US (+ future COIN) book.
     pos=[]
-    for p in paper.market_positions(market):
+    for p in paper.positions.values():
         pos.append({"market":p.market,"code":p.code,"name":p.name,"qty":p.qty,"avg_price":p.avg_price,
                     "current_price":p.current_price,"currency":"USD" if p.market=="US" else "KRW",
                     "fx_buy":p.fx_buy if p.market=="US" else None,"fx_current":p.fx_current if p.market=="US" else None,
                     "cost_krw":krw(p.cost_krw),"value_krw":krw(p.value_krw),"pnl":krw(p.pnl_krw),"pnl_pct":p.pnl_pct,
                     "strategy":p.strategy,"entry_session":p.entry_session})
-    trades=[t for t in paper.trades if t.get("market")==market][:100]
+    pos.sort(key=lambda x:(x.get("market",""),x.get("name",""),x.get("code","")))
+    trades=list(paper.trades)[:300]
     return {"initial_cash":paper.initial_cash_krw,"cash":krw(paper.cash_krw),"equity":krw(paper.equity_krw()),
             "budget_day":paper.budget_day,"explicit_budget":paper.explicit_budget_krw,
             "budget":paper.effective_budget_krw(day),"effective_budget":paper.effective_budget_krw(day),
             "auto_max_if_unset":paper.auto_max_if_unset,"held_cost":krw(paper.held_cost_krw()),
             "market_held_cost":krw(paper.held_cost_krw(market)),"positions":pos,"trades":trades,
-            "auto_trade_enabled":trading_window()==market,"usdkrw":feed.usdkrw,"usdkrw_asof":feed.usdkrw_asof}
+            "account_scope":"ALL","auto_trade_enabled":trading_window()==market,
+            "usdkrw":feed.usdkrw,"usdkrw_asof":feed.usdkrw_asof}
 
 def market_separation_check(market,scalp,smart,positions):
     codes=[str(x.get("code","")) for x in scalp+smart+positions]
@@ -580,7 +584,9 @@ def state(market:str=Query("KR")):
         # closed-market dashboard with zero/stale candidate cards.
         scalp=list(c["scalp"][:30]) if scan_active else []
         smart=(list(c["smart"][:30]) if market=="KR" and scan_active else [])
-    ps=paper_state(market);sep=market_separation_check(market,scalp,smart,ps["positions"])
+    ps=paper_state(market)
+    sep_positions=[p for p in ps["positions"] if p.get("market")==market]
+    sep=market_separation_check(market,scalp,smart,sep_positions)
     return {"mode":market,"health":health_payload(),"schedule":schedule_payload(),"market":feed.market_state(market),
             "session":feed.session_state(market),"sectors":sectors,"scalp":scalp,"smart":smart,
             "candidate_scan_active":scan_active,"macro_events":macro_calendar_payload(),
@@ -659,14 +665,15 @@ def index_detail(market:str,key:str,timeframe:str=Query("1d")):
         except Exception:pass
     bars=feed.market_bars(key,"1d")
     daily_error=getattr(feed,"market_daily_error",{}).get(key,"")
+    daily_source=getattr(feed,"market_daily_source",{}).get(key,"")
     if key in ("kospi","kosdaq") and not bars:
-        note=("KRX OPEN API 인증키(KRX_OPENAPI_KEY) 연결 필요" if not getattr(feed,"krx_openapi_key","") else (daily_error or "KRX 공식 일봉 수신 대기"))
+        note=daily_error or "KRX 공식 일봉 수신 대기"
     else:
-        note="공식 일별 OHLC · 최근 거래일 기준"
+        note=f"공식 일별 OHLC · {daily_source or item.get('source','공식 데이터')} · 최근 거래일 기준"
     return {
         "market":market,"key":key,"label":item.get("label",key),"value":item.get("value"),
         "change":item.get("change"),"change_pct":item.get("change_pct"),"status":item.get("status",""),
-        "source":item.get("source",""),"asof":item.get("asof",""),"timeframe":"1d","bars":bars,
+        "source":item.get("source",""),"daily_source":daily_source,"asof":item.get("asof",""),"timeframe":"1d","bars":bars,
         "market_open":feed.market_open_for_key(key),"note":note,"daily_error":daily_error,"build":BUILD_ID,
     }
 
