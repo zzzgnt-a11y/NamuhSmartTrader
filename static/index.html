@@ -1,831 +1,123 @@
 <!doctype html>
 <html lang="ko">
-
 <head>
-
   <meta charset="utf-8">
-
-  <meta
-    name="viewport"
-    content="width=device-width,initial-scale=1"
-  >
-
-  <title>
-    GY 모의투자 시스템
-  </title>
-
-  <link
-    rel="stylesheet"
-    href="/static/styles.css?v=9"
-  >
-
-  <style>
-
-    .market-switch-wrap {
-      position: fixed;
-      top: 16px;
-      right: 16px;
-      z-index: 1600;
-
-      display: flex;
-      align-items: center;
-
-      gap: 8px;
-
-      padding: 7px 9px;
-
-      border-radius: 999px;
-
-      background:
-        rgba(
-          8,
-          14,
-          28,
-          .94
-        );
-
-      border:
-        1px solid
-        rgba(
-          105,
-          146,
-          229,
-          .22
-        );
-    }
-
-    .market-switch-label {
-      font-size: 11px;
-
-      font-weight: 800;
-
-      color: #91a8c8;
-
-      cursor: pointer;
-    }
-
-    .market-switch-label.active {
-      color: #fff;
-    }
-
-    #marketModeBtn {
-      position: relative;
-
-      width: 54px;
-      height: 30px;
-
-      min-height: 30px;
-
-      padding: 0;
-
-      border-radius: 999px;
-    }
-
-    #marketModeBtn:after {
-      content: "";
-
-      position: absolute;
-
-      top: 4px;
-      left: 4px;
-
-      width: 22px;
-      height: 22px;
-
-      border-radius: 50%;
-
-      background: #fff;
-
-      transition: .2s;
-    }
-
-    #marketModeBtn.us:after {
-      transform:
-        translateX(
-          24px
-        );
-    }
-
-    .session-card,
-    .schedule-card {
-      margin:
-        0
-        0
-        14px;
-
-      padding:
-        11px
-        13px;
-
-      border-radius:
-        14px;
-
-      background:
-        rgba(
-          255,
-          255,
-          255,
-          .04
-        );
-
-      border:
-        1px solid
-        rgba(
-          121,
-          151,
-          196,
-          .14
-        );
-
-      font-size:
-        12px;
-
-      color:
-        #b8c8df;
-    }
-
-    .session-card[hidden] {
-      display: none;
-    }
-
-    .budget-options {
-      display: flex;
-
-      align-items: center;
-
-      gap: 8px;
-
-      margin-top: 10px;
-
-      font-size: 12px;
-
-      color: #b8c8df;
-    }
-
-    .budget-options input {
-      width: 18px;
-
-      height: 18px;
-    }
-
-    .fx-note {
-      margin-top: 8px;
-
-      font-size: 12px;
-
-      color: #91a8c8;
-    }
-
-    .index-spark {
-      width: 100%;
-
-      height: 48px;
-
-      display: block;
-
-      margin-top: 10px;
-    }
-
-    .index-spark polyline {
-      fill: none;
-
-      stroke:
-        currentColor;
-
-      stroke-width: 2;
-
-      vector-effect:
-        non-scaling-stroke;
-    }
-
-    .market .index-spark {
-      color: #6ed8ff;
-    }
-
-    .market .index-base {
-      stroke:
-        rgba(
-          255,
-          255,
-          255,
-          .08
-        );
-
-      stroke-width: 1;
-    }
-
-    @media(
-      max-width:640px
-    ) {
-
-      .market-switch-wrap {
-        top: 10px;
-
-        right: 8px;
-      }
-
-      .market-switch-label {
-        font-size: 10px;
-      }
-
-      #marketModeBtn {
-        width: 48px;
-      }
-
-      #marketModeBtn.us:after {
-        transform:
-          translateX(
-            18px
-          );
-      }
-
-    }
-
-  </style>
-
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#07101d">
+  <title>GY Market Intelligence</title>
+  <link rel="stylesheet" href="/static/styles.css?v=21">
 </head>
-
-
 <body>
+  <aside class="side-nav">
+    <div class="side-logo">GY</div>
+    <button class="side-btn active" data-scroll="homeSec"><span>⌂</span><small>관제실</small></button>
+    <button class="side-btn" data-scroll="marketSec"><span>◎</span><small>지수</small></button>
+    <button class="side-btn" data-scroll="sectorSec"><span>◇</span><small>섹터</small></button>
+    <button class="side-btn" data-scroll="scalpSec"><span>↗</span><small>단타</small></button>
+    <button id="smartNavBtn" class="side-btn" data-scroll="smartSec"><span>◉</span><small>스마트</small></button>
+    <button class="side-btn" data-scroll="holdingSec"><span>▣</span><small>보유</small></button>
+    <button class="side-btn" data-scroll="profitSec"><span>₩</span><small>수익</small></button>
+  </aside>
 
-
-<aside class="side-nav">
-
-  <button
-    class="side-btn"
-    data-scroll="homeSec"
-  >
-    <span class="side-icon">
-      ⌂
-    </span>
-
-    <span class="side-label">
-      홈
-    </span>
-  </button>
-
-
-  <button
-    class="side-btn"
-    data-scroll="marketSec"
-  >
-    <span class="side-icon">
-      ◎
-    </span>
-
-    <span class="side-label">
-      지수
-    </span>
-  </button>
-
-
-  <button
-    class="side-btn"
-    data-scroll="sectorSec"
-  >
-    <span class="side-icon">
-      ◈
-    </span>
-
-    <span class="side-label">
-      섹터
-    </span>
-  </button>
-
-
-  <button
-    class="side-btn"
-    data-scroll="scalpSec"
-  >
-    <span class="side-icon">
-      ⇡
-    </span>
-
-    <span class="side-label">
-      수급
-    </span>
-  </button>
-
-
-  <button
-    class="side-btn"
-    data-scroll="smartSec"
-  >
-    <span class="side-icon">
-      ◉
-    </span>
-
-    <span class="side-label">
-      스마트
-    </span>
-  </button>
-
-
-  <button
-    class="side-btn"
-    data-scroll="holdingSec"
-  >
-    <span class="side-icon">
-      ▣
-    </span>
-
-    <span class="side-label">
-      보유
-    </span>
-  </button>
-
-
-  <button
-    class="side-btn"
-    data-scroll="profitSec"
-  >
-    <span class="side-icon">
-      ₩
-    </span>
-
-    <span class="side-label">
-      수익
-    </span>
-  </button>
-
-</aside>
-
-
-<div
-  class="market-switch-wrap"
-  aria-label="국장 미장 전환"
->
-
-  <span
-    id="krModeLabel"
-    class="market-switch-label"
-  >
-    국장
-  </span>
-
-  <button
-    id="marketModeBtn"
-    type="button"
-    aria-label="국장과 미장 전환"
-  ></button>
-
-  <span
-    id="usModeLabel"
-    class="market-switch-label"
-  >
-    미장
-  </span>
-
-</div>
-
-
-<div class="app-shell">
-
-
-<header class="topbar">
-
-  <div class="brand-wrap">
-
-    <div class="brand-badge">
-      GY
-    </div>
-
-    <div>
-
-      <div class="eyebrow">
-        AI PAPER TRADING SYSTEM
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow">MARKET INTELLIGENCE · PAPER ENGINE</div>
+        <h1>GY Trading Intelligence</h1>
+        <p id="subtitle">NHPLUG 공식 데이터 기반 국장 모의투자</p>
       </div>
-
-      <h1>
-        GY 모의투자 시스템
-      </h1>
-
-      <p
-        id="subtitle"
-        class="subtitle"
-      >
-        NHPLUG 공식 데이터 기반 국장 모의투자
-      </p>
-
-    </div>
-
-  </div>
-
-</header>
-
-
-<main class="page">
-
-
-<section
-  id="homeSec"
-  class="hero-panel"
->
-
-  <div class="hero-left">
-
-    <div class="hero-chip">
-      ● SERVER PAPER AUTO TRADING
-    </div>
-
-    <h2>
-      사이트를 닫아도 서버에서
-      <br>
-      조건 충족 종목을 모의매매
-    </h2>
-
-    <p id="heroText">
-      국내 종목·지수만 표시합니다.
-    </p>
-
-    <div class="hero-stats">
-
-      <div class="hero-stat">
-
-        <span>
-          가상 총자산
-        </span>
-
-        <strong id="equity">
-          -
-        </strong>
-
+      <div class="top-actions">
+        <div class="live-chip"><i></i><span id="updatedClock">수신 대기</span></div>
+        <div class="market-switch" aria-label="국장 미장 전환">
+          <button id="krModeLabel" class="mode-label active">KR</button>
+          <button id="marketModeBtn" aria-label="시장 전환"><span></span></button>
+          <button id="usModeLabel" class="mode-label">US</button>
+        </div>
       </div>
+    </header>
 
-      <div class="hero-stat">
+    <main class="page">
+      <section id="homeSec" class="hero-grid">
+        <div class="hero-card">
+          <div class="hero-kicker">SERVER PAPER AUTO TRADING</div>
+          <h2 id="heroTitle">시장 흐름부터 종목 진입까지<br>한 화면에서 판단</h2>
+          <p id="heroText">국내 종목·지수와 수급을 분리 분석하고 조건 충족 종목만 PAPER 매매합니다.</p>
+          <div class="hero-metrics">
+            <div><span>가상 총자산</span><strong id="equity">-</strong></div>
+            <div><span>연결 상태</span><strong id="health">확인 중</strong></div>
+            <div><span>운용 한도</span><strong id="heroBudget">-</strong></div>
+            <div><span>현재 세션</span><strong id="heroSession">-</strong></div>
+          </div>
+        </div>
+        <div class="pulse-card">
+          <div class="pulse-head"><span>MARKET PULSE</span><b id="engineLabel">KR · PAPER · NHPLUG</b></div>
+          <div class="orbital"><div class="orb o1"></div><div class="orb o2"></div><div class="orb o3"></div><div class="core"></div></div>
+          <div class="pulse-grid">
+            <div><span>단타 상위</span><strong id="topScalp">-</strong></div>
+            <div><span>주도 섹터</span><strong id="topSector">-</strong></div>
+          </div>
+        </div>
+      </section>
 
-        <span>
-          연결 상태
-        </span>
+      <div id="scheduleCard" class="notice-bar">거래시간 확인 중</div>
 
-        <strong id="health">
-          확인 중
-        </strong>
+      <section class="workspace-grid">
+        <div class="workspace-main">
+          <section class="panel budget-panel">
+            <div class="panel-head"><div><span class="section-no">01</span><h2>오늘 운용금액</h2></div><small>원화 기준 최대 1,000,000원</small></div>
+            <div class="budget-line">
+              <input id="budget" inputmode="numeric" placeholder="비우면 자동 최대금액">
+              <button id="saveBudgetBtn">저장</button>
+            </div>
+            <label class="check-row"><input id="autoMaxIfUnset" type="checkbox" checked><span>운용금액 미설정 시 최대금액 자동운용</span></label>
+            <strong id="currentBudget" class="accent-text">현재 운용값: -</strong>
+            <div id="fxNote" class="subnote"></div>
+          </section>
 
-      </div>
+          <section id="marketSec" class="panel">
+            <div class="panel-head"><div><span class="section-no">02</span><h2>시장 관제</h2></div><small id="marketModeCaption">국장 주요 지수</small></div>
+            <div id="sessionStatus" class="session-strip"></div>
+            <div id="markets" class="market-grid"></div>
+          </section>
 
-    </div>
+          <section id="sectorSec" class="panel">
+            <div class="panel-head"><div><span class="section-no">03</span><h2>섹터 로테이션</h2></div><small id="sectorCaption">수급·거래량·상승폭 복합 강도</small></div>
+            <div id="sectors" class="sector-grid"></div>
+          </section>
 
+          <section id="scalpSec" class="panel">
+            <div class="panel-head"><div><span class="section-no">04</span><h2 id="scalpTitle">단타 탐지</h2></div><small id="scalpCaption">기술·체결·수급·이벤트 복합 점수</small></div>
+            <div id="scalpList" class="candidate-list"></div>
+          </section>
+
+          <section id="smartSec" class="panel">
+            <div class="panel-head"><div><span class="section-no">05</span><h2>스마트머니</h2></div><small>외국인·기관 매집 우선 · 10일 종가 하위3위 매수조건</small></div>
+            <div id="smartList" class="candidate-list"></div>
+          </section>
+
+          <section id="holdingSec" class="panel">
+            <div class="panel-head"><div><span class="section-no">06</span><h2>보유 포지션</h2></div><small id="heldCost"></small></div>
+            <div id="positions"></div>
+          </section>
+
+          <section id="profitSec" class="panel">
+            <div class="panel-head"><div><span class="section-no">07</span><h2>성과 분석</h2></div><small>날짜별 실현손익</small></div>
+            <div class="calendar-toolbar"><button id="prevMonthBtn">‹</button><strong id="profitMonthTitle">-</strong><button id="nextMonthBtn">›</button></div>
+            <div class="weekday-row"><div>일</div><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div>토</div></div>
+            <div id="profitCalendar" class="calendar-grid"></div>
+            <div id="profitSummary" class="profit-summary">날짜를 누르면 상세가 표시됩니다.</div>
+            <div id="profitDetailList"></div>
+          </section>
+        </div>
+
+        <aside class="event-rail">
+          <div class="rail-head"><span>LIVE EVENT FEED</span><b id="eventStatus">공시 수신 대기</b></div>
+          <p>최근 2일 공식 공시를 단타 우선순위에 반영합니다.</p>
+          <div id="eventList"></div>
+        </aside>
+      </section>
+    </main>
   </div>
-
-
-  <div class="hero-right">
-
-    <div class="ai-scene">
-
-      <div class="ai-grid">
-      </div>
-
-      <div class="ai-ring ring-1">
-      </div>
-
-      <div class="ai-ring ring-2">
-      </div>
-
-      <div class="ai-ring ring-3">
-      </div>
-
-      <div class="ai-core">
-      </div>
-
-      <div class="ai-label-box">
-
-        <b>
-          NEURAL MARKET ENGINE
-        </b>
-
-        <span id="engineLabel">
-          KR · PAPER · NHPLUG
-        </span>
-
-      </div>
-
-    </div>
-
-  </div>
-
-</section>
-
-
-<div
-  id="scheduleCard"
-  class="schedule-card"
->
-  거래시간 확인 중
-</div>
-
-
-<section
-  class="
-    budget-panel
-    panel
-  "
->
-
-  <div class="title-row">
-
-    <h2>
-      오늘 운용금액
-    </h2>
-
-    <span>
-      원화 기준 최대 1,000,000원
-    </span>
-
-  </div>
-
-
-  <div class="budget-box">
-
-    <div class="budget-input-row">
-
-      <input
-        id="budget"
-        inputmode="numeric"
-        placeholder="비우면 자동 최대금액"
-      >
-
-      <button id="saveBudgetBtn">
-        저장
-      </button>
-
-    </div>
-
-
-    <label class="budget-options">
-
-      <input
-        id="autoMaxIfUnset"
-        type="checkbox"
-        checked
-      >
-
-      <span>
-        운용금액 미설정 시 최대금액 자동운용
-      </span>
-
-    </label>
-
-
-    <strong
-      id="currentBudget"
-      class="current-budget"
-    >
-      현재 운용값: -
-    </strong>
-
-
-    <div
-      id="fxNote"
-      class="fx-note"
-    ></div>
-
-
-    <small>
-      미장은 입력한 원화 운용금액을
-      당일 NHPLUG USD/KRW 환율로 환산해 매수합니다.
-      환율 수신 실패 시 미장 신규매수는 차단합니다.
-    </small>
-
-  </div>
-
-</section>
-
-
-<section
-  id="marketSec"
-  class="panel"
->
-
-  <div class="title-row">
-
-    <h2>
-      시장 지수
-    </h2>
-
-    <span id="marketModeCaption">
-      국장 주요 지수 · 그래프 포함
-    </span>
-
-  </div>
-
-
-  <div
-    id="sessionStatus"
-    class="session-card"
-  ></div>
-
-
-  <div
-    id="markets"
-    class="market-grid"
-  ></div>
-
-</section>
-
-
-<section
-  id="sectorSec"
-  class="panel"
->
-
-  <div class="title-row">
-
-    <h2>
-      주도 섹터
-    </h2>
-
-    <span id="sectorCaption">
-      국내 주도섹터
-    </span>
-
-  </div>
-
-  <div
-    id="sectors"
-    class="sector-row"
-  ></div>
-
-</section>
-
-
-<section
-  id="scalpSec"
-  class="panel"
->
-
-  <div class="title-row">
-
-    <h2 id="scalpTitle">
-      국내 수급 후보
-    </h2>
-
-    <span id="scalpCaption">
-      AI 점수 · 목표가(VI)
-    </span>
-
-  </div>
-
-  <div id="scalpList">
-  </div>
-
-</section>
-
-
-<section
-  id="smartSec"
-  class="panel"
->
-
-  <div class="title-row">
-
-    <h2 id="smartTitle">
-      국내 스마트머니 + 저평가
-    </h2>
-
-    <span id="smartCaption">
-      PER · PBR · 외국인 · 기관
-    </span>
-
-  </div>
-
-  <div id="smartList">
-  </div>
-
-</section>
-
-
-<section
-  id="holdingSec"
-  class="
-    panel
-    holding-panel
-  "
->
-
-  <div class="title-row">
-
-    <h2>
-      현재 보유종목
-    </h2>
-
-    <span id="heldCost">
-    </span>
-
-  </div>
-
-  <div id="positions">
-  </div>
-
-</section>
-
-
-<section
-  id="profitSec"
-  class="panel"
->
-
-  <div class="title-row">
-
-    <h2>
-      수익
-    </h2>
-
-    <span>
-      날짜별 실현손익
-    </span>
-
-  </div>
-
-
-  <div class="calendar-toolbar">
-
-    <button
-      id="prevMonthBtn"
-      class="month-btn"
-    >
-      ‹
-    </button>
-
-    <strong id="profitMonthTitle">
-      -
-    </strong>
-
-    <button
-      id="nextMonthBtn"
-      class="month-btn"
-    >
-      ›
-    </button>
-
-  </div>
-
-
-  <div class="weekday-row">
-
-    <div>일</div>
-    <div>월</div>
-    <div>화</div>
-    <div>수</div>
-    <div>목</div>
-    <div>금</div>
-    <div>토</div>
-
-  </div>
-
-
-  <div
-    id="profitCalendar"
-    class="calendar-grid"
-  ></div>
-
-
-  <div class="profit-detail-box">
-
-    <div
-      id="profitSummary"
-      class="empty"
-    >
-      날짜를 누르면 그날의 수익 내역이 표시됩니다.
-    </div>
-
-    <div id="profitDetailList">
-    </div>
-
-  </div>
-
-</section>
-
-
-</main>
-</div>
-
-
-<div
-  id="modal"
-  class="modal"
->
-
-  <div class="modal-card">
-
-    <button
-      id="closeModalBtn"
-      class="x"
-    >
-      ×
-    </button>
-
-    <div id="detail">
-    </div>
-
-  </div>
-
-</div>
-
-
-<script src="/static/app.js?v=9">
-</script>
-
-
+  <script src="/static/app.js?v=21"></script>
 </body>
 </html>
