@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#f4f7ff"><title>GY Index Lab</title>
+  <link rel="stylesheet" href="/static/styles.css?v=27">
+</head>
+<body class="detail-body">
+  <div class="ambient ambient-a"></div><div class="ambient ambient-b"></div>
+  <header class="detail-topbar">
+    <button id="backBtn" class="ghost-btn">← MARKET</button>
+    <div class="detail-title"><small>GY / INDEX LAB</small><h1 id="indexName">지수 로딩 중</h1><p id="indexMeta">공식 데이터 연결 중</p></div>
+    <div class="detail-quote"><small>INDEX</small><strong id="indexPrice">-</strong><span id="indexChange">-</span></div>
+  </header>
+  <main class="detail-page">
+    <section class="section-shell index-chart-panel">
+      <div class="section-head"><div><span class="section-index">CHART</span><div><small>OFFICIAL MARKET DATA</small><h2>봉 차트</h2></div></div>
+        <div class="tf-group"><span class="tf active">일봉 · 1D</span></div>
+      </div>
+      <div class="chart-toolbar"><span id="chartStatus">공식 데이터 로딩 중</span><span>최근 공식 일봉 · 핀치/휠 확대 · 드래그 이동 · 더블클릭 초기화</span></div>
+      <div id="indexCandleWrap" class="candle-wrap index-candle-wrap"><canvas id="indexCandleCanvas"></canvas><div id="indexTooltip" class="chart-tooltip hide"></div></div>
+      <div class="chart-foot"><span id="indexSource">SOURCE -</span><span id="indexNote">-</span></div>
+    </section>
+  </main>
+  <script src="/static/index.js?v=27"></script>
+</body>
+</html>
