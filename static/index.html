@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#f4f7ff">
+  <title>GY Trading OS</title>
+  <link rel="stylesheet" href="/static/styles.css?v=23">
+</head>
+<body>
+  <div class="ambient ambient-a"></div><div class="ambient ambient-b"></div><div class="ambient ambient-c"></div>
+  <header class="topbar">
+    <a class="brand" href="#homeSec"><span class="brand-mark">GY</span><span><b>TRADING OS</b><small>OFFICIAL DATA · PAPER ENGINE</small></span></a>
+    <nav class="desktop-nav">
+      <button data-scroll="marketSec">MARKET</button><button data-scroll="sectorSec">SECTOR</button>
+      <button data-scroll="scalpSec">SIGNAL</button><button data-scroll="holdingSec">PORTFOLIO</button><button data-scroll="profitSec">CALENDAR</button>
+    </nav>
+    <div class="top-actions">
+      <div class="live-chip"><i></i><span id="updatedClock">수신 대기</span></div>
+      <div class="market-switch" aria-label="국장 미장 전환">
+        <button id="krModeLabel" class="mode-label active">KR</button>
+        <button id="marketModeBtn" aria-label="시장 전환"><span></span></button>
+        <button id="usModeLabel" class="mode-label">US</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="page">
+    <section id="homeSec" class="hero">
+      <div class="hero-copy">
+        <div class="eyebrow">GY / LIVE MARKET COMMAND</div>
+        <h1>숫자를 나열하지 말고,<br><em>시장의 흐름을 보여준다.</em></h1>
+        <p id="subtitle">NHPLUG 공식 데이터 기반 국장 수급·기술 복합 모의투자</p>
+        <div id="scheduleCard" class="session-pill">거래시간 확인 중</div>
+      </div>
+      <div class="hero-console">
+        <div class="console-glow"></div>
+        <div class="console-head"><span>ENGINE STATUS</span><b id="engineLabel">KR · FLOW · PAPER</b></div>
+        <div class="big-equity"><small>PAPER EQUITY</small><strong id="equity">-</strong></div>
+        <div class="hero-metrics">
+          <div><span>API</span><b id="health">확인 중</b></div>
+          <div><span>BUDGET</span><b id="heroBudget">-</b></div>
+          <div><span>SESSION</span><b id="heroSession">-</b></div>
+          <div><span>TOP SIGNAL</span><b id="topScalp">-</b></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="control-strip">
+      <div class="budget-control">
+        <div><small>오늘 운용금액</small><strong id="currentBudget">현재 운용값: -</strong></div>
+        <div class="budget-line"><input id="budget" inputmode="numeric" placeholder="비우면 자동 최대"><button id="saveBudgetBtn">SAVE</button></div>
+        <label><input id="autoMaxIfUnset" type="checkbox" checked> 미설정 시 최대금액 자동운용</label>
+      </div>
+      <div class="control-stat"><small>LEADING SECTOR</small><strong id="topSector">분석 중</strong><span id="fxNote"></span></div>
+      <div class="control-stat"><small>MODE</small><strong id="marketModeCaption">국장 주요 지수 · 공식 데이터</strong><span>시장 카드를 눌러 봉차트 보기</span></div>
+    </section>
+
+    <section id="marketSec" class="section-shell market-shell">
+      <div class="section-head"><div><span class="section-index">01</span><div><small>MARKET RADAR</small><h2>시장 관제</h2></div></div><b>지수 클릭 → 1분 · 3분 · 일봉</b></div>
+      <div id="sessionStatus" class="session-strip"></div>
+      <div id="markets" class="market-grid"></div>
+    </section>
+
+    <section class="split-grid">
+      <div id="sectorSec" class="section-shell">
+        <div class="section-head"><div><span class="section-index">02</span><div><small>ROTATION MAP</small><h2>섹터 로테이션</h2></div></div><b id="sectorCaption">수급·거래량·상승폭 복합 강도</b></div>
+        <div id="sectors" class="sector-grid"></div>
+      </div>
+      <aside class="section-shell event-panel">
+        <div class="section-head"><div><span class="section-index">LIVE</span><div><small>OFFICIAL DISCLOSURE</small><h2>이벤트 피드</h2></div></div><b id="eventStatus">공시 대기</b></div>
+        <div id="eventList" class="event-list"></div>
+      </aside>
+    </section>
+
+    <section id="scalpSec" class="section-shell signals-shell">
+      <div class="section-head"><div><span class="section-index">03</span><div><small>AI SIGNAL BOARD</small><h2 id="scalpTitle">국장 단타 탐지</h2></div></div><b id="scalpCaption">체결강도 · 수급 · 섹터 · 기술 · 공시</b></div>
+      <div id="candidateClosed" class="closed-board hide"><span>MARKET CLOSED</span><strong>장이 끝나 후보 리스트를 숨겼습니다.</strong><p>0점·정지된 후보를 나열하지 않고 다음 세션 시작 시 자동으로 다시 표시합니다.</p></div>
+      <div class="signal-columns" id="candidateZone">
+        <div class="signal-column"><div class="column-title"><span>FAST SIGNAL</span><b>단타 후보</b></div><div id="scalpList" class="candidate-list"></div></div>
+        <div id="smartSec" class="signal-column"><div class="column-title"><span>SMART MONEY</span><b>수급 매집 후보</b></div><div id="smartList" class="candidate-list"></div></div>
+      </div>
+      <button id="smartNavBtn" class="hide" aria-hidden="true"></button>
+    </section>
+
+    <section id="holdingSec" class="section-shell">
+      <div class="section-head"><div><span class="section-index">04</span><div><small>PAPER PORTFOLIO</small><h2>보유 포지션</h2></div></div><b id="heldCost"></b></div>
+      <div id="positions" class="positions-grid"></div>
+    </section>
+
+    <section id="profitSec" class="section-shell calendar-shell">
+      <div class="section-head"><div><span class="section-index">05</span><div><small>PNL × MACRO CALENDAR</small><h2>손익 & 중요 일정</h2></div></div><b>FOMC · CPI · NFP · PPI</b></div>
+      <div class="calendar-layout">
+        <div class="calendar-main">
+          <div class="calendar-toolbar"><button id="prevMonthBtn">‹</button><strong id="profitMonthTitle">-</strong><button id="nextMonthBtn">›</button></div>
+          <div class="macro-legend"><span class="tag fomc">FOMC</span><span class="tag cpi">CPI</span><span class="tag nfp">NFP</span><span class="tag ppi">PPI</span><small>표시시간은 한국시간(KST)</small></div>
+          <div class="weekday-row"><div>일</div><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div>토</div></div>
+          <div id="profitCalendar" class="calendar-grid"></div>
+        </div>
+        <aside class="calendar-detail">
+          <small>SELECTED DAY</small><div id="profitSummary" class="profit-summary">날짜를 누르면 손익과 일정을 함께 표시합니다.</div>
+          <div id="macroDetailList"></div><div id="profitDetailList"></div>
+          <div class="upcoming-head"><small>UPCOMING HIGH IMPACT</small></div><div id="upcomingMacroList"></div>
+        </aside>
+      </div>
+    </section>
+  </main>
+
+  <nav class="mobile-dock"><button data-scroll="marketSec">◎<small>지수</small></button><button data-scroll="sectorSec">◇<small>섹터</small></button><button data-scroll="scalpSec">↗<small>신호</small></button><button data-scroll="holdingSec">▣<small>보유</small></button><button data-scroll="profitSec">◫<small>일정</small></button></nav>
+  <script src="/static/app.js?v=23"></script>
+</body>
+</html>
