@@ -4,8 +4,10 @@ import os
 import re
 import threading
 import time
+from collections import deque
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Iterable
+from zoneinfo import ZoneInfo
 import requests
 
 from engine import Quote
@@ -110,6 +112,20 @@ def aggregate_ticks(ticks,minutes=1):
         prev_cum=cumvol
     return [buckets[k] for k in sorted(buckets)][-240:]
 
+def aggregate_market_ticks(ticks,minutes=1):
+    """Aggregate official snapshot values into runtime OHLC candles."""
+    if not ticks:return []
+    sec=max(1,int(minutes))*60;buckets={}
+    for ts,value in ticks:
+        ts=float(ts);value=float(value or 0)
+        if value<=0:continue
+        b=int(ts//sec)*sec;row=buckets.get(b)
+        if row is None:
+            row={"time":b,"open":value,"high":value,"low":value,"close":value,"volume":0.0};buckets[b]=row
+        else:
+            row["high"]=max(row["high"],value);row["low"]=min(row["low"],value);row["close"]=value
+    return [buckets[k] for k in sorted(buckets)][-360:]
+
 
 class NHFeed:
     def __init__(self):
@@ -139,6 +155,10 @@ class NHFeed:
         self.future_history={"kospi_night":[],"nasdaq_future":[]}
         self.future_history_updated_at={"kospi_night":0.0,"nasdaq_future":0.0}
         self.daily_fetch_attempt_at={}
+        market_keys=("kospi","kosdaq","sp500","nasdaq","sox","kospi_night","nasdaq_future")
+        self.market_ticks={k:deque(maxlen=24000) for k in market_keys}
+        self.market_daily_bars={k:deque(maxlen=120) for k in market_keys}
+        self.market_daily_updated_at={k:0.0 for k in market_keys}
         self._stop=threading.Event()
         self.program_realtime={"connected":False,"error":"","updated_at":0.0}
         self.investor_updated_at=0.0
@@ -158,6 +178,54 @@ class NHFeed:
         market="US" if str(market).upper()=="US" else "KR";code=str(code).strip().upper()
         if code not in self.quotes[market]:self.quotes[market][code]=Quote(code,code)
         return self.quotes[market][code]
+
+    # ----- index chart storage -----
+    def market_open_for_key(self,key,now=None):
+        key=str(key).lower();now=(now or datetime.now(KST)).astimezone(KST)
+        if key in ("kospi","kosdaq"):
+            m=now.hour*60+now.minute
+            return now.weekday()<5 and 540<=m<=930
+        if key in ("sp500","nasdaq","sox"):
+            ny=now.astimezone(ZoneInfo("America/New_York"));m=ny.hour*60+ny.minute
+            return ny.weekday()<5 and 570<=m<=960
+        if key=="kospi_night":
+            m=now.hour*60+now.minute
+            if m>=1080:return now.weekday()<5
+            if m<360:return (now-timedelta(days=1)).weekday()<5
+            return False
+        if key=="nasdaq_future":
+            ny=now.astimezone(ZoneInfo("America/New_York"));m=ny.hour*60+ny.minute;wd=ny.weekday()
+            if wd==5:return False
+            if wd==6:return m>=1080
+            if wd==4:return m<1020
+            return not (1020<=m<1080)
+        return False
+
+    def _record_market_item(self,key,item):
+        if not isinstance(item,dict):return
+        self.market[key]=item
+        v=num(item.get("value"))
+        if v>0 and self.market_open_for_key(key):
+            self.market_ticks.setdefault(key,deque(maxlen=24000)).append((time.time(),v))
+
+    def _set_market_daily_bars(self,key,bars):
+        clean=[];seen=set()
+        for b in bars or []:
+            d=normalize_date(b.get("date") or b.get("time"));c=num(b.get("close"))
+            if not d or c<=0 or d in seen:continue
+            seen.add(d);o=num(b.get("open")) or c;h=num(b.get("high")) or c;l=num(b.get("low")) or c
+            clean.append({"time":d,"open":o,"high":h,"low":l,"close":c,"volume":num(b.get("volume"))})
+        clean.sort(key=lambda x:x["time"]);q=self.market_daily_bars.setdefault(key,deque(maxlen=120));q.clear();q.extend(clean[-120:])
+        if clean:self.market_daily_updated_at[key]=time.time()
+
+    def market_bars(self,key,timeframe="1d"):
+        key=str(key).lower();tf=str(timeframe).lower()
+        if tf=="1d":return list(self.market_daily_bars.get(key,[]))[-60:]
+        mins=3 if tf=="3m" else 1
+        return aggregate_market_ticks(list(self.market_ticks.get(key,[])),mins)
+
+    def market_item(self,key):
+        return self.market.get(str(key).lower())
 
     # ----- NXT / FX -----
     def update_nxt_session(self,now=None):
@@ -447,6 +515,37 @@ class NHFeed:
         self.krx_series[key]=s[-60:]
         return list(self.krx_series[key])
 
+    def _fetch_krx_index_daily(self,key,count=40):
+        # KRX Data Marketplace: 개별지수 시세 추이 (MDCSTAT00301).
+        code={"kospi":("1","001"),"kosdaq":("2","001")}.get(key)
+        if not code:return []
+        end=datetime.now(KST).strftime("%Y%m%d");start=(datetime.now(KST)-timedelta(days=90)).strftime("%Y%m%d")
+        headers={
+            "User-Agent":"Mozilla/5.0 Chrome/131 Safari/537.36",
+            "Referer":"https://data.krx.co.kr/contents/MDC/MDI/mdiLoader/index.cmd?menuId=MDC0201010101",
+            "X-Requested-With":"XMLHttpRequest",
+        }
+        payload={"bld":"dbms/MDC/STAT/standard/MDCSTAT00301","locale":"ko_KR",
+                 "indIdx":code[0],"indIdx2":code[1],"strtDd":start,"endDd":end,
+                 "share":"1","money":"1","csvxls_isNo":"false"}
+        r=requests.post("https://data.krx.co.kr/comm/bldAttendant/getJsonData.cmd",data=payload,headers=headers,timeout=10);r.raise_for_status()
+        j=r.json();rows=j.get("output") or j.get("OutBlock_1") or j.get("output1") or []
+        out=[]
+        for x in rows:
+            if not isinstance(x,dict):continue
+            d=normalize_date(x.get("TRD_DD"));c=num(x.get("CLSPRC_IDX"))
+            if not d or c<=0:continue
+            out.append({"date":d,"open":num(x.get("OPNPRC_IDX")) or c,"high":num(x.get("HGPRC_IDX")) or c,
+                        "low":num(x.get("LWPRC_IDX")) or c,"close":c,"volume":num(x.get("ACC_TRDVOL"))})
+        out.sort(key=lambda x:x["date"]);return out[-count:]
+
+    def _refresh_krx_daily(self,force=False):
+        now=time.time()
+        for key in ("kospi","kosdaq"):
+            if not force and self.market_daily_bars[key] and now-self.market_daily_updated_at[key]<900:continue
+            bars=self._fetch_krx_index_daily(key,40)
+            if bars:self._set_market_daily_bars(key,bars)
+
     def _read_krx_indices(self):
         text=self._krx_home_text();status=self._krx_status();out={}
         for key,raw,label in (("kospi","KOSPI","코스피"),("kosdaq","KOSDAQ","코스닥")):
@@ -456,7 +555,11 @@ class NHFeed:
 
     def krx_loop(self):
         while not self._stop.is_set():
-            try:self.market.update(self._read_krx_indices());self.market_errors.pop("krx_indices",None)
+            try:
+                for key,item in self._read_krx_indices().items():self._record_market_item(key,item)
+                try:self._refresh_krx_daily()
+                except Exception as exc:self.market_errors["krx_daily"]=str(exc)[:500]
+                self.market_errors.pop("krx_indices",None)
             except Exception as exc:self.market_errors["krx_indices"]=str(exc)[:500]
             self.market_updated_at=time.time();self._stop.wait(60)
 
@@ -468,7 +571,7 @@ class NHFeed:
             if x not in out:out.append(x)
         return out
 
-    def _read_symbol_period_one(self,symbol,label,status="종가 기준"):
+    def _read_symbol_period_one(self,key,symbol,label,status="종가 기준"):
         from nhplug import call
         today=datetime.now(KST).strftime("%Y%m%d")
         # Official schema: array_cnt is a 4-character string. Using an int
@@ -482,12 +585,18 @@ class NHFeed:
         sign=pick_text(data,("prdy_vrss_sign","sign"))
         change=signed_value(pick(data,("prdy_vrss","change")),sign)
         pct=signed_value(pick(data,("prdy_ctrt","change_rate")),sign)
-        rows=first_list(data,("Output_1","output_1"));dated=[]
+        rows=first_list(data,("Output_1","output_1"));dated=[];daily=[]
         for r in rows:
             if not isinstance(r,dict):continue
             d=normalize_date(r.get("bsop_date") or r.get("xymd") or r.get("date"))
             v=num(r.get("ovrs_prpr") or r.get("close_prc") or r.get("close") or r.get("last"))
-            if d and v>0:dated.append((d,v))
+            if d and v>0:
+                dated.append((d,v));daily.append({"date":d,
+                    "open":num(r.get("ovrs_oprc") or r.get("open_prc") or r.get("open")) or v,
+                    "high":num(r.get("ovrs_hgpr") or r.get("high") or r.get("high_prc")) or v,
+                    "low":num(r.get("ovrs_lwpr") or r.get("low") or r.get("low_prc")) or v,
+                    "close":v,"volume":num(r.get("vol") or r.get("acml_vol") or r.get("volume"))})
+        self._set_market_daily_bars(key,daily)
         # The server can return newest-first; sort explicitly.
         dated=sorted(dict(dated).items())[-30:]
         series=[v for _,v in dated];asof=dated[-1][0] if dated else ""
@@ -502,7 +611,7 @@ class NHFeed:
         errs=[]
         for s in self._symbol_candidates(key):
             try:
-                x=self._read_symbol_period_one(s,label,status);self.index_symbols[key]=s;return x
+                x=self._read_symbol_period_one(key,s,label,status);self.index_symbols[key]=s;return x
             except Exception as exc:errs.append(f"{s}: {exc}")
         raise RuntimeError(" | ".join(errs)[-900:])
 
@@ -616,15 +725,16 @@ class NHFeed:
             "array_cnt":"0030","maxavg":"005","gubun":"1","xtick":"001",
             "today_cls_code":"0","out1_scale_change":"0","out2_scale_change":"0"
         })
-        rows=first_list(data,("Output_1","output_1"));dated=[]
+        rows=first_list(data,("Output_1","output_1"));dated=[];daily=[]
         for r in rows:
             if not isinstance(r,dict):continue
-            d=normalize_date(r.get("bsop_date") or r.get("date"))
-            v=num(r.get("prpr") or r.get("clpr") or r.get("close"))
-            if d and v>0:dated.append((d,v))
+            d=normalize_date(r.get("bsop_date") or r.get("date"));v=num(r.get("prpr") or r.get("clpr") or r.get("close"))
+            if d and v>0:
+                dated.append((d,v));daily.append({"date":d,"open":num(r.get("oprc")) or v,"high":num(r.get("hgpr")) or v,
+                    "low":num(r.get("lwpr")) or v,"close":v,"volume":num(r.get("vol"))})
         dated=sorted(dict(dated).items())[-30:]
         if dated:
-            self.future_history["kospi_night"]=[v for _,v in dated]
+            self.future_history["kospi_night"]=[v for _,v in dated];self._set_market_daily_bars("kospi_night",daily)
             self.future_history_updated_at["kospi_night"]=now
         return list(self.future_history["kospi_night"])
 
@@ -640,15 +750,16 @@ class NHFeed:
         data=call("/gbfuture/quote/v1/executionTrendDaily",{
             "exnm":e,"iem_cd":s,"ssymd":start,"quotyn":"Y","req_cnt":"0030"
         })
-        rows=first_list(data,("Output_0","output_0"));dated=[]
+        rows=first_list(data,("Output_0","output_0"));dated=[];daily=[]
         for r in rows:
             if not isinstance(r,dict):continue
-            d=normalize_date(r.get("tymd") or r.get("bsop_date") or r.get("date"))
-            v=num(r.get("clos") or r.get("last") or r.get("close"))
-            if d and v>0:dated.append((d,v))
+            d=normalize_date(r.get("tymd") or r.get("bsop_date") or r.get("date"));v=num(r.get("clos") or r.get("last") or r.get("close"))
+            if d and v>0:
+                dated.append((d,v));daily.append({"date":d,"open":num(r.get("open")) or v,"high":num(r.get("high")) or v,
+                    "low":num(r.get("low")) or v,"close":v,"volume":num(r.get("tvol"))})
         dated=sorted(dict(dated).items())[-30:]
         if dated:
-            self.future_history["nasdaq_future"]=[v for _,v in dated]
+            self.future_history["nasdaq_future"]=[v for _,v in dated];self._set_market_daily_bars("nasdaq_future",daily)
             self.future_history_updated_at["nasdaq_future"]=now
         return list(self.future_history["nasdaq_future"])
 
@@ -704,12 +815,12 @@ class NHFeed:
     def reference_loop(self):
         while not self._stop.is_set():
             for key,label in (("sp500","S&P500"),("nasdaq","나스닥")):
-                try:self.market[key]=self._read_symbol_period(key,label);self.market_errors.pop(key,None)
+                try:self._record_market_item(key,self._read_symbol_period(key,label));self.market_errors.pop(key,None)
                 except Exception as exc:self.market_errors[key]=str(exc)[:500]
             try:
-                try:self.market["sox"]=self._read_symbol_period("sox","필라델피아 반도체지수")
-                except Exception:self.market["sox"]=self._read_sox_nasdaq()
-                self.market_errors.pop("sox",None)
+                try:item=self._read_symbol_period("sox","필라델피아 반도체지수")
+                except Exception:item=self._read_sox_nasdaq()
+                self._record_market_item("sox",item);self.market_errors.pop("sox",None)
             except Exception as exc:self.market_errors["sox"]=str(exc)[:500]
             self.market_updated_at=time.time();self._stop.wait(60)
 
@@ -722,7 +833,7 @@ class NHFeed:
                 last_discovery=time.time()
             for key,fn in (("kospi_night",self._read_kospi_night),("nasdaq_future",self._read_nasdaq_future)):
                 try:
-                    self.market[key]=fn()
+                    self._record_market_item(key,fn())
                     self.market_errors.pop(key,None)
                 except Exception as exc:
                     self.market_errors[key]=str(exc)[:300]
@@ -738,19 +849,14 @@ class NHFeed:
             self._stop.wait(15)
 
     def _pending(self,key,label,source="NHPLUG"):
-        err=self.market_errors.get(key)
-        status=f"수신 오류 · {err[:100]}" if err else "수신 대기"
-        return self._market_item(label,None,None,None,status,source,[])
+        err=self.market_errors.get(key);status=f"수신 오류 · {err[:100]}" if err else "수신 대기"
+        out=self._market_item(label,None,None,None,status,source,[]);out["key"]=key;return out
 
     def _current_or_pending(self,key,label,source="NHPLUG"):
-        item=self.market.get(key)
-        err=self.market_errors.get(key)
-        if not item:
-            return self._pending(key,label,source)
-        if not err:
-            return item
-        out=dict(item)
-        out["status"]=f"마지막 수신값 · 현재 오류: {err[:90]}"
+        item=self.market.get(key);err=self.market_errors.get(key)
+        if not item:return self._pending(key,label,source)
+        out=dict(item);out["key"]=key
+        if err:out["status"]=f"마지막 수신값 · 현재 오류: {err[:90]}"
         return out
 
     def market_state(self,market):
