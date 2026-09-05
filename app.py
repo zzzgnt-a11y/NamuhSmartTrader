@@ -34,13 +34,15 @@ coin_feed=CoinoneFeed(top_n=int(os.getenv("COIN_SCAN_TOP_N","40") or 40))
 coin_paper=CryptoPaperAccount(initial_cash_krw=int(os.getenv("COIN_PAPER_INITIAL_CASH","1500000") or 1500000))
 store=StateStore()
 events=DisclosureFeed(lambda:feed.quotes_for("KR"))
-BUILD_ID=(os.getenv("RENDER_GIT_COMMIT") or os.getenv("GY_BUILD_ID") or "v30-local")[:12]
+BUILD_ID=(os.getenv("RENDER_GIT_COMMIT") or os.getenv("GY_BUILD_ID") or "v32-local")[:12]
 protected={x.strip() for x in os.getenv("PROTECTED_CODES","").split(",") if x.strip()}
 cache_lock=threading.Lock()
 started=False
 coin_settings_lock=threading.RLock()
 coin_budget_explicit=None
 coin_auto_max_if_unset=True
+coin_auto_trade_enabled=True
+coin_entry_score=66.0
 coin_reentry_until={}
 
 CACHE={
@@ -102,16 +104,21 @@ def _persist_coin_settings():
         store.save_json("coin_settings",{
             "explicit_budget_krw":coin_budget_explicit,
             "auto_max_if_unset":coin_auto_max_if_unset,
+            "auto_trade_enabled":coin_auto_trade_enabled,
+            "entry_score":coin_entry_score,
         })
 
 def _restore_coin_settings():
-    global coin_budget_explicit,coin_auto_max_if_unset
+    global coin_budget_explicit,coin_auto_max_if_unset,coin_auto_trade_enabled,coin_entry_score
     data=store.load_json("coin_settings",None)
     if not isinstance(data,dict):return
     with coin_settings_lock:
         raw=data.get("explicit_budget_krw")
         coin_budget_explicit=None if raw is None else max(0,min(coin_paper.initial_cash_krw,int(raw)))
         coin_auto_max_if_unset=bool(data.get("auto_max_if_unset",True))
+        coin_auto_trade_enabled=bool(data.get("auto_trade_enabled",True))
+        try:coin_entry_score=max(50.0,min(90.0,float(data.get("entry_score",66.0))))
+        except Exception:coin_entry_score=66.0
 
 def coin_effective_budget():
     with coin_settings_lock:
@@ -534,9 +541,9 @@ def coin_ai_loop():
             if changed:_persist_coin()
 
             budget=coin_effective_budget()
-            if budget>=10_000 and coin_feed.connected and len(coin_paper.positions)<3:
+            if coin_auto_trade_enabled and budget>=10_000 and coin_feed.connected:
                 for item in candidates:
-                    if float(item.get("score") or 0)<72:break
+                    if float(item.get("score") or 0)<coin_entry_score:break
                     symbol=str(item.get("code") or "").upper()
                     if not symbol or f"COIN:{symbol}" in coin_paper.positions:continue
                     if coin_reentry_until.get(symbol,0)>now:continue
@@ -546,7 +553,9 @@ def coin_ai_loop():
                     if not q or q.price<=0:continue
                     available=coin_available_budget()
                     if available<10_000:break
-                    per_position=max(10_000,float(budget)/3.0)
+                    # No hard position-count cap: capital itself is the limit.
+                    # Default entry size is 10% of the configured coin budget.
+                    per_position=max(10_000,float(budget)*0.10)
                     spend=min(per_position,available)
                     if coin_paper.buy(q,spend,"COIN_SCALP"):
                         _persist_coin()
@@ -665,6 +674,12 @@ class BudgetRequest(BaseModel):
     amount:Optional[int]=None
     auto_max_if_unset:bool=True
 
+class CoinSettingsRequest(BaseModel):
+    amount:Optional[int]=None
+    auto_max_if_unset:bool=True
+    auto_trade_enabled:bool=True
+    entry_score:float=66.0
+
 @app.post("/api/budget")
 def set_budget(data:BudgetRequest):
     active=trading_window() or default_view_market();day=trading_day_key(active)
@@ -685,7 +700,29 @@ def set_coin_budget(data:BudgetRequest):
     _persist_coin_settings()
     return {"ok":True,"explicit_budget":coin_budget_explicit,
             "auto_max_if_unset":coin_auto_max_if_unset,"effective_budget":coin_effective_budget(),
-            "available_budget":krw(coin_available_budget()),"initial_cash":coin_paper.initial_cash_krw}
+            "available_budget":krw(coin_available_budget()),"initial_cash":coin_paper.initial_cash_krw,
+            "auto_trade_enabled":coin_auto_trade_enabled,"entry_score":coin_entry_score}
+
+@app.post("/api/coin/settings")
+def set_coin_settings(data:CoinSettingsRequest):
+    global coin_budget_explicit,coin_auto_max_if_unset,coin_auto_trade_enabled,coin_entry_score
+    amount=data.amount
+    if amount is not None and (amount<0 or amount>coin_paper.initial_cash_krw):
+        raise HTTPException(400,f"coin budget must be 0~{coin_paper.initial_cash_krw}")
+    score=float(data.entry_score)
+    if score<50 or score>90:
+        raise HTTPException(400,"coin entry score must be 50~90")
+    with coin_settings_lock:
+        coin_budget_explicit=None if amount is None else int(amount)
+        coin_auto_max_if_unset=bool(data.auto_max_if_unset)
+        coin_auto_trade_enabled=bool(data.auto_trade_enabled)
+        coin_entry_score=round(score,1)
+    _persist_coin_settings()
+    return {"ok":True,"explicit_budget":coin_budget_explicit,
+            "auto_max_if_unset":coin_auto_max_if_unset,"effective_budget":coin_effective_budget(),
+            "available_budget":krw(coin_available_budget()),"initial_cash":coin_paper.initial_cash_krw,
+            "auto_trade_enabled":coin_auto_trade_enabled,"entry_score":coin_entry_score,
+            "position_limit":None}
 
 def paper_state(market):
     active=trading_window() or default_view_market();day=trading_day_key(active)
@@ -726,7 +763,8 @@ def coin_account_state():
             "available_budget":krw(coin_available_budget()),
             "held_cost":krw(coin_paper.held_cost_krw()),"market_held_cost":krw(coin_paper.held_cost_krw()),
             "positions":positions,"trades":list(coin_paper.trades)[:300],"account_scope":"COIN_ONLY",
-            "auto_trade_enabled":coin_effective_budget()>=10000 and coin_feed.connected,
+            "auto_trade_enabled":bool(coin_auto_trade_enabled),"entry_score":coin_entry_score,
+            "position_limit":None,"position_count":len(positions),
             "unrealized_pnl":krw(coin_paper.unrealized_pnl_krw()),
             "total_pnl":krw(equity-coin_paper.initial_cash_krw),"exchange":"Coinone"}
 
@@ -866,7 +904,6 @@ def coin_state_api():
     coin_pnl=krw(account.get("total_pnl",0))
     account["pnl"]=coin_pnl
     account["pnl_pct"]=(coin_pnl/account["initial_cash"]*100) if account.get("initial_cash") else 0.0
-    account["max_positions"]=3
     overall=global_account_state()
     overall["pnl_pct"]=(overall["pnl"]/overall["initial_cash"]*100) if overall.get("initial_cash") else 0.0
     market=[]
@@ -880,6 +917,8 @@ def coin_state_api():
     return {
         "mode":"COIN","exchange":"Coinone","account":account,"overall":overall,
         "health":coin_feed.health(),"market":market,"candidates":coin_feed.candidates(30),
+        "settings":{"entry_score":coin_entry_score,"auto_trade_enabled":coin_auto_trade_enabled,
+                    "effective_budget":coin_effective_budget(),"position_limit":None},
         "source":"Coinone Public API","real_orders_enabled":False,"build":BUILD_ID,
     }
 
@@ -906,6 +945,7 @@ def coin_detail(symbol:str,interval:str=Query("1d"),size:int=Query(120,ge=20,le=
             "quote":{"change_pct":q.change_pct,"quote_volume":q.quote_volume,"target_volume":q.target_volume,
                      "volume_power":q.volume_power,"ask_price":q.ask_price,"bid_price":q.bid_price,
                      "spread_pct":q.spread_pct,"book_imbalance":q.book_imbalance,"updated_at":q.updated_at},
+            "settings":{"entry_score":coin_entry_score,"auto_trade_enabled":coin_auto_trade_enabled,"position_limit":None},
             "source":"Coinone Public API","real_orders_enabled":False,"build":BUILD_ID}
 
 @app.get("/api/coin-account")
