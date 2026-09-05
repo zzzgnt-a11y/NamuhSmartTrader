@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#f6f3ff"><title>GY Coin Chart</title>
+  <link rel="stylesheet" href="/static/styles.css?v=30">
+</head>
+<body class="detail-body coin-detail-body" data-market="COIN">
+  <div class="ambient ambient-a"></div><div class="ambient ambient-b"></div>
+  <header class="detail-topbar">
+    <button id="backBtn" class="ghost-btn">← COIN</button>
+    <div class="detail-title"><small>GY / COINONE LAB</small><h1 id="coinName">코인 로딩 중</h1><p id="coinMeta">Coinone Public API 연결 중</p></div>
+    <div class="detail-quote"><small>KRW</small><strong id="coinPrice">-</strong><span id="coinChange">-</span></div>
+  </header>
+  <main class="detail-page">
+    <section class="section-shell index-chart-panel">
+      <div class="section-head"><div><span class="section-index">CHART</span><div><small>COINONE MARKET DATA</small><h2>차트</h2></div></div>
+        <div class="tf-group" id="coinTfGroup"><button class="tf active" data-tf="1m">1M</button><button class="tf" data-tf="5m">5M</button><button class="tf" data-tf="1h">1H</button><button class="tf" data-tf="1d">1D</button></div>
+      </div>
+      <div class="chart-toolbar"><span id="chartStatus">차트 데이터 로딩 중</span><span>핀치/휠 확대 · 드래그 이동 · 더블클릭 초기화</span></div>
+      <div class="candle-wrap index-candle-wrap"><canvas id="coinCandleCanvas"></canvas><div id="coinTooltip" class="chart-tooltip hide"></div></div>
+      <div class="chart-foot"><span id="coinSource">SOURCE · Coinone Public API</span><span id="coinNote">실주문 OFF · PAPER ONLY</span></div>
+    </section>
+    <section class="detail-grid">
+      <div class="section-shell"><div class="section-head"><div><span class="section-index">LIVE</span><div><small>MARKET SNAPSHOT</small><h2>현재 상태</h2></div></div></div><div id="coinSnapshot" class="flow-grid"></div></div>
+      <div class="section-shell"><div class="section-head"><div><span class="section-index">GY</span><div><small>PAPER ENGINE</small><h2>운용 기준</h2></div></div></div><div class="coin-rule-line detail-rules"><span>진입 ≥ 72</span><span>익절 +3%</span><span>손절 -1.5%</span><span>점수 &lt; 46</span></div></div>
+    </section>
+  </main>
+  <script src="/static/coin-detail.js?v=30"></script>
+</body>
+</html>
