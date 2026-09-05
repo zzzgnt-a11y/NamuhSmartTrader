@@ -489,6 +489,21 @@ def nh_feed_bootstrap():
         except Exception as exc:
             print("NH AUTH WAIT:",str(exc),flush=True);time.sleep(delay);delay=min(delay*2,60)
 
+def coin_feed_diagnostic():
+    # One concise boot-time line so Render logs can confirm Coinone connectivity.
+    time.sleep(8)
+    try:
+        h=coin_feed.health()
+        print(
+            f"COINONE STATUS rest={bool(h.get('rest_connected'))} "
+            f"ws={bool(h.get('ws_connected'))} priced={int(h.get('priced_count') or 0)} "
+            f"markets={int(h.get('market_count') or 0)} "
+            f"error={(h.get('error') or h.get('ws_error') or '-')[:120]}",
+            flush=True,
+        )
+    except Exception as exc:
+        print("COINONE STATUS ERROR:",str(exc)[:160],flush=True)
+
 def start_background():
     global started
     if started:return
@@ -496,6 +511,7 @@ def start_background():
     _restore_paper()
     _restore_coin()
     coin_feed.start()
+    threading.Thread(target=coin_feed_diagnostic,daemon=True).start()
     if os.getenv("NHPLUG_APP_KEY") and os.getenv("NHPLUG_APP_SECRET"):
         threading.Thread(target=nh_feed_bootstrap,daemon=True).start()
     threading.Thread(target=ai_loop,daemon=True).start()
@@ -511,7 +527,7 @@ app.mount("/static",StaticFiles(directory="static"),name="static")
 @app.middleware("http")
 async def gy_headers(request,call_next):
     response=await call_next(request)
-    if request.url.path=="/" or request.url.path.startswith("/static/"):
+    if request.url.path=="/" or request.url.path.startswith("/coin") or request.url.path.startswith("/static/"):
         response.headers["Cache-Control"]="no-store, no-cache, must-revalidate, max-age=0"
         response.headers["Pragma"]="no-cache"
     response.headers["X-GY-Build"]=BUILD_ID
@@ -520,6 +536,16 @@ async def gy_headers(request,call_next):
 @app.get("/")
 def home():
     return FileResponse("static/index.html",headers={"Cache-Control":"no-store, max-age=0"})
+
+@app.get("/coin")
+def coin_home():
+    return FileResponse("static/coin.html",headers={"Cache-Control":"no-store, max-age=0"})
+
+@app.get("/coin/{symbol}")
+def coin_page(symbol:str):
+    symbol=str(symbol).upper()
+    if not re.fullmatch(r"[A-Z0-9._-]{1,20}",symbol):raise HTTPException(404)
+    return FileResponse("static/coin-detail.html",headers={"Cache-Control":"no-store, max-age=0"})
 
 INDEX_KEYS={
     "KR":{"kospi","kosdaq","kospi_night","nasdaq_future","sox"},
@@ -739,6 +765,33 @@ def index_detail(market:str,key:str,timeframe:str=Query("1d")):
         "market_open":feed.market_open_for_key(key),"note":note,"daily_error":daily_error,"build":BUILD_ID,
     }
 
+@app.get("/api/coin/state")
+def coin_state_api():
+    account=coin_account_state()
+    coin_pnl=krw(account.get("total_pnl",0))
+    account["pnl"]=coin_pnl
+    account["pnl_pct"]=(coin_pnl/account["initial_cash"]*100) if account.get("initial_cash") else 0.0
+    account["max_positions"]=3
+    overall=global_account_state()
+    overall["pnl_pct"]=(overall["pnl"]/overall["initial_cash"]*100) if overall.get("initial_cash") else 0.0
+    market=[]
+    for q in coin_feed.top_quotes(12):
+        market.append({
+            "market":"COIN","code":q.symbol,"name":q.name or q.symbol,"price":q.price,
+            "change_pct":q.change_pct,"quote_volume":q.quote_volume,"target_volume":q.target_volume,
+            "volume_power":q.volume_power,"spread_pct":q.spread_pct,"book_imbalance":q.book_imbalance,
+            "updated_at":q.updated_at,
+        })
+    return {
+        "mode":"COIN","exchange":"Coinone","account":account,"overall":overall,
+        "health":coin_feed.health(),"market":market,"candidates":coin_feed.candidates(30),
+        "source":"Coinone Public API","real_orders_enabled":False,"build":BUILD_ID,
+    }
+
+@app.get("/api/coin/chart/{symbol}")
+def coin_chart_api(symbol:str,interval:str=Query("1m"),size:int=Query(120,ge=20,le=500)):
+    return coin_detail(symbol,interval,size)
+
 @app.get("/api/coin/{symbol}")
 def coin_detail(symbol:str,interval:str=Query("1m"),size:int=Query(120,ge=20,le=500)):
     symbol=str(symbol).upper()
@@ -752,6 +805,9 @@ def coin_detail(symbol:str,interval:str=Query("1m"),size:int=Query(120,ge=20,le=
     candidate=next((x for x in coin_feed.candidates(max(30,coin_feed.top_n)) if x.get("code")==symbol),None)
     return {"market":"COIN","exchange":"Coinone","code":symbol,"name":q.name or symbol,
             "price":q.price,"currency":"KRW","interval":interval,"bars":bars,"candidate":candidate,
+            "change_pct":q.change_pct,"quote_volume":q.quote_volume,"target_volume":q.target_volume,
+            "volume_power":q.volume_power,"ask_price":q.ask_price,"bid_price":q.bid_price,
+            "spread_pct":q.spread_pct,"book_imbalance":q.book_imbalance,"updated_at":q.updated_at,
             "quote":{"change_pct":q.change_pct,"quote_volume":q.quote_volume,"target_volume":q.target_volume,
                      "volume_power":q.volume_power,"ask_price":q.ask_price,"bid_price":q.bid_price,
                      "spread_pct":q.spread_pct,"book_imbalance":q.book_imbalance,"updated_at":q.updated_at},
