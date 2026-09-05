@@ -151,4 +151,3 @@ class StateStore:
             "configured": self.mode == "postgres" or bool(self.sqlite_path),
             "error": self.last_error,
         }
-
