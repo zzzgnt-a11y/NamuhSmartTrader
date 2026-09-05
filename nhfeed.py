@@ -474,43 +474,122 @@ class NHFeed:
         return self._market_item("필라델피아 반도체지수",v,ch,pct,f"공식값 · {asof[:4]}-{asof[4:6]}-{asof[6:]}",
                                  "Nasdaq 공식",[prev,v] if prev>0 else [v],asof)
 
-    def _discover_futures(self):
+    def _discover_futures(self, force=False):
+        """Resolve current futures symbols from NHPLUG masters.
+
+        Expiring futures can stop returning quotes. When no explicit environment
+        override is configured, force=True lets the feed re-scan the official
+        masters and move to the current contract automatically.
+        """
         try:
             from nhplug.instruments import load_master
+
+            env_kr=os.getenv("NH_KOSPI_NIGHT_SYMBOL","").strip().upper()
+            env_us=os.getenv("NH_NASDAQ_FUTURE_SYMBOL","").strip().upper()
+            env_us_ex=os.getenv("NH_NASDAQ_FUTURE_EXNM","FCME").strip().upper() or "FCME"
+
+            if env_kr:
+                self.future_symbols["kospi_night"]=env_kr
+            elif force:
+                self.future_symbols["kospi_night"]=""
+
+            if env_us:
+                self.future_symbols["nasdaq_future"]=env_us
+                self.future_symbols["nasdaq_future_exnm"]=env_us_ex
+            elif force:
+                self.future_symbols["nasdaq_future"]=""
+
             if not self.future_symbols["kospi_night"]:
-                for row in dataframe_rows(load_master("m_future")):
-                    code=str(row.get("code") or row.get("sCode") or "").strip().upper()
-                    name=str(row.get("name") or row.get("sName") or "")
-                    if code.startswith("KA") and ("KOSPI200" in name.upper() or "코스피200" in name):
-                        self.future_symbols["kospi_night"]=code;break
+                rows=dataframe_rows(load_master("m_future"))
+                exact=[];fallback=[]
+                for row in rows:
+                    code=str(
+                        row.get("code") or row.get("sCode") or row.get("shrn_iscd")
+                        or row.get("isym") or row.get("symbol") or ""
+                    ).strip().upper()
+                    name=str(
+                        row.get("name") or row.get("sName") or row.get("hts_kor_isnm")
+                        or row.get("kor_name") or row.get("enam") or row.get("EngName") or ""
+                    ).strip()
+                    if not code.startswith("KA"):
+                        continue
+                    fallback.append(code)
+                    normalized=re.sub(r"\s+","",name).upper()
+                    if "KOSPI200" in normalized or "코스피200" in normalized:
+                        exact.append(code)
+                candidates=exact or fallback
+                if candidates:
+                    # Official master ordering normally puts the active/front
+                    # contract first. Keep that order instead of lexical sorting.
+                    self.future_symbols["kospi_night"]=candidates[0]
+
             if not self.future_symbols["nasdaq_future"]:
                 cand=[]
-                for row in dataframe_rows(load_master("fucode_h")):
-                    s=str(row.get("isym") or row.get("InnerSymbol") or row.get("symb") or "").strip().upper()
-                    name=str(row.get("enam") or row.get("EngName") or "")
-                    if "NASDAQ" in name.upper() and s:cand.append((10 if str(row.get("ledm") or "")=="1" else 0,s,str(row.get("exnm") or "FCME").upper()))
+                for idx,row in enumerate(dataframe_rows(load_master("fucode_h"))):
+                    s=str(
+                        row.get("isym") or row.get("InnerSymbol") or row.get("symb")
+                        or row.get("symbol") or row.get("code") or ""
+                    ).strip().upper()
+                    name=str(
+                        row.get("enam") or row.get("EngName") or row.get("name")
+                        or row.get("sName") or ""
+                    ).strip()
+                    if not s or "NASDAQ" not in name.upper():
+                        continue
+                    lead=str(row.get("ledm") or row.get("lead") or "").strip()
+                    ex=str(row.get("exnm") or row.get("exchange") or env_us_ex or "FCME").strip().upper() or "FCME"
+                    cand.append((1 if lead=="1" else 0,-idx,s,ex))
                 if cand:
-                    cand.sort(reverse=True);_,s,e=cand[0];self.future_symbols["nasdaq_future"]=s;self.future_symbols["nasdaq_future_exnm"]=e
-        except Exception as exc:self.market_errors["future_master"]=str(exc)[:300]
+                    cand.sort(reverse=True)
+                    _,_,s,e=cand[0]
+                    self.future_symbols["nasdaq_future"]=s
+                    self.future_symbols["nasdaq_future_exnm"]=e
+
+            if not self.future_symbols["kospi_night"]:
+                raise RuntimeError("코스피 야간선물 종목코드 자동탐색 실패")
+            if not self.future_symbols["nasdaq_future"]:
+                raise RuntimeError("NASDAQ 선물 선도월물 자동탐색 실패")
+
+            self.market_errors.pop("future_master",None)
+        except Exception as exc:
+            self.market_errors["future_master"]=str(exc)[:300]
 
     def _read_kospi_night(self):
         from nhplug import call
         s=self.future_symbols.get("kospi_night","")
-        if not s:raise RuntimeError("코스피 야간선물 종목코드 자동탐색 실패")
-        d=call("/krfuture/quote/v1/night",{"iem_cd":s});v=pick(d,("prpr",));sign=pick_text(d,("sign",))
-        if v<=0:raise RuntimeError("야간선물 현재가 없음")
-        ch=signed_value(pick(d,("vrss",)),sign);pct=signed_value(pick(d,("ctrt",)),sign)
+        if not s:
+            raise RuntimeError("코스피 야간선물 종목코드 자동탐색 실패")
+        d=call("/krfuture/quote/v1/night",{"iem_cd":s})
+        v=pick(d,("prpr","stck_prpr","last","close","current_prc","now_pr"))
+        sign=pick_text(d,("sign","prdy_vrss_sign"))
+        if v<=0:
+            raise RuntimeError(f"{s} 야간선물 현재가 없음")
+        ch=signed_value(pick(d,("vrss","prdy_vrss","diff","change")),sign)
+        pct=signed_value(pick(d,("ctrt","prdy_ctrt","rate","change_rate")),sign)
         old=self.market.get("kospi_night",{}).get("series",[])
-        return self._market_item("코스피 야간선물",v,ch,pct,"실시간","NHPLUG",(old+[v])[-30:],datetime.now(KST).strftime("%Y%m%d"))
+        return self._market_item(
+            "코스피 야간선물",v,ch,pct,"공식 조회 · 15초 갱신","NHPLUG",
+            (old+[v])[-30:],datetime.now(KST).strftime("%Y%m%d")
+        )
 
     def _read_nasdaq_future(self):
         from nhplug import call
-        s=self.future_symbols.get("nasdaq_future","");e=self.future_symbols.get("nasdaq_future_exnm","FCME")
-        if not s:raise RuntimeError("NASDAQ 선물 선도월물 자동탐색 실패")
-        d=call("/gbfuture/quote/v1/current",{"exnm":e,"iem_cd":s});v=pick(d,("last",));sign=pick_text(d,("sign",))
-        if v<=0:raise RuntimeError("나스닥 선물 현재가 없음")
-        ch=signed_value(pick(d,("diff",)),sign);pct=signed_value(pick(d,("rate",)),sign);old=self.market.get("nasdaq_future",{}).get("series",[])
-        return self._market_item("나스닥 선물",v,ch,pct,"실시간","NHPLUG",(old+[v])[-30:],datetime.now(KST).strftime("%Y%m%d"))
+        s=self.future_symbols.get("nasdaq_future","")
+        e=self.future_symbols.get("nasdaq_future_exnm","FCME") or "FCME"
+        if not s:
+            raise RuntimeError("NASDAQ 선물 선도월물 자동탐색 실패")
+        d=call("/gbfuture/quote/v1/current",{"exnm":e,"iem_cd":s})
+        v=pick(d,("last","ovrs_prpr","close_prc","close","prpr","price"))
+        sign=pick_text(d,("sign","prdy_vrss_sign"))
+        if v<=0:
+            raise RuntimeError(f"{s} 나스닥 선물 현재가 없음")
+        ch=signed_value(pick(d,("diff","prdy_vrss","change")),sign)
+        pct=signed_value(pick(d,("rate","prdy_ctrt","change_rate")),sign)
+        old=self.market.get("nasdaq_future",{}).get("series",[])
+        return self._market_item(
+            "나스닥 선물",v,ch,pct,"공식 조회 · 15초 갱신","NHPLUG",
+            (old+[v])[-30:],datetime.now(KST).strftime("%Y%m%d")
+        )
 
     def reference_loop(self):
         while not self._stop.is_set():
@@ -526,30 +605,58 @@ class NHFeed:
 
     def futures_loop(self):
         self._discover_futures()
+        last_discovery=time.time()
         while not self._stop.is_set():
+            if time.time()-last_discovery>=300:
+                self._discover_futures(force=True)
+                last_discovery=time.time()
             for key,fn in (("kospi_night",self._read_kospi_night),("nasdaq_future",self._read_nasdaq_future)):
-                try:self.market[key]=fn();self.market_errors.pop(key,None)
-                except Exception as exc:self.market_errors[key]=str(exc)[:300]
-            self.market_updated_at=time.time();self._stop.wait(15)
+                try:
+                    self.market[key]=fn()
+                    self.market_errors.pop(key,None)
+                except Exception as exc:
+                    self.market_errors[key]=str(exc)[:300]
+                    # Futures expire. If an env override was not pinned, refresh
+                    # the official master immediately and retry on the next loop.
+                    if key=="kospi_night" and not os.getenv("NH_KOSPI_NIGHT_SYMBOL","").strip():
+                        self.future_symbols["kospi_night"]=""
+                    if key=="nasdaq_future" and not os.getenv("NH_NASDAQ_FUTURE_SYMBOL","").strip():
+                        self.future_symbols["nasdaq_future"]=""
+                    self._discover_futures(force=False)
+                    last_discovery=time.time()
+            self.market_updated_at=time.time()
+            self._stop.wait(15)
 
     def _pending(self,key,label,source="NHPLUG"):
-        err=self.market_errors.get(key);status=f"수신 오류 · {err[:100]}" if err else "수신 대기"
+        err=self.market_errors.get(key)
+        status=f"수신 오류 · {err[:100]}" if err else "수신 대기"
         return self._market_item(label,None,None,None,status,source,[])
+
+    def _current_or_pending(self,key,label,source="NHPLUG"):
+        item=self.market.get(key)
+        err=self.market_errors.get(key)
+        if not item:
+            return self._pending(key,label,source)
+        if not err:
+            return item
+        out=dict(item)
+        out["status"]=f"마지막 수신값 · 현재 오류: {err[:90]}"
+        return out
 
     def market_state(self,market):
         if str(market).upper()=="KR":
             return [
-                self.market.get("kospi") or self._pending("krx_indices","코스피","KRX 공식"),
-                self.market.get("kosdaq") or self._pending("krx_indices","코스닥","KRX 공식"),
-                self.market.get("kospi_night") or self._pending("kospi_night","코스피 야간선물"),
-                self.market.get("nasdaq_future") or self._pending("nasdaq_future","나스닥 선물"),
-                self.market.get("sox") or self._pending("sox","필라델피아 반도체지수"),
+                self._current_or_pending("kospi","코스피","KRX 공식"),
+                self._current_or_pending("kosdaq","코스닥","KRX 공식"),
+                self._current_or_pending("kospi_night","코스피 야간선물"),
+                self._current_or_pending("nasdaq_future","나스닥 선물"),
+                self._current_or_pending("sox","필라델피아 반도체지수"),
             ]
         return [
-            self.market.get("sp500") or self._pending("sp500","S&P500"),
-            self.market.get("nasdaq") or self._pending("nasdaq","나스닥"),
-            self.market.get("nasdaq_future") or self._pending("nasdaq_future","나스닥 선물"),
-            self.market.get("sox") or self._pending("sox","필라델피아 반도체지수"),
+            self._current_or_pending("sp500","S&P500"),
+            self._current_or_pending("nasdaq","나스닥"),
+            self._current_or_pending("nasdaq_future","나스닥 선물"),
+            self._current_or_pending("sox","필라델피아 반도체지수"),
         ]
 
     def health(self):
@@ -559,7 +666,8 @@ class NHFeed:
                 "market_updated_at":self.market_updated_at,"market_errors":dict(self.market_errors),
                 "usdkrw":self.usdkrw,"usdkrw_asof":self.usdkrw_asof,"usdkrw_tradeable":self.usdkrw_tradeable,
                 "usdkrw_source":self.usdkrw_source,"program_realtime":dict(self.program_realtime),
-                "investor_updated_at":self.investor_updated_at,"history_updated_at":self.history_updated_at}
+                "investor_updated_at":self.investor_updated_at,"history_updated_at":self.history_updated_at,
+                "future_symbols":dict(self.future_symbols)}
 
     def start(self):
         for target in (self.kr_scanner,self.investor_loop,self.program_loop,self.us_scanner,
