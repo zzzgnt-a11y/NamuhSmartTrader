@@ -162,6 +162,9 @@ class NHFeed:
         self.krx_openapi_key=os.getenv("KRX_OPENAPI_KEY","").strip()
         self.market_daily_error={"kospi":"","kosdaq":""}
         self.market_daily_source={"kospi":"","kosdaq":""}
+        self.market_daily_refreshing=False
+        self.market_daily_last_attempt=0.0
+        self._market_daily_lock=threading.Lock()
         self.kr_master_meta={}
         self.sector_catalog={}
         self.sector_scan_limit=max(15,min(500,int(os.getenv("KR_SECTOR_SCAN_LIMIT","160") or 160)))
@@ -785,7 +788,10 @@ class NHFeed:
         # compatibility with older sessions. Limit calls so an outage cannot
         # create a request storm.
         got=[];d=datetime.now(KST);tries=0
-        while len(got)<min(count,15) and tries<22:
+        # Keep the KRX website fallback bounded. The primary range endpoint
+        # above should provide the full history; snapshots only rescue a few
+        # recent sessions and must never tie up the service for minutes.
+        while len(got)<min(count,5) and tries<7:
             tries+=1
             if d.weekday()<5:
                 for bld in ("dbms/MDC/STAT/standard/MDCSTAT00601","dbms/MDC/STAT/standard/MDCSTAT00101"):
@@ -833,22 +839,36 @@ class NHFeed:
         return []
 
     def _refresh_krx_daily(self,force=False):
-        now=time.time()
-        for key in ("kospi","kosdaq"):
-            if not force and self.market_daily_bars[key] and now-self.market_daily_updated_at[key]<900:continue
-            try:
-                bars=self._fetch_krx_index_daily(key,40)
-                if bars:
-                    self._set_market_daily_bars(key,bars);self.market_daily_error[key]=""
-                elif not self.market_daily_error.get(key):
-                    self.market_daily_error[key]="KRX 일봉 응답이 비어 있음"
-            except Exception as exc:
-                self.market_daily_error[key]=str(exc)[:220]
+        # One background refresh at a time. A slow/blocked KRX response must
+        # never hold an API request or start duplicate refresh storms.
+        if not self._market_daily_lock.acquire(blocking=False):
+            return
+        self.market_daily_refreshing=True
+        self.market_daily_last_attempt=time.time()
+        try:
+            now=time.time()
+            for key in ("kospi","kosdaq"):
+                if not force and self.market_daily_bars[key] and now-self.market_daily_updated_at[key]<900:
+                    continue
+                try:
+                    bars=self._fetch_krx_index_daily(key,40)
+                    if bars:
+                        self._set_market_daily_bars(key,bars)
+                        self.market_daily_error[key]=""
+                    elif not self.market_daily_error.get(key):
+                        self.market_daily_error[key]="KRX 1D 데이터 응답이 비어 있음"
+                except Exception as exc:
+                    self.market_daily_error[key]=str(exc)[:220]
+        finally:
+            self.market_daily_refreshing=False
+            self._market_daily_lock.release()
 
     def refresh_market_daily(self,key,force=False):
+        # Compatibility helper: schedule a background refresh rather than
+        # making the caller wait on KRX network I/O.
         key=str(key).lower()
         if key in ("kospi","kosdaq"):
-            self._refresh_krx_daily(force=force)
+            threading.Thread(target=self._refresh_krx_daily,kwargs={"force":force},daemon=True).start()
         return self.market_bars(key,"1d")
 
     def entry_data_status(self,market,code,now_ts=None):
@@ -873,14 +893,29 @@ class NHFeed:
         return out
 
     def krx_loop(self):
+        # Current index quotes and historical 1D chart data are independent.
+        # A failure in the KRX homepage path must not prevent chart prefetch.
         while not self._stop.is_set():
             try:
-                for key,item in self._read_krx_indices().items():self._record_market_item(key,item)
-                try:self._refresh_krx_daily()
-                except Exception as exc:self.market_errors["krx_daily"]=str(exc)[:500]
+                for key,item in self._read_krx_indices().items():
+                    self._record_market_item(key,item)
                 self.market_errors.pop("krx_indices",None)
-            except Exception as exc:self.market_errors["krx_indices"]=str(exc)[:500]
-            self.market_updated_at=time.time();self._stop.wait(60)
+            except Exception as exc:
+                self.market_errors["krx_indices"]=str(exc)[:500]
+            self.market_updated_at=time.time()
+            self._stop.wait(60)
+
+    def krx_daily_loop(self):
+        # Prefetch KOSPI/KOSDAQ chart history independently of browser traffic.
+        # Retry sooner while empty, then refresh every 15 minutes once loaded.
+        while not self._stop.is_set():
+            try:
+                self._refresh_krx_daily()
+                self.market_errors.pop("krx_daily",None)
+            except Exception as exc:
+                self.market_errors["krx_daily"]=str(exc)[:500]
+            ready=bool(self.market_daily_bars.get("kospi")) and bool(self.market_daily_bars.get("kosdaq"))
+            self._stop.wait(900 if ready else 90)
 
     def _symbol_candidates(self,key):
         configured=self.index_symbols.get(key,"")
@@ -1206,10 +1241,12 @@ class NHFeed:
                 "investor_updated_at":self.investor_updated_at,"history_updated_at":self.history_updated_at,
                 "future_symbols":dict(self.future_symbols),"market_daily_error":dict(self.market_daily_error),
                 "market_daily_source":dict(self.market_daily_source),
+                "market_daily_refreshing":self.market_daily_refreshing,
+                "market_daily_last_attempt":self.market_daily_last_attempt,
                 "krx_openapi_configured":bool(self.krx_openapi_key),"sector_catalog_count":sum(len(v) for v in self.sector_catalog.values()),
                 "sector_scan_count":len(self.code_lists["KR"] or self.fixed["KR"]),"sector_universe_asof":self.sector_universe_asof}
 
     def start(self):
         for target in (self.kr_scanner,self.investor_loop,self.program_loop,self.us_scanner,
-                       self.history_loop,self.krx_loop,self.reference_loop,self.futures_loop):
+                       self.history_loop,self.krx_loop,self.krx_daily_loop,self.reference_loop,self.futures_loop):
             threading.Thread(target=target,daemon=True).start()
