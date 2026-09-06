@@ -5,10 +5,11 @@ _INSTALLED=False
 def patch(m):
     if getattr(m,'_NAMUH_PATCH_BUNDLE',False):return
     m._NAMUH_PATCH_BUNDLE=True
-    import namuh_vi_patch, namuh_score_patch, namuh_kr_score_display_patch, namuh_universe_patch
+    import namuh_vi_patch, namuh_score_patch, namuh_kr_score_display_patch, namuh_score_503020_patch, namuh_universe_patch
     namuh_vi_patch.apply(m)
     namuh_score_patch.apply(m)
     namuh_kr_score_display_patch.apply(m)
+    namuh_score_503020_patch.apply(m)
     namuh_universe_patch.apply(m)
     old=m.health_payload
     def health():
@@ -17,8 +18,8 @@ def patch(m):
             row=m._minute_signal('999999',False);rep=(row or {}).get('recipe_report') or {}
         except Exception:pass
         d.update({
-            'scalp_score_model':'40/60',
-            'execution_weight':10,
+            'scalp_score_model':'50/30/20',
+            'execution_weight':15,
             'execution_calibration':((rep.get('execution_strength') or {}).get('status') if isinstance(rep,dict) else None) or 'PENDING',
             'vi_reentry_watch':len(getattr(m,'_NAMUH_VI_STATE',{})),
             'all_ai_scored':{k:len(v) for k,v in getattr(m,'_NAMUH_ALL_SCORES',{}).items()},
