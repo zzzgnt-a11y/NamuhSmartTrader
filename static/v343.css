@@ -1,0 +1,218 @@
+/* v34.3 — visual polish, stable signal board, unclipped sector view, event history, earnings, chart tools */
+
+body{
+  background:
+    radial-gradient(circle at 10% 7%,rgba(65,132,255,.12),transparent 30%),
+    radial-gradient(circle at 89% 14%,rgba(0,190,180,.10),transparent 29%),
+    linear-gradient(135deg,#f8fbff 0%,#edf5ff 48%,#f9fcff 100%);
+}
+body .page{max-width:1540px}
+body .topbar{background:rgba(247,251,255,.86);border-bottom-color:rgba(255,255,255,.96);box-shadow:0 10px 34px rgba(28,63,105,.07)}
+body .hero-copy,body .section-shell,body .budget-control,body .control-stat,.v34-search-box,.v34-alert-slot{
+  background:linear-gradient(145deg,rgba(255,255,255,.90),rgba(245,250,255,.78));
+  border-color:rgba(255,255,255,.97);box-shadow:0 18px 52px rgba(29,67,111,.10),inset 0 1px 0 rgba(255,255,255,.82)
+}
+body .hero-copy:after{content:"";position:absolute;left:0;top:34px;bottom:34px;width:4px;border-radius:999px;background:linear-gradient(180deg,#05a9bb,#3975ff);box-shadow:0 0 24px rgba(57,117,255,.22)}
+body .hero-console{background:radial-gradient(circle at 86% 18%,rgba(65,203,221,.18),transparent 28%),linear-gradient(145deg,#0c1930 0%,#102a48 55%,#123d55 100%);border:1px solid rgba(255,255,255,.08);box-shadow:0 28px 70px rgba(13,39,70,.28),inset 0 1px 0 rgba(255,255,255,.05)}
+body .section-shell{transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
+body .section-shell:hover{border-color:rgba(93,145,218,.17);box-shadow:0 22px 58px rgba(29,67,111,.12),inset 0 1px 0 rgba(255,255,255,.88)}
+body .market-card{background:linear-gradient(150deg,rgba(255,255,255,.98),rgba(240,248,255,.89));border-color:rgba(65,113,172,.11);box-shadow:0 12px 30px rgba(35,75,120,.07)}
+body .market-card:hover{transform:translateY(-5px) scale(1.004);box-shadow:0 20px 42px rgba(35,75,120,.13)}
+body .candidate{position:relative;overflow:hidden;background:linear-gradient(145deg,rgba(255,255,255,.88),rgba(247,251,255,.78))}
+body .candidate:before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:linear-gradient(180deg,#05a9bb,#3975ff);opacity:.72}
+
+/* KR signal board stays mounted. No more 4s/5s hide-show fight. */
+body[data-market="KR"] #candidateClosed{display:none!important}
+body[data-market="KR"] #candidateZone{display:grid!important;visibility:visible!important;opacity:1!important}
+body[data-market="KR"] #smartSec{display:block!important}
+body[data-market="KR"] #scalpSec{min-height:260px}
+
+/* Market investor flow summary under KOSPI/KOSDAQ cards. */
+.v343-market-flow{margin-top:9px;padding:8px 9px;border-radius:11px;background:rgba(50,107,184,.055);border:1px solid rgba(50,107,184,.08);display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}
+.v343-market-flow span{display:block;min-width:0;font-size:7px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.v343-market-flow b{display:block;margin-top:2px;font-size:8px;white-space:nowrap}
+.v343-market-flow-note{grid-column:1/-1!important;font-size:6px!important;color:#8b9ab0!important}
+
+/* Sector treemap: desktop keeps proportional map, text gets enough room. */
+#sectorSec .flow-treemap{height:570px!important;min-height:570px!important;border-radius:24px!important;background:radial-gradient(circle at 10% 8%,rgba(62,137,255,.08),transparent 26%),linear-gradient(145deg,rgba(238,247,255,.91),rgba(231,242,255,.72))!important;border:1px solid rgba(70,119,178,.13)!important;box-shadow:inset 0 0 0 1px rgba(255,255,255,.72),0 14px 34px rgba(33,72,115,.06)!important}
+#sectorSec .flow-tile{padding:11px!important;border:3px solid rgba(255,255,255,.93)!important;border-radius:16px!important;background:linear-gradient(145deg,rgba(255,255,255,.98),rgba(222,240,255,.91))!important;box-shadow:inset 0 0 0 1px rgba(56,114,185,.05)!important;gap:3px!important}
+#sectorSec .flow-tile:hover{z-index:8!important;transform:scale(1.01);box-shadow:0 15px 32px rgba(28,73,122,.16)!important}
+#sectorSec .flow-tile strong{font-size:12px!important;line-height:1.15!important;white-space:normal!important;overflow:hidden!important;text-overflow:clip!important;display:-webkit-box!important;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:keep-all}
+#sectorSec .flow-tile>b{font-size:21px!important;line-height:1!important;margin:2px 0!important}
+#sectorSec .flow-tile small{font-size:7px!important;line-height:1.2!important;white-space:normal!important;overflow:hidden!important;display:-webkit-box!important;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+#sectorSec .flow-tile.dense{padding:7px!important;gap:2px!important}#sectorSec .flow-tile.dense strong{font-size:8px!important;-webkit-line-clamp:2}#sectorSec .flow-tile.dense>b{font-size:13px!important}#sectorSec .flow-tile.dense small{display:none!important}
+#sectorSec .flow-tile.tiny{padding:4px!important;justify-content:center!important}#sectorSec .flow-tile.tiny strong{font-size:7px!important;line-height:1!important}#sectorSec .flow-tile.tiny>b{font-size:9px!important}#sectorSec .flow-tile.tiny small{display:none!important}
+#sectorSec .flow-explain{margin-top:12px;padding:10px 12px;border-radius:12px;background:rgba(68,118,184,.05);border:1px solid rgba(68,118,184,.07)}
+
+/* New event browser. Base eventList stays hidden but keeps receiving data harmlessly. */
+#eventList.v343-base-hidden{display:none!important}
+.v343-event-browser{display:flex;flex-direction:column;min-height:420px}
+.v343-event-tabs{display:flex;align-items:center;gap:7px;margin-bottom:10px}
+.v343-event-tabs button{min-height:34px;height:34px;padding:0 11px;border-radius:999px;background:rgba(70,100,145,.07);box-shadow:none;color:var(--muted);font-size:8px;border:1px solid rgba(70,100,145,.09)}
+.v343-event-tabs button.active{background:linear-gradient(135deg,var(--accent),var(--accent2));color:white;border-color:transparent;box-shadow:0 7px 18px rgba(57,117,255,.16)}
+.v343-event-state{margin-left:auto;font-size:7px;color:var(--muted)}
+.v343-event-list{display:grid;gap:8px;max-height:570px;overflow:auto;padding-right:4px}
+.v343-event-row{padding:11px 12px;border-radius:15px;background:linear-gradient(145deg,rgba(255,255,255,.88),rgba(247,251,255,.76));border:1px solid rgba(74,116,169,.10)}
+.v343-event-row .head{display:flex;align-items:center;justify-content:space-between;gap:8px}.v343-event-row .head span{font-size:7px;padding:3px 6px;border-radius:999px;background:rgba(52,110,190,.08);color:var(--accent2);font-weight:900}.v343-event-row .head small{font-size:7px;color:var(--muted)}
+.v343-event-row button.company{display:block;width:max-content;max-width:100%;min-height:0;padding:0;margin:6px 0 4px;background:none;box-shadow:none;color:var(--accent2);font-size:10px;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.v343-event-row b{display:block;font-size:9px;line-height:1.45;color:var(--ink2)}.v343-event-row .foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px}.v343-event-row .foot small,.v343-event-row .foot a{font-size:7px;color:var(--muted);text-decoration:none}
+.v343-more{width:100%;margin-top:9px;background:rgba(57,117,255,.08);color:var(--accent2);box-shadow:none;border:1px solid rgba(57,117,255,.10)}
+
+/* Earnings chips added to existing PNL/macro calendar. */
+.macro-chip.earnings,.tag.earnings{background:rgba(104,76,255,.11)!important;color:#684cff!important;border-color:rgba(104,76,255,.13)!important}
+.v343-earnings-detail{margin-top:8px;display:grid;gap:6px}.v343-earn-row{padding:9px 10px;border-radius:11px;background:rgba(104,76,255,.055);border:1px solid rgba(104,76,255,.09)}.v343-earn-row b{display:block;font-size:9px}.v343-earn-row small,.v343-earn-row a{font-size:7px;color:var(--muted);text-decoration:none}
+
+/* Detail chart overlay + close button + investor panel. */
+.candle-wrap{position:relative}
+.v343-overlay-canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2}
+.chart-tooltip{z-index:5!important;padding-top:27px!important}.chart-tooltip[data-v343-closed="1"]{display:none!important}
+.v343-tooltip-close{position:absolute!important;right:5px!important;top:4px!important;width:22px!important;height:22px!important;min-height:22px!important;padding:0!important;border-radius:7px!important;background:rgba(89,104,132,.18)!important;color:inherit!important;box-shadow:none!important;font-size:15px!important;line-height:20px!important;z-index:9!important}
+.v343-flow-panel{margin-top:14px;padding:14px;border-radius:17px;background:linear-gradient(145deg,rgba(255,255,255,.78),rgba(243,249,255,.70));border:1px solid rgba(68,113,172,.10)}
+.v343-flow-panel-head{display:flex;align-items:flex-end;justify-content:space-between;gap:10px}.v343-flow-panel-head small{font-size:7px;letter-spacing:.7px;color:var(--muted)}.v343-flow-panel-head b{font-size:10px}.v343-flow-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:10px}.v343-flow-summary>div{padding:8px;border-radius:10px;background:rgba(60,107,172,.05)}.v343-flow-summary span{display:block;font-size:7px;color:var(--muted)}.v343-flow-summary b{display:block;font-size:9px;margin-top:3px}.v343-flow-svg{display:block;width:100%;height:150px;margin-top:10px;border-radius:12px;background:rgba(241,247,255,.58)}.v343-flow-legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:7px;font-size:7px;color:var(--muted)}
+.v343-index-diag{margin-top:8px;font-size:7px;color:var(--muted)}
+
+@media(max-width:1150px){#sectorSec .flow-treemap{height:620px!important;min-height:620px!important}.v343-event-list{max-height:500px}}
+
+/* Mobile sector view switches from tiny absolute treemap cells to a readable mosaic grid. */
+@media(max-width:780px){
+  body .hero-copy:after{top:22px;bottom:22px;width:3px}
+  #sectorSec .flow-treemap{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px!important;height:auto!important;min-height:0!important;overflow:visible!important;padding:8px!important}
+  #sectorSec .flow-tile{position:relative!important;left:auto!important;top:auto!important;width:auto!important;height:auto!important;min-height:96px!important;padding:10px!important;border-width:2px!important;border-radius:13px!important;justify-content:center!important}
+  #sectorSec .flow-tile:first-child{grid-column:1/-1;min-height:118px!important}
+  #sectorSec .flow-tile strong,#sectorSec .flow-tile.dense strong,#sectorSec .flow-tile.tiny strong{font-size:10px!important;line-height:1.2!important;display:block!important;white-space:normal!important;overflow:visible!important}
+  #sectorSec .flow-tile>b,#sectorSec .flow-tile.dense>b,#sectorSec .flow-tile.tiny>b{font-size:18px!important;display:block!important}
+  #sectorSec .flow-tile small{display:block!important;font-size:7px!important;-webkit-line-clamp:2}
+  #sectorSec .flow-tile.dense small,#sectorSec .flow-tile.tiny small{display:block!important}
+  .v343-flow-summary{grid-template-columns:1fr 1fr 1fr}
+}
+@media(max-width:480px){
+  body .page{padding-left:9px;padding-right:9px}#sectorSec{padding-left:12px!important;padding-right:12px!important}
+  #sectorSec .flow-treemap{grid-template-columns:1fr 1fr!important;gap:6px!important;padding:6px!important}
+  #sectorSec .flow-tile{min-height:88px!important;padding:8px!important}#sectorSec .flow-tile:first-child{min-height:106px!important}
+  .v343-market-flow{grid-template-columns:1fr 1fr 1fr;padding:7px}.v343-market-flow b{font-size:7px}
+  .v343-event-browser{min-height:360px}.v343-event-list{max-height:460px}
+  .v343-flow-summary{grid-template-columns:1fr}.v343-flow-svg{height:135px}
+}
+
+/* ===== v34.3 FINAL LAYOUT OVERRIDES =====
+   Fixes the clipping visible in the user's screenshot by removing minimum-width
+   three-column pressure and by letting content determine height. */
+.control-strip.v34-control-strip{
+  display:grid!important;
+  grid-template-columns:minmax(0,1.45fr) minmax(280px,.75fr)!important;
+  gap:12px!important;
+  align-items:stretch!important;
+  overflow:visible!important;
+}
+.control-strip.v34-control-strip>.budget-control{grid-column:auto!important;min-width:0!important}
+.control-strip.v34-control-strip>.v34-search-box{grid-column:auto!important;min-width:0!important}
+.control-strip.v34-control-strip>.v34-alert-slot,
+.control-strip.v34-control-strip>.v34-disclosure-slot{grid-column:1/-1!important;min-width:0!important}
+.budget-control{
+  min-width:0!important;
+  display:grid!important;
+  grid-template-columns:minmax(165px,.72fr) minmax(240px,1.28fr)!important;
+  grid-template-areas:"summary input" "option option"!important;
+  gap:10px 14px!important;
+  align-items:center!important;
+  padding:17px 19px!important;
+  overflow:visible!important;
+}
+.budget-control>div:first-child{grid-area:summary;min-width:0}.budget-control>.budget-line{grid-area:input;min-width:0}.budget-control>label{grid-area:option;min-width:0!important;white-space:normal!important;display:flex!important;align-items:center!important;gap:7px!important;line-height:1.35!important}
+.budget-control strong{white-space:normal!important;overflow-wrap:anywhere}.budget-line{min-width:0!important}.budget-line input{min-width:0!important;width:100%!important}.budget-line button{flex:0 0 auto!important}
+.v34-search-box{min-width:0!important;overflow:visible!important}.v34-search-line{min-width:0!important}.v34-search-line input{min-width:0!important}
+
+/* Market radar gets real room. Six cards including BTC become a clean 3x2 grid. */
+.market-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:12px!important;overflow:visible!important}
+.market-card{min-width:0!important;min-height:225px!important;padding:18px!important;overflow:hidden!important}
+.market-card strong{font-size:clamp(20px,2vw,27px)!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.v343-bitcoin-card{background:linear-gradient(150deg,rgba(255,255,255,.98),rgba(255,246,226,.9))!important;border-color:rgba(226,160,44,.17)!important}
+.v343-bitcoin-card:before{content:"BTC";position:absolute;right:17px;bottom:12px;font-size:38px;font-weight:950;letter-spacing:-2px;color:rgba(214,151,38,.065);pointer-events:none}
+.v343-market-flow{min-height:55px!important;align-items:start!important}.v343-market-flow>span{min-width:0!important}.v343-market-flow b{overflow:hidden;text-overflow:ellipsis}.v343-market-flow-empty{display:flex!important;align-items:center!important;min-height:50px!important}.v343-market-flow-empty .v343-market-flow-note{white-space:normal!important;line-height:1.45!important}
+
+/* Sector: proportional absolute cells were the root of repeated clipping.
+   v34.3 uses a readable ranked mosaic on every screen size. */
+#sectorSec .flow-treemap{
+  position:relative!important;
+  display:grid!important;
+  grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  grid-auto-rows:minmax(112px,auto)!important;
+  gap:9px!important;
+  height:auto!important;
+  min-height:0!important;
+  padding:9px!important;
+  overflow:visible!important;
+}
+#sectorSec .flow-tile,
+#sectorSec .flow-tile.dense,
+#sectorSec .flow-tile.tiny{
+  position:relative!important;
+  left:auto!important;top:auto!important;width:auto!important;height:auto!important;
+  min-width:0!important;min-height:112px!important;
+  padding:12px!important;
+  overflow:hidden!important;
+  justify-content:center!important;
+  align-items:flex-start!important;
+}
+#sectorSec .flow-tile:nth-child(1){grid-column:span 2;grid-row:span 2;min-height:233px!important;background:linear-gradient(145deg,#ffffff,#dceeff)!important}
+#sectorSec .flow-tile:nth-child(2),#sectorSec .flow-tile:nth-child(3){min-height:112px!important}
+#sectorSec .flow-tile strong,
+#sectorSec .flow-tile.dense strong,
+#sectorSec .flow-tile.tiny strong{
+  display:block!important;max-width:100%!important;
+  font-size:clamp(10px,1.1vw,14px)!important;line-height:1.25!important;
+  white-space:normal!important;word-break:keep-all!important;overflow-wrap:anywhere!important;
+  overflow:visible!important;text-overflow:clip!important;-webkit-line-clamp:unset!important;
+}
+#sectorSec .flow-tile>b,
+#sectorSec .flow-tile.dense>b,
+#sectorSec .flow-tile.tiny>b{font-size:clamp(18px,2vw,28px)!important;line-height:1!important;margin:6px 0!important}
+#sectorSec .flow-tile small,
+#sectorSec .flow-tile.dense small,
+#sectorSec .flow-tile.tiny small{display:block!important;max-width:100%!important;font-size:8px!important;line-height:1.35!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important;-webkit-line-clamp:unset!important;word-break:keep-all!important}
+#sectorSec .flow-tile:first-child strong{font-size:clamp(15px,1.7vw,21px)!important}#sectorSec .flow-tile:first-child>b{font-size:clamp(30px,3.6vw,48px)!important}
+
+/* Stable signal board: classes may still be toggled by legacy JS, but layout never disappears. */
+#candidateClosed{display:none!important}
+#candidateZone{display:grid!important;visibility:visible!important;opacity:1!important;min-height:170px!important}
+.v343-signal-wait{min-height:120px!important;display:grid!important;place-items:center!important;border:1px dashed rgba(60,106,165,.13);border-radius:16px;background:rgba(255,255,255,.38)}
+.v343-commodity-strip{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:-5px 0 14px;padding:9px 10px;border:1px solid rgba(61,107,166,.09);border-radius:14px;background:rgba(247,251,255,.72)}
+.v343-comm-title{font-size:7px;font-weight:950;letter-spacing:1px;color:var(--accent2);margin-right:2px}.v343-comm-status{font-size:8px;color:var(--muted)}
+.v343-comm-chip{display:flex;align-items:center;gap:5px;padding:5px 7px;border-radius:999px;background:rgba(55,100,158,.055);border:1px solid rgba(55,100,158,.07)}.v343-comm-chip b{font-size:7px}.v343-comm-chip em{font-style:normal;font-size:7px;font-weight:900}
+
+/* Event history: taller, clean scrolling, no hard clipping. */
+.event-panel{overflow:visible!important;max-height:none!important}.v343-event-browser{min-width:0!important}.v343-event-list{overscroll-behavior:contain}.v343-event-row{min-width:0!important;overflow:hidden}.v343-event-row b{overflow-wrap:anywhere}.v343-event-row .foot{flex-wrap:wrap}
+.v343-event-row.negative{border-left:3px solid rgba(224,72,100,.65)}.v343-event-row.positive{border-left:3px solid rgba(0,152,108,.55)}.v343-event-row.blocked{border-left:3px solid rgba(148,18,45,.95)}
+
+/* Calendar earnings additions. */
+.v343-earn-title{display:flex;align-items:center;gap:7px;margin:9px 0 6px}.v343-earn-title b{font-size:9px}.day-cell{overflow:hidden!important}.macro-stack{min-width:0}.macro-chip.earnings{max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* Unified detail charts. Ensure the canvas can never collapse to zero height. */
+.candle-wrap,.index-candle-wrap{height:clamp(390px,52vh,620px)!important;min-height:390px!important;overflow:hidden!important;border-radius:18px!important}
+.candle-wrap>canvas:not(.v343-overlay-canvas){position:relative;z-index:1}.v343-overlay-canvas{z-index:2!important}
+.chart-tooltip{pointer-events:auto!important;min-width:155px!important;max-width:min(260px,82vw)!important;overflow:visible!important}
+.v343-flow-panel{overflow:hidden!important}.v343-flow-panel-head>div{min-width:0}.v343-flow-panel-head>span{font-size:7px;color:var(--muted);text-align:right;max-width:55%;line-height:1.4}.v343-flow-summary em{display:block;margin-top:3px;font-size:7px;font-style:normal;color:var(--muted)}
+.v343-flow-line{fill:none;stroke-width:2.1}.v343-flow-line.foreign{stroke:#3975ff}.v343-flow-line.institution{stroke:#05a9bb}.v343-flow-line.person{stroke:#b36de3}.v343-flow-zero{stroke:rgba(80,105,140,.18);stroke-width:1}.v343-flow-dayline{stroke:rgba(95,125,165,.08);stroke-width:1}
+.v343-flow-pending{min-height:88px;display:flex;flex-direction:column;justify-content:center}
+
+/* More refined cards/panels without adding layout work. */
+.section-shell,.panel,.hero-copy,.hero-console,.budget-control,.v34-search-box,.v34-alert-slot{transition:box-shadow .18s ease,border-color .18s ease,transform .18s ease}
+.section-shell{border-color:rgba(255,255,255,.96)!important;box-shadow:0 16px 44px rgba(33,72,115,.085)!important}.section-head h2{letter-spacing:-.5px!important}.section-index{box-shadow:inset 0 0 0 1px rgba(255,255,255,.65)}
+
+@media(max-width:1180px){
+  .control-strip.v34-control-strip{grid-template-columns:1fr!important}.control-strip.v34-control-strip>*{grid-column:1!important}
+  .market-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  #sectorSec .flow-treemap{grid-template-columns:repeat(2,minmax(0,1fr))!important}#sectorSec .flow-tile:nth-child(1){grid-column:1/-1;grid-row:auto;min-height:145px!important}
+}
+@media(max-width:780px){
+  .budget-control{grid-template-columns:1fr!important;grid-template-areas:"summary" "input" "option"!important;padding:15px!important}.budget-line input{height:42px!important}.budget-control>label{font-size:8px!important}
+  .market-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px!important}.market-card{min-height:205px!important;padding:14px!important}
+  #sectorSec .flow-treemap{grid-template-columns:repeat(2,minmax(0,1fr))!important;padding:7px!important;gap:7px!important}#sectorSec .flow-tile,#sectorSec .flow-tile.dense,#sectorSec .flow-tile.tiny{min-height:104px!important}#sectorSec .flow-tile:nth-child(1){grid-column:1/-1;min-height:135px!important}
+  .candle-wrap,.index-candle-wrap{height:430px!important;min-height:430px!important}.v343-flow-summary{grid-template-columns:repeat(3,minmax(0,1fr))!important}.v343-flow-panel-head{align-items:flex-start!important;flex-direction:column!important}.v343-flow-panel-head>span{max-width:100%;text-align:left}
+}
+@media(max-width:520px){
+  .market-grid{grid-template-columns:1fr!important}.market-card{min-height:190px!important}
+  #sectorSec .flow-treemap{grid-template-columns:1fr 1fr!important}#sectorSec .flow-tile:nth-child(1){grid-column:1/-1}#sectorSec .flow-tile strong,#sectorSec .flow-tile.dense strong,#sectorSec .flow-tile.tiny strong{font-size:10px!important}#sectorSec .flow-tile>b,#sectorSec .flow-tile.dense>b,#sectorSec .flow-tile.tiny>b{font-size:18px!important}
+  .v343-market-flow{grid-template-columns:repeat(3,minmax(0,1fr))!important}.v343-market-flow span{font-size:6px!important}.v343-market-flow b{font-size:7px!important}
+  .candle-wrap,.index-candle-wrap{height:380px!important;min-height:380px!important}.v343-flow-summary{grid-template-columns:1fr!important}.v343-commodity-strip{gap:5px;padding:7px}.v343-comm-chip{padding:4px 6px}
+}
