@@ -1,0 +1,37 @@
+/* v34.9 DESIGN FREEZE — main page only.
+   Goal: preserve the existing light blue/white main UI.
+   Stock/index detail pages do not load this file. */
+
+body.v349-main{
+  color:var(--ink);
+  background:linear-gradient(135deg,#f6fbff 0%,#eaf4ff 42%,#f8fcff 100%);
+}
+
+body.v349-main .topbar{
+  background:rgba(244,249,255,.78);
+  border-bottom:1px solid rgba(255,255,255,.85);
+  box-shadow:0 8px 30px rgba(39,79,120,.06);
+}
+
+body.v349-main .section-shell,
+body.v349-main .budget-control,
+body.v349-main .control-stat,
+body.v349-main .v34-search-box,
+body.v349-main .v34-alert-slot{
+  color:var(--ink);
+}
+
+body.v349-main .hero-console{
+  color:#fff;
+}
+
+/* Requested readability: sector names/secondary text dark.
+   Percentage/accent styling is inherited from the existing main theme. */
+body.v349-main #sectorSec .flow-tile strong,
+body.v349-main #sectorSec .flow-tile small{
+  color:#111827!important;
+  opacity:1!important;
+  text-shadow:none!important;
+}
+
+body.v349-main>.v346-bg{display:none!important}

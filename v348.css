@@ -1,0 +1,121 @@
+/* v34.9 main integration layer.
+   Main screen keeps the existing light palette.
+   Detail screens remain owned by v346.css. */
+
+body.v349-main .v34-search-box{
+  position:relative!important;
+  overflow:visible!important;
+}
+
+body.v349-main .v34-search-results{
+  overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
+}
+
+body.v349-main .v34-search-results.open{
+  display:block!important;
+  visibility:visible!important;
+  pointer-events:auto!important;
+}
+
+body.v349-main .v34-search-results button{
+  width:100%!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:space-between!important;
+  gap:12px!important;
+  text-align:left!important;
+}
+
+body.v349-main .v34-search-results button span{min-width:0!important}
+body.v349-main .v34-search-results button b,
+body.v349-main .v34-search-results button small{
+  display:block!important;
+  white-space:nowrap!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
+}
+body.v349-main .v34-search-results button em{
+  flex:0 0 auto!important;
+  font-style:normal!important;
+}
+
+/* Sector typography only. Tile geometry and ranking logic are untouched. */
+body.v349-main #sectorSec .flow-tile strong,
+body.v349-main #sectorSec .flow-tile.dense strong,
+body.v349-main #sectorSec .flow-tile.tiny strong{
+  color:#111827!important;
+  opacity:1!important;
+  text-shadow:none!important;
+  font-size:14px!important;
+  line-height:1.2!important;
+  white-space:nowrap!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
+  word-break:normal!important;
+  padding-right:0!important;
+}
+
+body.v349-main #sectorSec .flow-tile>b,
+body.v349-main #sectorSec .flow-tile.dense>b,
+body.v349-main #sectorSec .flow-tile.tiny>b{
+  font-size:26px!important;
+  line-height:1!important;
+  margin:2px 0!important;
+}
+
+body.v349-main #sectorSec .flow-tile small,
+body.v349-main #sectorSec .flow-tile.dense small{
+  color:#111827!important;
+  opacity:1!important;
+  text-shadow:none!important;
+  font-size:8px!important;
+  line-height:1.35!important;
+  white-space:nowrap!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
+}
+
+body.v349-main #sectorSec .flow-tile.dense strong{font-size:10px!important}
+body.v349-main #sectorSec .flow-tile.dense>b{font-size:16px!important}
+body.v349-main #sectorSec .flow-tile.dense small{font-size:6.5px!important}
+body.v349-main #sectorSec .flow-tile.tiny strong{font-size:8px!important}
+body.v349-main #sectorSec .flow-tile.tiny>b{font-size:12px!important}
+body.v349-main #sectorSec .flow-tile.tiny small{display:none!important}
+body.v349-main #sectorSec .flow-tile:first-child strong{font-size:14px!important}
+body.v349-main #sectorSec .flow-tile:first-child>b{font-size:26px!important}
+
+@media(max-width:780px){
+  body.v349-main.v348-search-open{overflow:hidden!important}
+
+  /* Search result panel follows the established light main-page palette. */
+  body.v349-main .v34-search-results{
+    margin:0!important;
+    border-radius:15px!important;
+    overflow:auto!important;
+    background:rgba(250,253,255,.99)!important;
+    box-shadow:0 20px 50px rgba(23,52,91,.18)!important;
+    border:1px solid rgba(37,73,124,.13)!important;
+    padding:7px!important;
+  }
+
+  body.v349-main .v34-search-results button{
+    min-height:60px!important;
+    padding:10px 12px!important;
+    border-radius:11px!important;
+  }
+
+  body.v349-main .v34-search-results button b{
+    font-size:13px!important;
+    color:var(--ink)!important;
+  }
+  body.v349-main .v34-search-results button small{
+    font-size:9px!important;
+    color:var(--muted)!important;
+    margin-top:4px!important;
+  }
+  body.v349-main .v34-search-results button em{
+    font-size:10px!important;
+    color:var(--accent2)!important;
+  }
+}
