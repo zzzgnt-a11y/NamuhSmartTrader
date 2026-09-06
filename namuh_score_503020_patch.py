@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 from engine import execution_gate as _execution_gate
 
 
@@ -99,7 +98,7 @@ def apply(m):
         minute=0.0 if ms is None else _clamp(ms)
         daily_pts=round(daily*.15,1)
         minute_pts=round(minute*.10,1)
-        daily_ok=ds is not None and daily>=35.0  # deliberately relaxed daily gate
+        daily_ok=ds is not None and daily>=35.0  # relaxed daily gate
         minute_ok=ms is not None and minute>=50.0
 
         strength=float(getattr(q,'execution_strength',0) or 0)
@@ -116,8 +115,8 @@ def apply(m):
             try:exec_ok,exec_reason=_execution_gate(q)
             except Exception:exec_ok,exec_reason=False,'체결강도 확인 대기'
         else:
-            exec_ok=True;exec_reason='미장 체결강도 원천 미지원 · 점수 제외'
-            exec_pts=0.0
+            # No fabricated US execution strength. Exclude the 15 points and skip only this gate.
+            exec_ok=True;exec_reason='미장 체결강도 원천 미지원 · 점수 제외';exec_pts=0.0
 
         ask=float(getattr(q,'best_ask',0) or 0);bid=float(getattr(q,'best_bid',0) or 0)
         book_ok=ask>0 and bid>0 and ask>bid
@@ -163,7 +162,7 @@ def apply(m):
         out['orderbook_gate_pass']=book_ok;out['daily_gate_pass']=daily_ok;out['minute_gate_pass']=minute_ok;out['technical_gate_pass']=technical_ok
         out['envelope']={'lower':env_lo,'mid':env_mid,'upper':env_hi,'points':env_pts}
         out['technical_confirmation']=tech_breakdown
-        reasons=[
+        out['reasons']=[
             f'50/30/20 · 1차 {stage50:.1f}/50 · 기술 {stage30:.1f}/30 · 보조 {stage20:.1f}/20',
             f'일봉 {daily:.0f} → {daily_pts:.1f}/15' if ds is not None else '일봉 데이터 대기 · 0/15',
             f'{exec_reason} → {exec_pts:.1f}/15',
@@ -172,7 +171,13 @@ def apply(m):
             f'엔벨로프 {env_pts:.1f}/10 + 기술 {tech20:.1f}/20',
             f'섹터상대 {relative10:.1f}/10 · 주도수급 {sectorflow5:.1f}/5 · 호재 {news5:.1f}/5',
         ]
-        out['reasons']=reasons
         return out
 
     m.candidate=candidate
+
+    # Sequential confirmation is an entry gate for both KR and US, while score remains visible.
+    old_trade=m.trade_scalp
+    def trade_scalp(market,candidates,now=None):
+        rows=[x for x in list(candidates or []) if bool(x.get('entry_gate_pass',False))]
+        return old_trade(market,rows,now)
+    m.trade_scalp=trade_scalp
