@@ -98,8 +98,8 @@ def apply(m):
         minute=0.0 if ms is None else _clamp(ms)
         daily_pts=round(daily*.15,1)
         minute_pts=round(minute*.10,1)
-        daily_ok=ds is not None and daily>=30.0  # relaxed daily gate
-        minute_ok=ms is not None and minute>=50.0
+        daily_ok=ds is not None and daily>=25.0
+        minute_ok=ms is not None and minute>=45.0
 
         strength=float(getattr(q,'execution_strength',0) or 0)
         hist=list(getattr(q,'execution_history',[]) or [])
@@ -129,7 +129,7 @@ def apply(m):
         env_pts,env_lo,env_mid,env_hi=_envelope_points(m,q,market)
         tech20,tech_breakdown=_technical20(m,q,market,sec_raw,stock_raw,now)
         stage30=round(env_pts+tech20,1)
-        technical_ok=stage30>=15.0
+        technical_ok=stage30>=12.0
 
         # 3rd confirmation = 20 points: same-sector relative rise 10 + leading-sector flow 5 + positive news/disclosure 5.
         relative10=round(_clamp(stock_raw/5.0*10.0,0,10),1)
