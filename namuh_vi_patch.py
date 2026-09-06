@@ -53,10 +53,11 @@ def apply(m):
             q=qs.get(p.code)
             if not q or q.price<=0:continue
             m.paper.mark(market,p.code,q.price,fx);score=(mm if p.strategy=='SMART' else sm).get(p.code,50);reason='';sell=float(q.price);it=items.get(p.code) or {};target=it.get('vi_target') or it.get('vi_pre');trigger=it.get('vi_trigger')
-            vi=bool(market=='KR' and p.strategy!='SMART' and target and trigger and float(target)>float(p.avg_price) and float(target)<=float(p.avg_price)*1.03 and float(q.price)>=float(target))
+            vi_mode=bool(it.get('vi_mode'))
+            vi=bool(market=='KR' and p.strategy!='SMART' and vi_mode and target and trigger and float(target)>float(p.avg_price) and float(q.price)>=float(target))
             if market=='KR' and m.must_force_sell_pre(p,now):reason='08:49 프리세션 강제청산'
             elif vi:reason='VI 발동가 미도달 · 직전 1호가 익절';sell=float(target)
-            elif p.pnl_pct>=3:reason='목표수익 +3% 도달'
+            elif p.pnl_pct>=3 and not (market=='KR' and p.strategy!='SMART' and vi_mode and target and float(target)>float(p.avg_price)):reason='목표수익 +3% 도달'
             elif p.pnl_pct<=-1.5:reason='손절 기준 도달'
             elif score<46:reason='AI 점수 이탈'
             if reason and m.paper.sell(market,p.code,sell,fx,reason):
