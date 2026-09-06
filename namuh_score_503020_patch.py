@@ -98,7 +98,7 @@ def apply(m):
         minute=0.0 if ms is None else _clamp(ms)
         daily_pts=round(daily*.15,1)
         minute_pts=round(minute*.10,1)
-        daily_ok=ds is not None and daily>=35.0  # relaxed daily gate
+        daily_ok=ds is not None and daily>=30.0  # relaxed daily gate
         minute_ok=ms is not None and minute>=50.0
 
         strength=float(getattr(q,'execution_strength',0) or 0)
