@@ -27,3 +27,14 @@ body.v346-ui #sectorSec .flow-tile:first-child>b{font-size:26px!important}
   .v34-search-results button{min-height:64px!important;padding:10px 12px!important;border-radius:13px!important}
   .v34-search-results button b{font-size:13px!important;color:#eef6ff!important}.v34-search-results button small{font-size:9px!important;color:#8fa3bd!important;margin-top:4px!important}.v34-search-results button em{font-size:10px!important;color:#a8eaf0!important}
 }
+
+/* disclosure hotfix companion: restore readable sector labels on light cards */
+body.v346-ui #sectorSec .flow-tile strong,
+body.v346-ui #sectorSec .flow-tile.dense strong,
+body.v346-ui #sectorSec .flow-tile.tiny strong,
+body.v346-ui #sectorSec .flow-tile small,
+body.v346-ui #sectorSec .flow-tile.dense small {
+  color:#111827!important;
+  opacity:1!important;
+  text-shadow:none!important;
+}
