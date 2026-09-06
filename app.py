@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import hmac
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -39,6 +40,55 @@ protected={x.strip() for x in os.getenv("PROTECTED_CODES","").split(",") if x.st
 cache_lock=threading.Lock()
 trade_lock=threading.RLock()
 started=False
+MINUTE_SYNC_LOCK=threading.RLock()
+MINUTE_SYNC_KEY="pc_minute_signals_v1"
+MINUTE_SYNC_SECRET=(os.getenv("NAMUH_SYNC_SECRET") or os.getenv("NHPLUG_APP_SECRET") or "").strip()
+try:
+    MINUTE_SYNC_TTL=max(60.0,float(os.getenv("NAMUH_MINUTE_SYNC_TTL","180") or 180))
+except Exception:
+    MINUTE_SYNC_TTL=180.0
+MINUTE_SYNC={"updated_at":0.0,"source":"","rows":{},"last_error":""}
+
+def _restore_minute_sync():
+    data=store.load_json(MINUTE_SYNC_KEY,{}) or {}
+    if not isinstance(data,dict):return
+    rows=data.get("rows") if isinstance(data.get("rows"),dict) else {}
+    with MINUTE_SYNC_LOCK:
+        MINUTE_SYNC["updated_at"]=float(data.get("updated_at") or 0)
+        MINUTE_SYNC["source"]=str(data.get("source") or "")
+        MINUTE_SYNC["rows"]={str(k).upper():dict(v) for k,v in rows.items() if isinstance(v,dict)}
+        MINUTE_SYNC["last_error"]=""
+
+def _persist_minute_sync():
+    with MINUTE_SYNC_LOCK:
+        payload={"updated_at":MINUTE_SYNC["updated_at"],"source":MINUTE_SYNC["source"],"rows":dict(MINUTE_SYNC["rows"])}
+    store.save_json(MINUTE_SYNC_KEY,payload)
+
+def _minute_signal(code,fresh_only=False):
+    code=str(code or "").upper()
+    now=time.time()
+    with MINUTE_SYNC_LOCK:
+        row=MINUTE_SYNC["rows"].get(code)
+        updated=float(MINUTE_SYNC.get("updated_at") or 0)
+    if not isinstance(row,dict):return None
+    out=dict(row)
+    received=float(out.get("_received_at") or updated or 0)
+    age=max(0.0,now-received) if received else 999999.0
+    out["fresh"]=age<=MINUTE_SYNC_TTL
+    out["age_sec"]=round(age,1)
+    if fresh_only and not out["fresh"]:return None
+    return out
+
+def _minute_sync_status():
+    now=time.time()
+    with MINUTE_SYNC_LOCK:
+        updated=float(MINUTE_SYNC.get("updated_at") or 0)
+        count=len(MINUTE_SYNC.get("rows") or {})
+        source=str(MINUTE_SYNC.get("source") or "")
+        err=str(MINUTE_SYNC.get("last_error") or "")
+    age=max(0.0,now-updated) if updated else None
+    return {"configured":bool(MINUTE_SYNC_SECRET),"updated_at":updated,"age_sec":round(age,1) if age is not None else None,
+            "fresh":bool(updated and age<=MINUTE_SYNC_TTL),"count":count,"source":source,"ttl_sec":MINUTE_SYNC_TTL,"error":err}
 AUTO_TRADING_ENABLED=os.getenv("AUTO_TRADING_ENABLED","1").strip().lower() not in ("0","false","off","no")
 try:
     AUTO_LOOP_SECONDS=max(1.0,float(os.getenv("AUTO_LOOP_SECONDS","5") or 5))
@@ -592,7 +642,7 @@ def start_background():
     global started
     if started:return
     started=True
-    _restore_paper();_restore_coin();_restore_coin_settings()
+    _restore_paper();_restore_coin();_restore_coin_settings();_restore_minute_sync()
     coin_feed.start()
     if os.getenv("NHPLUG_APP_KEY") and os.getenv("NHPLUG_APP_SECRET"):
         threading.Thread(target=nh_feed_bootstrap,daemon=True).start()
@@ -662,10 +712,70 @@ def health_payload():
             "coinone":ch,"coin_paper_initial_cash":coin_paper.initial_cash_krw,
             "persistence":store.status(),"signal_count_30d":store.recent_signal_count(30),"build":BUILD_ID,"schedule":schedule_payload(),
             "auto_trading_enabled":AUTO_TRADING_ENABLED,"auto_loop_seconds":AUTO_LOOP_SECONDS,
-            "loop":dict(LOOP_STATE),"coin_loop":dict(COIN_LOOP_STATE),"coin_settings":_coin_settings_snapshot()}
+            "loop":dict(LOOP_STATE),"coin_loop":dict(COIN_LOOP_STATE),"coin_settings":_coin_settings_snapshot(),
+             "pc_minute_sync":_minute_sync_status()}
 
 @app.get("/api/health")
 def health():return health_payload()
+
+
+class MinuteSyncRequest(BaseModel):
+    secret:str
+    rows:Optional[list[dict]]=None
+    source:str="NamuhServer-PC"
+    sent_at:Optional[float]=None
+
+@app.post("/api/pc/minute-sync")
+def pc_minute_sync(data:MinuteSyncRequest):
+    if not MINUTE_SYNC_SECRET:
+        raise HTTPException(503,"minute sync secret is not configured")
+    if not hmac.compare_digest(str(data.secret or ""),MINUTE_SYNC_SECRET):
+        raise HTTPException(401,"invalid minute sync secret")
+    now=time.time();accepted={}
+    for raw in list(data.rows or [])[:5000]:
+        if not isinstance(raw,dict):continue
+        code=str(raw.get("code") or "").upper().strip()
+        if not re.fullmatch(r"\d{6}",code):continue
+        try:
+            score=max(0.0,min(100.0,float(raw.get("score") or 0)))
+        except Exception:
+            continue
+        row=dict(raw)
+        row["code"]=code
+        row["score"]=round(score,1)
+        for key in ("probability_up_20m","probability_surge_20m"):
+            if row.get(key) is not None:
+                try:row[key]=round(max(0.0,min(100.0,float(row[key]))),1)
+                except Exception:row[key]=None
+        row["_received_at"]=now
+        accepted[code]=row
+    with MINUTE_SYNC_LOCK:
+        MINUTE_SYNC["rows"].update(accepted)
+        MINUTE_SYNC["updated_at"]=now
+        MINUTE_SYNC["source"]=str(data.source or "NamuhServer-PC")[:80]
+        MINUTE_SYNC["last_error"]=""
+    _persist_minute_sync()
+    return {"ok":True,"accepted":len(accepted),"stored":len(MINUTE_SYNC["rows"]),"updated_at":now}
+
+@app.get("/api/minute/latest/{code}")
+def minute_latest(code:str):
+    row=_minute_signal(code,False)
+    if not row:raise HTTPException(404,"minute signal not found")
+    return row
+
+@app.get("/api/minute/top")
+def minute_top(limit:int=Query(10,ge=1,le=100),fresh:bool=Query(True)):
+    with MINUTE_SYNC_LOCK:
+        rows=[dict(x) for x in MINUTE_SYNC["rows"].values()]
+    now=time.time();out=[]
+    for row in rows:
+        received=float(row.get("_received_at") or 0)
+        age=max(0.0,now-received) if received else 999999.0
+        row["fresh"]=age<=MINUTE_SYNC_TTL;row["age_sec"]=round(age,1)
+        if fresh and not row["fresh"]:continue
+        out.append(row)
+    out.sort(key=lambda x:(float(x.get("score") or 0),float(x.get("probability_up_20m") or 0)),reverse=True)
+    return {"count":len(out[:limit]),"rows":out[:limit],"sync":_minute_sync_status()}
 
 class BudgetRequest(BaseModel):
     amount:Optional[int]=None
@@ -799,10 +909,24 @@ def stock_detail(market:str,code:str,timeframe:str=Query("1d")):
     for tf in ("1m","3m","5m","20m","1d"):
         tb=feed.bars(market,code,tf);a=_analysis_for_bars(q,market,tb)
         scores[tf]=a["score"] if a else None
+
+    minute_ai=_minute_signal(code,False) if market=="KR" else None
+    minute_ai_fresh=minute_ai if minute_ai and minute_ai.get("fresh") else None
+    combined_score=None
+    if minute_ai_fresh:
+        try:scores["1m"]=round(float(minute_ai_fresh.get("score") or 0),1)
+        except Exception:pass
+        try:
+            daily_score=scores.get("1d")
+            if daily_score is not None:
+                combined_score=round(float(daily_score)*0.65+float(minute_ai_fresh.get("score") or 0)*0.35,1)
+                scores["종합"]=combined_score
+        except Exception:
+            combined_score=None
     return {
         "market":market,"code":code,"name":q.name or code,"sector":sector_name(q,market),
         "price":q.price,"currency":"KRW" if market=="KR" else "USD","timeframe":timeframe,
-        "bars":bars,"scores":scores,"analysis":analysis,
+        "bars":bars,"scores":scores,"analysis":analysis,"minute_ai":minute_ai,"combined_score":combined_score,
         "flow":{"foreign_net":q.foreign_net if market=="KR" else None,
                 "institution_net":q.institution_net if market=="KR" else None,
                 "program_net":q.program_net if market=="KR" else None,"person_net":getattr(q,"person_net",None) if market=="KR" else None,
