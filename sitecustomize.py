@@ -9,6 +9,7 @@ INDEX=ROOT/'static'/'index.html'
 TAGS=(
     '<script src="/static/v352.js?v=352"></script>',
     '<script src="/static/v353_searchfix.js?v=353"></script>',
+    '<script src="/static/v354_scoreui.js?v=354"></script>',
 )
 try:
     text=INDEX.read_text(encoding='utf-8')
