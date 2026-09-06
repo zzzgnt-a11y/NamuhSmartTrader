@@ -61,6 +61,20 @@ class StateStore:
                         "code TEXT NOT NULL, payload TEXT NOT NULL)"
                     )
                 cur.execute("CREATE INDEX IF NOT EXISTS gy_signals_ts_idx ON gy_signals(ts)")
+                # Exact same-clock 1-minute volume history for the KR abnormal-flow
+                # baseline.  One compact row per stock/minute/session; works on both
+                # Render Postgres and the Oracle/SQLite fallback.
+                cur.execute(
+                    "CREATE TABLE IF NOT EXISTS gy_minute_volume ("
+                    "market TEXT NOT NULL, code TEXT NOT NULL, trade_date TEXT NOT NULL, "
+                    "minute TEXT NOT NULL, volume DOUBLE PRECISION NOT NULL, "
+                    "updated_at DOUBLE PRECISION NOT NULL, "
+                    "PRIMARY KEY(market,code,trade_date,minute))"
+                )
+                cur.execute(
+                    "CREATE INDEX IF NOT EXISTS gy_minute_volume_lookup_idx "
+                    "ON gy_minute_volume(market,code,minute,trade_date)"
+                )
                 cur.close()
             self.last_error = ""
         except Exception as exc:
@@ -127,6 +141,142 @@ class StateStore:
         except Exception as exc:
             self.last_error = str(exc)[:300]
             return False
+
+    def save_minute_volume(self, market, code, trade_date, minute, volume):
+        market = str(market or "KR").upper()
+        code = str(code or "").upper().strip()
+        trade_date = str(trade_date or "").strip()
+        minute = str(minute or "").strip()
+        try:
+            volume = float(volume or 0)
+        except Exception:
+            volume = 0.0
+        if not code or len(trade_date) != 10 or len(minute) != 5 or volume < 0:
+            return False
+        now = time.time()
+        try:
+            with self.lock, self._conn() as conn:
+                cur = conn.cursor()
+                if self.mode == "postgres":
+                    cur.execute(
+                        "INSERT INTO gy_minute_volume(market,code,trade_date,minute,volume,updated_at) "
+                        "VALUES(%s,%s,%s,%s,%s,%s) "
+                        "ON CONFLICT(market,code,trade_date,minute) DO UPDATE SET "
+                        "volume=EXCLUDED.volume,updated_at=EXCLUDED.updated_at",
+                        (market, code, trade_date, minute, volume, now),
+                    )
+                else:
+                    cur.execute(
+                        "INSERT INTO gy_minute_volume(market,code,trade_date,minute,volume,updated_at) "
+                        "VALUES(?,?,?,?,?,?) "
+                        "ON CONFLICT(market,code,trade_date,minute) DO UPDATE SET "
+                        "volume=excluded.volume,updated_at=excluded.updated_at",
+                        (market, code, trade_date, minute, volume, now),
+                    )
+                cur.close()
+            self.last_error = ""
+            return True
+        except Exception as exc:
+            self.last_error = str(exc)[:300]
+            return False
+
+    def minute_volume_baseline(self, market, code, minute, before_date, sessions=5):
+        market = str(market or "KR").upper()
+        code = str(code or "").upper().strip()
+        minute = str(minute or "").strip()
+        before_date = str(before_date or "").strip()
+        sessions = max(1, min(20, int(sessions or 5)))
+        if not code or len(minute) != 5 or len(before_date) != 10:
+            return {"count": 0, "average": 0.0, "dates": [], "volumes": []}
+        try:
+            with self.lock, self._conn() as conn:
+                cur = conn.cursor()
+                sql = (
+                    "SELECT trade_date,volume FROM gy_minute_volume "
+                    "WHERE market=%s AND code=%s AND minute=%s AND trade_date<%s "
+                    "ORDER BY trade_date DESC LIMIT %s"
+                    if self.mode == "postgres" else
+                    "SELECT trade_date,volume FROM gy_minute_volume "
+                    "WHERE market=? AND code=? AND minute=? AND trade_date<? "
+                    "ORDER BY trade_date DESC LIMIT ?"
+                )
+                cur.execute(sql, (market, code, minute, before_date, sessions))
+                rows = cur.fetchall()
+                cur.close()
+            vals = [(str(d), float(v or 0)) for d, v in rows if float(v or 0) >= 0]
+            vols = [v for _, v in vals]
+            avg = sum(vols) / len(vols) if vols else 0.0
+            self.last_error = ""
+            return {
+                "count": len(vols),
+                "average": avg,
+                "dates": [d for d, _ in vals],
+                "volumes": vols,
+            }
+        except Exception as exc:
+            self.last_error = str(exc)[:300]
+            return {"count": 0, "average": 0.0, "dates": [], "volumes": []}
+
+    def minute_volume_for_dates(self, market, code, minute, dates):
+        market = str(market or "KR").upper()
+        code = str(code or "").upper().strip()
+        minute = str(minute or "").strip()
+        clean_dates = []
+        for d in dates or []:
+            d = str(d or "").strip()
+            if len(d) == 10 and d not in clean_dates:
+                clean_dates.append(d)
+        clean_dates = clean_dates[-10:]
+        if not code or len(minute) != 5 or not clean_dates:
+            return {"count": 0, "average": 0.0, "dates": [], "volumes": [], "missing_dates": clean_dates}
+        try:
+            with self.lock, self._conn() as conn:
+                cur = conn.cursor()
+                marks = ",".join(["%s"] * len(clean_dates)) if self.mode == "postgres" else ",".join(["?"] * len(clean_dates))
+                sql = (
+                    f"SELECT trade_date,volume FROM gy_minute_volume "
+                    f"WHERE market={'%s' if self.mode == 'postgres' else '?'} "
+                    f"AND code={'%s' if self.mode == 'postgres' else '?'} "
+                    f"AND minute={'%s' if self.mode == 'postgres' else '?'} "
+                    f"AND trade_date IN ({marks}) ORDER BY trade_date ASC"
+                )
+                cur.execute(sql, (market, code, minute, *clean_dates))
+                rows = cur.fetchall()
+                cur.close()
+            by_date = {str(d): float(v or 0) for d, v in rows if float(v or 0) >= 0}
+            found_dates = [d for d in clean_dates if d in by_date]
+            vols = [by_date[d] for d in found_dates]
+            missing = [d for d in clean_dates if d not in by_date]
+            avg = sum(vols) / len(vols) if vols else 0.0
+            self.last_error = ""
+            return {
+                "count": len(vols), "average": avg, "dates": found_dates,
+                "volumes": vols, "missing_dates": missing,
+            }
+        except Exception as exc:
+            self.last_error = str(exc)[:300]
+            return {"count": 0, "average": 0.0, "dates": [], "volumes": [], "missing_dates": clean_dates}
+
+    def prune_minute_volume(self, before_date):
+        before_date = str(before_date or "").strip()
+        if len(before_date) != 10:
+            return 0
+        try:
+            with self.lock, self._conn() as conn:
+                cur = conn.cursor()
+                cur.execute(
+                    "DELETE FROM gy_minute_volume WHERE trade_date<%s"
+                    if self.mode == "postgres" else
+                    "DELETE FROM gy_minute_volume WHERE trade_date<?",
+                    (before_date,),
+                )
+                n = int(cur.rowcount or 0)
+                cur.close()
+            self.last_error = ""
+            return n
+        except Exception as exc:
+            self.last_error = str(exc)[:300]
+            return 0
 
     def recent_signal_count(self, days=30):
         cutoff = time.time() - max(1, int(days)) * 86400
