@@ -37,6 +37,45 @@ def _capture_book(q,data):
     if bid>0:setattr(q,'best_bid',bid)
 
 
+def _install_daily_parser_fix():
+    """NH KR currentDaily uses stck_bsop_date on some responses.
+
+    The legacy parser omitted that key, so perfectly valid daily rows were
+    discarded and every candidate stayed in 'daily data waiting'.  Keep the
+    existing parser first, then recover any dated OHLC rows from the full
+    response tree when it returns nothing.
+    """
+    try:
+        import nhfeed as nh
+        if getattr(nh,'_NAMUH_DAILY_PARSER_FIXED',False):return
+        nh._NAMUH_DAILY_PARSER_FIXED=True
+        old=nh.parse_daily_rows
+        def fixed(data,market='KR'):
+            rows=old(data,market)
+            if rows:return rows
+            out=[];seen=set()
+            for r in nh.walk(data):
+                if not isinstance(r,dict):continue
+                d=nh.normalize_date(r.get('stck_bsop_date') or r.get('bsop_date') or r.get('xymd') or r.get('date') or r.get('trade_date'))
+                c=nh.num(r.get('stck_clpr') or r.get('stck_prpr') or r.get('ovrs_prpr') or r.get('close_prc') or r.get('close') or r.get('trdprc') or r.get('prpr'))
+                if not d or c<=0 or d in seen:continue
+                seen.add(d)
+                out.append({
+                    'date':d,
+                    'open':nh.num(r.get('stck_oprc') or r.get('ovrs_oprc') or r.get('open_prc') or r.get('open')) or c,
+                    'high':nh.num(r.get('stck_hgpr') or r.get('ovrs_hgpr') or r.get('high_prc') or r.get('high')) or c,
+                    'low':nh.num(r.get('stck_lwpr') or r.get('ovrs_lwpr') or r.get('low_prc') or r.get('low')) or c,
+                    'close':c,
+                    'volume':nh.num(r.get('acml_vol') or r.get('acvol') or r.get('movolume') or r.get('volume') or r.get('vol')),
+                })
+            out.sort(key=lambda x:x['date'])
+            return out
+        nh.parse_daily_rows=fixed
+        print('NAMUH DATA PATCH: KR daily parser accepts stck_bsop_date',flush=True)
+    except Exception as exc:
+        print('NAMUH DATA PATCH ERROR:',exc,flush=True)
+
+
 def _envelope_points(m,q,market):
     try:
         bars=list(m.feed.bars(market,q.code,'1m') or [])
@@ -69,6 +108,7 @@ def _technical20(m,q,market,sec_score,stock_score,now):
 def apply(m):
     if getattr(m,'_NAMUH_SCORE_503020',False):return
     m._NAMUH_SCORE_503020=True
+    _install_daily_parser_fix()
 
     # Capture best ask/bid whenever the existing quote endpoints expose them.
     try:
@@ -94,6 +134,17 @@ def apply(m):
 
         # 1st confirmation = 50 points: daily 15 + execution 15 + ask>bid 10 + 1m 10.
         ds=out.get('daily_score');ms=out.get('minute_score')
+        # PC minute-sync is durable across Render deploys. If it carries the
+        # explicit daily/minute fields, prefer those fresh real values while
+        # the new server is rebuilding its in-memory candle cache.
+        if market=='KR':
+            try:
+                sig=m._minute_signal(q.code,True)
+                if isinstance(sig,dict):
+                    if ds is None and sig.get('daily_score') is not None:ds=float(sig.get('daily_score'))
+                    sm=sig.get('minute_score') if sig.get('minute_score') is not None else sig.get('score')
+                    if sm is not None and (ms is None or float(ms or 0)<=0) and float(sm)>0:ms=float(sm)
+            except Exception:pass
         daily=0.0 if ds is None else _clamp(ds)
         minute=0.0 if ms is None else _clamp(ms)
         daily_pts=round(daily*.15,1)
