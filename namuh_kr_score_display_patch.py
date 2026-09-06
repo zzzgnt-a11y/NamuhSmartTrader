@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from engine import execution_gate as _execution_gate
+
 
 def _clamp(v, lo=0.0, hi=100.0):
     try:
@@ -25,7 +27,7 @@ def apply(m):
             return out
 
         try:
-            execution_ok, execution_reason = m.execution_gate(q)
+            execution_ok, execution_reason = _execution_gate(q)
         except Exception:
             execution_ok, execution_reason = False, '체결강도 확인 대기'
 
@@ -40,8 +42,9 @@ def apply(m):
         technical60 = _clamp(components.get('technical60'), 0, 60)
         visible_score = round(_clamp(context40 + technical60), 1)
 
-        # Execution-strength is an ENTRY GATE, not a reason to erase the
-        # analytical 40/60 score from the dashboard. Severe disclosures remain 0.
+        # Execution strength is an ENTRY GATE only. Keep the analytical 40/60
+        # score visible even while the gate is accumulating. Severe disclosures
+        # still remain a hard zero/block.
         previous_score = float(out.get('score') or 0)
         previous_priority = float(out.get('priority_score') or previous_score)
         priority_bonus = max(0.0, previous_priority - previous_score)
