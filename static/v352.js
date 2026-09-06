@@ -8,7 +8,7 @@ let searchTimer=0,searchInstalled=false,rendering=false,lastRenderKey='',loadSeq
 function market(){return $('#usModeLabel')?.classList.contains('active')?'US':'KR'}
 function money(v,m){const n=Number(v||0);if(!n)return '—';return m==='US'?'$'+n.toLocaleString(undefined,{maximumFractionDigits:4}):Math.round(n).toLocaleString('ko-KR')+'원'}
 function nrm(s){return String(s||'').toLowerCase().replace(/\s+/g,'')}
-function scoreText(v){return Number.isFinite(Number(v))?'AI '+Number(v).toFixed(0)+'점':'AI 수신대기'}
+function scoreText(v){return v!==null&&v!==undefined&&v!==''&&Number.isFinite(Number(v))?'AI '+Number(v).toFixed(0)+'점':'AI 수신대기'}
 
 async function loadUniverse(forceCatalog=false){
   const m=market(),st=stores[m],want=forceCatalog||!st.catalog,n=++loadSeq;
@@ -45,14 +45,14 @@ function renderAllScores(){
   if(!list||!st.scores.length)return;
   const rows=st.scores.slice().sort((a,b)=>Number(b.score||0)-Number(a.score||0));
   const key=m+'|'+rows.map(x=>`${x.code}:${Number(x.score||0).toFixed(1)}:${Number(x.price||0)}`).join(',');
-  if(key===lastRenderKey&&list.dataset.v352==='1')return;
-  rendering=true;lastRenderKey=key;
   const ready=rows.filter(x=>Number(x.score||0)>=72).length;
   const title=$('#scalpTitle'),cap=$('#scalpCaption');
   if(title)title.textContent=m==='US'?'미장 전체 종목 AI 점수':'국장 전체 종목 AI 점수';
   if(cap)cap.textContent=`전체 ${rows.length}종목 · 40 실시간 + 60 일봉→분봉 · 72점 이상 ${ready}종목`;
   const col=list.closest('.signal-column')?.querySelector('.column-title b');if(col)col.textContent=`전체 AI 점수 · ${rows.length}종목`;
   $('#candidateClosed')?.classList.add('hide');$('#candidateZone')?.classList.remove('hide');
+  if(key===lastRenderKey&&list.dataset.v352==='1'&&list.querySelector('.v352-ai-card'))return;
+  rendering=true;lastRenderKey=key;
   list.innerHTML=rows.map((x,i)=>allCard(x,i,m)).join('');list.dataset.v352='1';rendering=false;
 }
 
@@ -124,10 +124,10 @@ function installStyle(){
 
 function init(){
   installStyle();let tries=0;const t=setInterval(()=>{tries++;if(installSearch()||tries>40)clearInterval(t)},100);
-  const list=$('#scalpList');if(list)new MutationObserver(()=>{if(rendering)return;const st=stores[market()];if(st.scores.length&&list.dataset.v352!=='1')queueMicrotask(renderAllScores)}).observe(list,{childList:true,subtree:false});
+  const list=$('#scalpList');if(list)new MutationObserver(()=>{if(rendering)return;const st=stores[market()];if(st.scores.length&&!list.querySelector('.v352-ai-card')){lastRenderKey='';queueMicrotask(renderAllScores)}}).observe(list,{childList:true,subtree:false});
   const sec=$('#sectorMemberList');if(sec)new MutationObserver(()=>queueMicrotask(annotateSector)).observe(sec,{childList:true,subtree:true});
   ['#krModeLabel','#usModeLabel'].forEach(sel=>$(sel)?.addEventListener('click',()=>setTimeout(()=>{lastRenderKey='';loadUniverse(!stores[market()].catalog)},80)));
-  loadUniverse(true);setInterval(()=>loadUniverse(false),8000)
+  loadUniverse(true);setInterval(()=>loadUniverse(false),8000);setInterval(()=>{renderAllScores();if(!$('#v34SearchBox')?.dataset.v352)installSearch()},1000)
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
 })();
