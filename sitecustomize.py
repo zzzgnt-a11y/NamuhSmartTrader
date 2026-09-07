@@ -41,7 +41,7 @@ namuh_patch_loader.install()
 
 # Render starts with `python runtime_server_v34.py`, so that file is __main__.
 # Patch at the last possible moment: runtime_server_v34 has finished defining
-# its final coin candidate/loop layers, but uvicorn has not started lifespan yet.
+# its final stock/coin trade layers, but uvicorn has not started lifespan yet.
 try:
     import uvicorn
     _orig_uvicorn_run=uvicorn.run
@@ -54,8 +54,11 @@ try:
                 if ns.get('core') is not None and callable(ns.get('_coin_technical_from_bars')):
                     import coin_tech100_patch
                     coin_tech100_patch.apply(ns)
+                if ns.get('core') is not None:
+                    import namuh_recipe8020_patch
+                    namuh_recipe8020_patch.apply(ns)
             except Exception as exc:
-                print('COIN TECH100 PATCH ERROR:',exc,flush=True)
+                print('LATE RUNTIME PATCH ERROR:',exc,flush=True)
             return _orig_uvicorn_run(*args,**kwargs)
         uvicorn.run=_run_with_coin_patch
 except Exception:
