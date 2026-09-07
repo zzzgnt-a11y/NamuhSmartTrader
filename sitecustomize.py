@@ -87,6 +87,8 @@ try:
                     import namuh_strategy123_patch;namuh_strategy123_patch.apply(ns)
                     # Final corrective owner: strict C2 + all-market C3 only.
                     import namuh_strategy23_fix;namuh_strategy23_fix.apply(ns)
+                    # User override: Condition 2 afternoon entries remain open until 15:00.
+                    import namuh_c2_window_patch;namuh_c2_window_patch.apply(ns)
             except Exception as exc:
                 print('LATE RUNTIME PATCH ERROR:',exc,flush=True)
             return _orig_uvicorn_run(*args,**kwargs)
