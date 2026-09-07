@@ -1,0 +1,60 @@
+name: ChatGPT Zero Score Audit Test
+
+on:
+  push:
+    branches:
+      - chatgpt-zero-audit-test-20260908
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Python syntax checks
+        run: |
+          python -m py_compile namuh_zero_score_audit_patch.py namuh_standard_detail_fix.py namuh_conditions_final_patch.py namuh_patch_loader.py engine.py
+      - name: Zero audit helper tests
+        run: |
+          python - <<'PY'
+          import namuh_zero_score_audit_patch as z
+
+          cumulative = {"Output_0":[
+              {"bsop_date":"20260904","bsop_time":"090100","acml_vol":"100"},
+              {"bsop_date":"20260904","bsop_time":"091000","acml_vol":"500"},
+              {"bsop_date":"20260904","bsop_time":"092000","acml_vol":"900"},
+          ]}
+          assert z._cumulative_from_response(cumulative, "20260904", 9*60+15) == 500
+
+          incremental = {"Output_0":[
+              {"bsop_date":"20260904","bsop_time":"090100","volume":"100"},
+              {"bsop_date":"20260904","bsop_time":"091000","volume":"200"},
+              {"bsop_date":"20260904","bsop_time":"092000","volume":"300"},
+          ]}
+          assert z._cumulative_from_response(incremental, "20260904", 9*60+15) == 300
+          print("zero-audit helpers PASS")
+          PY
+      - name: Final score UI chain test
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import namuh_ai_scoreboard_patch
+          import namuh_ui366_patch
+          import namuh_standard_detail_fix
+          import namuh_zero_score_audit_patch
+
+          namuh_ai_scoreboard_patch.apply(None)
+          namuh_ui366_patch.apply(None)
+          namuh_standard_detail_fix._patch_stock_score_ui(Path('.'))
+          namuh_zero_score_audit_patch._patch_score_ui()
+          text = Path('static/stock.js').read_text(encoding='utf-8')
+          assert "status==='DATA_MISSING'" in text
+          assert '자료대기' in text
+          assert '조건상 0점' in text
+          assert "audit['거래량']" in text
+          assert "75점→45점 환산',standard,45" not in text
+          print("final zero-audit UI chain PASS")
+          PY
