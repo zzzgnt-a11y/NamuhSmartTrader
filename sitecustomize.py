@@ -94,6 +94,10 @@ try:
                 if ns.get('core') is not None and callable(ns.get('_coin_technical_from_bars')):
                     import coin_tech100_patch;coin_tech100_patch.apply(ns)
                 if ns.get('core') is not None:
+                    # Restore/store recent 1-minute bars before any strategy owner
+                    # reads them, so Render restarts do not reset the 5-bar gate.
+                    import minute_bar_persistence
+                    minute_bar_persistence.install(ns['core'])
                     import namuh_recipe8020_patch;namuh_recipe8020_patch.apply(ns)
                     import namuh_execution_exit_patch;namuh_execution_exit_patch.apply(ns)
                     import namuh_entry_gate_fix;namuh_entry_gate_fix.apply(ns)
