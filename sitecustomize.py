@@ -19,6 +19,14 @@ try:
         text=re.sub(rf'\s*<script\s+src=["\']/static/{re.escape(name)}(?:\?[^"\']*)?["\']\s*></script>\s*','\n',text,flags=re.I)
     tags='\n'.join(f'  <script src="/static/{name}?v={ASSET_VERSION}"></script>' for name in SCRIPT_NAMES)
     text=text.replace('</body>',f'{tags}\n</body>')
+    # Force every main-page JS/CSS asset to use this deploy's build id so a
+    # normal browser session cannot keep an old cached owner while incognito is fresh.
+    text=re.sub(
+        r'(/static/[^"\'?]+\.(?:js|css))(?:\?v=[^"\']*)?',
+        lambda m:f'{m.group(1)}?v={ASSET_VERSION}',
+        text,
+        flags=re.I,
+    )
     INDEX.write_text(text,encoding='utf-8')
 except Exception as exc:
     print('NAMUH UI TAG PATCH ERROR:',exc,flush=True)
