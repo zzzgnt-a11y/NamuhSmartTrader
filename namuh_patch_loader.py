@@ -134,6 +134,9 @@ def install():
                         # Isolated C3 bridge: only lets the final C3 resolver reuse a fresh PC-sync price.
                         import namuh_c3_sync_price_patch
                         namuh_c3_sync_price_patch.apply(ns)
+                        # Absolute final UI owner: calendar/filter/search geometry and Condition1 score map only.
+                        import namuh_ui366_patch
+                        namuh_ui366_patch.apply(ns)
                 except Exception as exc:
                     print('NAMUH USER15 LATE PATCH ERROR:',str(exc)[:220],flush=True)
                 return _prev_run(*args,**kwargs)
