@@ -9,18 +9,22 @@ import sitecustomize_legacy
 ROOT=Path(__file__).resolve().parent
 INDEX=ROOT/'static'/'index.html'
 ASSET_VERSION=(os.getenv('RENDER_GIT_COMMIT') or os.getenv('GY_BUILD_ID') or str(int(__import__('time').time())))[:12]
-SCRIPT_NAMES=('v352.js','v353_searchfix.js','v355_unified_ui.js','v356_strategy_ui.js','v357_ui_restore.js')
 
-# One fresh copy of each late UI owner. v354 is intentionally removed because
-# its old 50/30/20 timer could overwrite the active strategy display.
+# v363 is the only late main-page UI owner. Remove every old owner before
+# injecting it so server startup can never revive the 0.5/1s render loops.
+OLD_MAIN_SCRIPTS=(
+    'v352.js','v353_searchfix.js','v354_scoreui.js','v355_unified_ui.js',
+    'v356_strategy_ui.js','v357_ui_restore.js','v360_final.js','v361_user15.js',
+    'v362_main.js','v363_main.js',
+)
 try:
     text=INDEX.read_text(encoding='utf-8')
-    for name in ('v352.js','v353_searchfix.js','v354_scoreui.js','v355_unified_ui.js','v356_strategy_ui.js','v357_ui_restore.js'):
+    for name in OLD_MAIN_SCRIPTS:
         text=re.sub(rf'\s*<script\s+src=["\']/static/{re.escape(name)}(?:\?[^"\']*)?["\']\s*></script>\s*','\n',text,flags=re.I)
-    tags='\n'.join(f'  <script src="/static/{name}?v={ASSET_VERSION}"></script>' for name in SCRIPT_NAMES)
-    text=text.replace('</body>',f'{tags}\n</body>')
-    # Force every main-page JS/CSS asset to use this deploy's build id so a
-    # normal browser session cannot keep an old cached owner while incognito is fresh.
+    tag=f'  <script src="/static/v363_main.js?v={ASSET_VERSION}"></script>'
+    text=text.replace('</body>',f'{tag}\n</body>')
+    # Force every main-page JS/CSS asset to this deploy id, preventing a cached
+    # legacy owner from surviving while a fresh tab gets the new owner.
     text=re.sub(
         r'(/static/[^"\'?]+\.(?:js|css))(?:\?v=[^"\']*)?',
         lambda m:f'{m.group(1)}?v={ASSET_VERSION}',
@@ -30,18 +34,6 @@ try:
     INDEX.write_text(text,encoding='utf-8')
 except Exception as exc:
     print('NAMUH UI TAG PATCH ERROR:',exc,flush=True)
-
-# Keep section 3 title stable across every late UI owner.
-try:
-    p=ROOT/'static'/'v352.js';text=p.read_text(encoding='utf-8')
-    text=text.replace("if(title)title.textContent=m==='US'?'미장 전체 종목 AI 점수':'국장 전체 종목 AI 점수';",
-                      "if(title)title.textContent=m==='US'?'미장 단타 탐지':'국장 단타 탐지';")
-    text=text.replace('전체 ${rows.length}종목 · 40 실시간 + 60 일봉→분봉 · 72점 이상 ${ready}종목',
-                      '전체 ${rows.length}종목 · 조건1/조건2/조건3 · 실시간 감시')
-    text=text.replace("if(col)col.textContent=`전체 AI 점수 · ${rows.length}종목`;",
-                      "if(col)col.textContent=`단타 조건 후보 · ${rows.length}종목`;")
-    p.write_text(text,encoding='utf-8')
-except Exception as exc:print('NAMUH V352 UI PATCH ERROR:',exc,flush=True)
 
 # Stock account is now 4M KRW.
 try:
@@ -94,8 +86,6 @@ try:
                 if ns.get('core') is not None and callable(ns.get('_coin_technical_from_bars')):
                     import coin_tech100_patch;coin_tech100_patch.apply(ns)
                 if ns.get('core') is not None:
-                    # Restore/store recent 1-minute bars before any strategy owner
-                    # reads them, so Render restarts do not reset the 5-bar gate.
                     import minute_bar_persistence
                     minute_bar_persistence.install(ns['core'])
                     import namuh_recipe8020_patch;namuh_recipe8020_patch.apply(ns)
@@ -103,13 +93,9 @@ try:
                     import namuh_entry_gate_fix;namuh_entry_gate_fix.apply(ns)
                     import namuh_crossmarket_patch;namuh_crossmarket_patch.apply(ns)
                     import namuh_stock_asset_patch;namuh_stock_asset_patch.apply(ns)
-                    # Must be last among base strategy owners.
                     import namuh_strategy123_patch;namuh_strategy123_patch.apply(ns)
-                    # Final corrective owner: strict C2 + all-market C3 only.
                     import namuh_strategy23_fix;namuh_strategy23_fix.apply(ns)
-                    # User override: Condition 2 afternoon entries remain open until 15:00.
                     import namuh_c2_window_patch;namuh_c2_window_patch.apply(ns)
-                    # Final user entry thresholds: C2 >=70 / C3 >=75.
                     import namuh_condition_threshold_patch;namuh_condition_threshold_patch.apply(ns)
             except Exception as exc:
                 print('LATE RUNTIME PATCH ERROR:',exc,flush=True)
