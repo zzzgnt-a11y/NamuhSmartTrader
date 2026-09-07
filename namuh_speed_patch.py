@@ -20,14 +20,14 @@ def _rewrite(rel, transforms):
 
 def apply(ns=None):
     # Speed only: do not alter strategy, scoring, UI layout, filters, or calendars.
-    # Stock state: 3s, time-AI score refresh: 5s, coin state: 3s.
+    # Maximum practical UI polling: stock 1s, time-AI 1s, coin 1s.
     _rewrite('static/app.js', [
-        (r'setInterval\(refresh\s*,\s*(?:5000|10000)\)', 'setInterval(refresh,3000)'),
+        (r'setInterval\(refresh\s*,\s*(?:1000|3000|5000|10000)\)', 'setInterval(refresh,1000)'),
     ])
     _rewrite('static/v364_main.js', [
-        (r'setInterval\(loadScores\s*,\s*(?:10000|20000)\)', 'setInterval(loadScores,5000)'),
+        (r'setInterval\(loadScores\s*,\s*(?:1000|5000|10000|20000)\)', 'setInterval(loadScores,1000)'),
     ])
     _rewrite('static/coin.js', [
-        (r'setInterval\(refresh\s*,\s*(?:5000|10000)\)', 'setInterval(refresh,3000)'),
+        (r'setInterval\(refresh\s*,\s*(?:1000|3000|5000|10000)\)', 'setInterval(refresh,1000)'),
     ])
-    print('NAMUH SPEED PATCH active: stock=3s AI=5s coin=3s', flush=True)
+    print('NAMUH SPEED PATCH active: stock=1s AI=1s coin=1s', flush=True)
