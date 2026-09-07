@@ -93,3 +93,15 @@ def apply(ns):
 
     core.health_payload = health
     print("NAMUH CONDITION ENTRY SCORE active: C2>=70 / C3>=75", flush=True)
+
+    # Final requested feature bundle. Installed here because this module is
+    # already the last runtime owner in sitecustomize.py.
+    try:
+        import minute_bar_persistence
+        minute_bar_persistence._MAX_BARS = 60
+        import namuh_minute_data_patch
+        namuh_minute_data_patch.install(core)
+        import namuh_final_requests_patch
+        namuh_final_requests_patch.apply(ns)
+    except Exception as exc:
+        print("NAMUH FINAL REQUEST BUNDLE ERROR:", str(exc)[:220], flush=True)
