@@ -103,6 +103,11 @@ def install():
                         namuh_user15_patch.apply(ns)
                         import namuh_user15_stability
                         namuh_user15_stability.apply(ns)
+                        # USER15 historically re-injected v361 into the two main
+                        # pages. Strip it again after USER15 so v364/coin.js remain
+                        # the sole UI owners and trade filters cannot be deleted.
+                        import v364_ui_cleanup_patch
+                        v364_ui_cleanup_patch.apply(ns)
                 except Exception as exc:
                     print('NAMUH USER15 LATE PATCH ERROR:',str(exc)[:220],flush=True)
                 return _prev_run(*args,**kwargs)
