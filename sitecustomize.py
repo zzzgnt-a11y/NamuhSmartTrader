@@ -32,6 +32,15 @@ try:
     p.write_text(text,encoding='utf-8')
 except Exception as exc:print('NAMUH V352 UI PATCH ERROR:',exc,flush=True)
 
+# Stock account is now 2M KRW, so allow the main budget box to accept the full
+# account limit instead of the legacy 1M client-side cap.
+try:
+    p=ROOT/'static'/'app.js';text=p.read_text(encoding='utf-8')
+    text=text.replace('amount>1000000','amount>2000000')
+    text=text.replace('0~1,000,000원 범위','0~2,000,000원 범위')
+    p.write_text(text,encoding='utf-8')
+except Exception as exc:print('NAMUH STOCK BUDGET UI PATCH ERROR:',exc,flush=True)
+
 # Coin UI owner: no news/disclosure/sector/program/1m gate; technical weight 45.
 for rel in ('static/coin.html','static/coin-detail.html'):
     try:
@@ -61,6 +70,7 @@ try:
                     import namuh_execution_exit_patch;namuh_execution_exit_patch.apply(ns)
                     import namuh_entry_gate_fix;namuh_entry_gate_fix.apply(ns)
                     import namuh_crossmarket_patch;namuh_crossmarket_patch.apply(ns)
+                    import namuh_stock_asset_patch;namuh_stock_asset_patch.apply(ns)
             except Exception as exc:
                 print('LATE RUNTIME PATCH ERROR:',exc,flush=True)
             return _orig_uvicorn_run(*args,**kwargs)
