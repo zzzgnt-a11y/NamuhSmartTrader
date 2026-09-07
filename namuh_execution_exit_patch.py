@@ -14,7 +14,7 @@ def _execution_points(strength):
     return max(0.0,(s-70.0)/20.0*8.0)
 
 
-def _checkpoint_values(q, now_ts=None):
+def _history(q, now_ts=None, max_age=120):
     now_ts=float(now_ts or time.time())
     hist=[]
     for row in list(getattr(q,'execution_history',[]) or []):
@@ -22,23 +22,39 @@ def _checkpoint_values(q, now_ts=None):
             ts=float(row[0]);val=float(row[1])
         except Exception:
             continue
-        if ts<=now_ts and now_ts-ts<=120:
+        if ts<=now_ts and now_ts-ts<=max_age:
             hist.append((ts,val))
     hist.sort(key=lambda x:x[0])
-    current=float(getattr(q,'execution_strength',0) or 0)
+    return now_ts,hist
+
+
+def _sample_values(q, ages, now_ts=None):
+    now_ts,hist=_history(q,now_ts,max_age=max(120,max(ages or [0])+10))
     if not hist:
         return None
-    if now_ts-hist[0][0] < 30.0:
+    current=float(getattr(q,'execution_strength',0) or 0)
+    if now_ts-hist[0][0] < float(max(ages or [0])):
         return None
     vals=[]
-    for age in (30,20,10):
-        target=now_ts-age
+    for age in ages:
+        if age==0:
+            vals.append(current)
+            continue
+        target=now_ts-float(age)
         cand=[v for ts,v in hist if ts<=target]
         if not cand:
             return None
         vals.append(float(cand[-1]))
-    vals.append(current)
     return vals
+
+
+def _checkpoint_values_30s(q, now_ts=None):
+    return _sample_values(q,(30,20,10,0),now_ts)
+
+
+def _checkpoint_values_60s_5s(q, now_ts=None):
+    # 60,55,...,5,0 seconds: 13 points, 12 five-second intervals.
+    return _sample_values(q,tuple(range(60,-1,-5)),now_ts)
 
 
 def execution_gate_30s(q, now_ts=None):
@@ -47,15 +63,29 @@ def execution_gate_30s(q, now_ts=None):
         return True,'체결강도 110+ 즉시 통과'
     if s<90:
         return False,'체결강도 90 미만'
-    vals=_checkpoint_values(q,now_ts)
-    if vals is None:
-        return False,'체결강도 30초 추세 축적 중'
+
+    # 100~109.9: observe one full minute in 5-second buckets.
+    # Intermediate drops are allowed. The gate only requires that both the
+    # 60-second starting value and current value are 100+, and current is
+    # above the value from 60 seconds ago (net rise over one minute).
     if s>=100:
-        if min(vals)<100:
-            return False,'체결강도 100+ 30초 유지 대기'
-        if all(vals[i+1] >= vals[i] for i in range(len(vals)-1)):
-            return True,'체결강도 100+ · 30초 무하락'
-        return False,'체결강도 100+이나 30초 내 하락 발생'
+        vals=_checkpoint_values_60s_5s(q,now_ts)
+        if vals is None:
+            return False,'체결강도 100+ · 1분 추세 축적 중(5초 간격)'
+        start=float(vals[0]);end=float(vals[-1])
+        rises=sum(1 for a,b in zip(vals,vals[1:]) if b>a)
+        falls=sum(1 for a,b in zip(vals,vals[1:]) if b<a)
+        flats=12-rises-falls
+        if start<100:
+            return False,f'체결강도 현재 100+ · 1분 전 {start:.1f} < 100 대기'
+        if end>start:
+            return True,f'체결강도 100+ · 1분 순상승 {start:.1f}→{end:.1f} · 5초구간 상승{rises}/하락{falls}/보합{flats}'
+        return False,f'체결강도 100+ · 1분 순상승 미충족 {start:.1f}→{end:.1f} · 중간하락 허용'
+
+    # 90~99.9: keep the existing stricter 30-second rising rule.
+    vals=_checkpoint_values_30s(q,now_ts)
+    if vals is None:
+        return False,'체결강도 90+ · 30초 추세 축적 중'
     if min(vals)<90:
         return False,'체결강도 90+ 30초 유지 대기'
     if all(vals[i+1] > vals[i] for i in range(len(vals)-1)):
@@ -136,7 +166,7 @@ def apply(ns):
         old_health=core.health_payload
         def health():
             d=dict(old_health())
-            d['execution_gate_model']='110 immediate / 100+ 30s non-falling / 90+ 30s rising'
+            d['execution_gate_model']='110 immediate / 100+ 60s net-rise (5s samples, dips allowed) / 90+ 30s rising'
             d['krx_force_exit']='15:19'
             d['nxt_force_exit']='19:59'
             return d
@@ -144,4 +174,4 @@ def apply(ns):
     except Exception:
         pass
 
-    print('NAMUH EXEC/EXIT PATCH active: 110 immediate; 100+ flat/rise 30s; 90+ rise 30s; KRX 15:19; NXT 19:59',flush=True)
+    print('NAMUH EXEC/EXIT PATCH active: 110 immediate; 100+ 60s net-rise with 5s samples/dips allowed; 90+ rise 30s; KRX 15:19; NXT 19:59',flush=True)
