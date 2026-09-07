@@ -10,18 +10,18 @@ ROOT=Path(__file__).resolve().parent
 INDEX=ROOT/'static'/'index.html'
 ASSET_VERSION=(os.getenv('RENDER_GIT_COMMIT') or os.getenv('GY_BUILD_ID') or str(int(__import__('time').time())))[:12]
 
-# v363 is the only late main-page UI owner. Remove every old owner before
-# injecting it so server startup can never revive the 0.5/1s render loops.
+# v364 is the only late main-page UI owner. Remove every old owner before
+# injecting it so server startup can never revive sub-second render loops.
 OLD_MAIN_SCRIPTS=(
     'v352.js','v353_searchfix.js','v354_scoreui.js','v355_unified_ui.js',
     'v356_strategy_ui.js','v357_ui_restore.js','v360_final.js','v361_user15.js',
-    'v362_main.js','v363_main.js',
+    'v362_main.js','v363_main.js','v364_main.js',
 )
 try:
     text=INDEX.read_text(encoding='utf-8')
     for name in OLD_MAIN_SCRIPTS:
         text=re.sub(rf'\s*<script\s+src=["\']/static/{re.escape(name)}(?:\?[^"\']*)?["\']\s*></script>\s*','\n',text,flags=re.I)
-    tag=f'  <script src="/static/v363_main.js?v={ASSET_VERSION}"></script>'
+    tag=f'  <script src="/static/v364_main.js?v={ASSET_VERSION}"></script>'
     text=text.replace('</body>',f'{tag}\n</body>')
     text=re.sub(
         r'(/static/[^"\'?]+\.(?:js|css))(?:\?v=[^"\']*)?',
@@ -44,15 +44,17 @@ try:
     p.write_text(text,encoding='utf-8')
 except Exception as exc:print('NAMUH STOCK BUDGET/POLL UI PATCH ERROR:',exc,flush=True)
 
-# Reduce auxiliary main-page polling. These values are status/display refreshes,
-# not strategy engine loops; trading runs server-side independently.
+# Reduce auxiliary main-page polling and disable the legacy calendar detail
+# request that ignored the selected KR/US market and could re-mix trades.
 try:
     p=ROOT/'static'/'v34.js';text=p.read_text(encoding='utf-8')
     text=text.replace('setInterval(loadAuto,12000)','setInterval(loadAuto,30000)')
     text=text.replace('setInterval(loadDisclosureAlerts,7000)','setInterval(loadDisclosureAlerts,30000)')
     text=text.replace('setInterval(loadFlowAlerts,4000)','setInterval(loadFlowAlerts,15000)')
+    text=text.replace('async function enhanceCalendarDay(date){if(!date)return;',
+                      'async function enhanceCalendarDay(date){return; if(!date)return;')
     p.write_text(text,encoding='utf-8')
-except Exception as exc:print('NAMUH V34 POLL PATCH ERROR:',exc,flush=True)
+except Exception as exc:print('NAMUH V34 POLL/CALENDAR PATCH ERROR:',exc,flush=True)
 
 # Keep the disclosure list, but remove unrequested chart disclosure markers.
 try:
