@@ -53,6 +53,22 @@ try:
     p.write_text(text,encoding='utf-8')
 except Exception as exc:print('NAMUH STOCK BUDGET UI PATCH ERROR:',exc,flush=True)
 
+# Keep the disclosure list, but remove the unrequested disclosure markers drawn
+# directly over the stock candle chart. Also stop the legacy canvas paint work.
+try:
+    p=ROOT/'static'/'stock-fix.js'
+    if p.exists():
+        text=p.read_text(encoding='utf-8')
+        text=text.replace('function drawDisclosureOverlay(){\n const ov=', 'function drawDisclosureOverlay(){return;\n const ov=')
+        p.write_text(text,encoding='utf-8')
+    p=ROOT/'static'/'v346.css'
+    text=p.read_text(encoding='utf-8')
+    rule='#v348ChartEvents{display:none!important}'
+    if rule not in text:
+        text += '\n/* Stock candle chart: disclosure markers intentionally disabled. */\n'+rule+'\n'
+        p.write_text(text,encoding='utf-8')
+except Exception as exc:print('NAMUH STOCK DISCLOSURE MARKER PATCH ERROR:',exc,flush=True)
+
 # Coin UI owner: no news/disclosure/sector/program/1m gate; technical weight 45.
 for rel in ('static/coin.html','static/coin-detail.html'):
     try:
