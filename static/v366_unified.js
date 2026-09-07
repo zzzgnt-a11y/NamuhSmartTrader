@@ -2,11 +2,15 @@
 'use strict';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 const num=v=>{const n=Number(String(v??0).replace(/,/g,''));return Number.isFinite(n)?n:0};
+let searchMode='';
 
-function placeSearch(){
+function placeSearch(force=false){
   const box=document.getElementById('v34SearchBox');
   if(!box)return;
   const mobile=window.innerWidth<=780;
+  const nextMode=mobile?'mobile':'desktop';
+  if(!force&&searchMode===nextMode)return;
+  searchMode=nextMode;
   if(mobile){
     const page=document.querySelector('main.page');
     const hero=document.getElementById('homeSec')||page?.firstElementChild;
@@ -103,7 +107,7 @@ function prettyStockTrades(){
 let queued=false;
 function later(){
   if(queued)return;queued=true;
-  requestAnimationFrame(()=>requestAnimationFrame(()=>{queued=false;placeSearch();dedupeCoinCalendars();prettyStockTrades()}));
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{queued=false;dedupeCoinCalendars();prettyStockTrades()}));
 }
 function installObservers(){
   const coinMain=document.querySelector('main.coin-page');
@@ -118,13 +122,11 @@ function installObservers(){
   }
 }
 function init(){
-  placeSearch();dedupeCoinCalendars();prettyStockTrades();
-  setTimeout(()=>{placeSearch();dedupeCoinCalendars();prettyStockTrades();installObservers()},80);
-  setTimeout(()=>{placeSearch();dedupeCoinCalendars();prettyStockTrades()},350);
-  window.addEventListener('resize',later,{passive:true});
-  window.visualViewport?.addEventListener('resize',later,{passive:true});
-  window.visualViewport?.addEventListener('scroll',later,{passive:true});
-  document.addEventListener('focusin',e=>{if(e.target?.id==='v34SearchInput')setTimeout(placeSearch,0)},true);
+  placeSearch(true);dedupeCoinCalendars();prettyStockTrades();
+  setTimeout(()=>{placeSearch(true);dedupeCoinCalendars();prettyStockTrades();installObservers()},100);
+  setTimeout(()=>{dedupeCoinCalendars();prettyStockTrades()},350);
+  let resizeTimer=0;
+  window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>placeSearch(false),160)},{passive:true});
   document.addEventListener('click',e=>{
     if(e.target?.closest?.('#v364Filter button,#krModeLabel,#usModeLabel'))setTimeout(prettyStockTrades,0);
   },true);
