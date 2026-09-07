@@ -147,6 +147,32 @@
 .coin-trade-filters button.active[data-trade-filter="SELL"],
 .v360-trade-controls button.active[data-trade-filter="SELL"]{background:#dc2626!important;color:#fff!important;border-color:#dc2626!important}
 
+/* ---------- KR / US trade cards: same visual hierarchy as the coin ledger ---------- */
+#v364Trades.v367-pretty-stock{display:grid!important;gap:14px!important}
+.v367-stock-trade-card{
+  display:grid;gap:14px;padding:18px;border-radius:22px;
+  background:linear-gradient(145deg,rgba(255,255,255,.96),rgba(247,251,255,.91));
+  border:1px solid rgba(61,94,140,.10);box-shadow:0 12px 30px rgba(26,58,100,.07);
+}
+.v367-stock-trade-top{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center}
+.v367-stock-side{display:inline-flex;align-items:center;justify-content:center;min-width:56px;height:30px;padding:0 12px;border-radius:999px;font-size:11px;font-weight:950;letter-spacing:.04em}
+.v367-stock-trade-card.buy .v367-stock-side{background:#eaf2ff;color:#2563eb}
+.v367-stock-trade-card.sell .v367-stock-side{background:#fff0f3;color:#cf4260}
+.v367-stock-name{min-width:0}
+.v367-stock-name b{display:block;font-size:18px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.v367-stock-name small{display:block;margin-top:5px;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.v367-stock-qty{font-size:22px;letter-spacing:-.6px;white-space:nowrap;text-align:right}
+.v367-stock-qty em{font-style:normal;font-size:11px;color:var(--muted);margin-left:3px}
+.v367-stock-detail{display:grid;grid-template-columns:1fr 1fr;gap:12px 18px;padding:16px;border-radius:18px;background:rgba(98,113,145,.07)}
+.v367-stock-detail>div{min-width:0}
+.v367-stock-detail-qty{grid-column:1/-1}
+.v367-stock-detail small{display:block;font-size:10px;color:var(--muted);margin-bottom:5px}
+.v367-stock-detail b{display:block;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.v367-stock-foot{display:flex;align-items:center;justify-content:space-between;gap:14px}
+.v367-stock-foot small{min-width:0;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.v367-stock-foot b{font-size:15px;white-space:nowrap}
+.v367-stock-buy-done{color:var(--accent2)}
+
 /* ---------- Mobile stock search: always above the hero, results directly below ---------- */
 @media(max-width:780px){
   #v34SearchBox.v366-mobile-search{
@@ -195,6 +221,13 @@
   #coinCalendarSec .coin-calendar-top button{
     width:56px!important;height:56px!important;min-height:56px!important;
   }
+  .v367-stock-trade-card{padding:16px;gap:12px;border-radius:20px}
+  .v367-stock-trade-top{grid-template-columns:auto minmax(0,1fr) auto;gap:9px}
+  .v367-stock-side{min-width:50px;height:28px;padding:0 9px;font-size:10px}
+  .v367-stock-name b{font-size:16px}.v367-stock-name small{font-size:9px}
+  .v367-stock-qty{font-size:19px}.v367-stock-qty em{font-size:9px}
+  .v367-stock-detail{padding:14px;border-radius:16px;gap:10px 14px}
+  .v367-stock-detail b{font-size:14px}.v367-stock-foot small{font-size:9px}.v367-stock-foot b{font-size:13px}
 }
 
 /* ---------- Condition 1 score composition: sequential Venn-like map ---------- */
