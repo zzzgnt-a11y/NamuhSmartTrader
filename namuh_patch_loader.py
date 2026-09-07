@@ -87,8 +87,8 @@ def install():
     else:sys.meta_path.insert(0,Finder())
 
     # sitecustomize wraps uvicorn.run after this install() returns. Wrapping it
-    # here means the user15 patch executes after all later strategy owners have
-    # been installed, but still before the FastAPI lifespan/background loops.
+    # here means the late UI/data guards execute after all later strategy owners
+    # have been installed, but still before the FastAPI lifespan/background loops.
     try:
         import uvicorn
         if not getattr(uvicorn,'_NAMUH_USER15_WRAPPED',False):
@@ -108,7 +108,13 @@ def install():
                         # the sole UI owners and trade filters cannot be deleted.
                         import v364_ui_cleanup_patch
                         v364_ui_cleanup_patch.apply(ns)
-                        # Speed-only late owner: stock 3s / AI 5s / coin 3s.
+                        # US full-market holidays must block candidate scan and entry.
+                        import namuh_us_holiday_patch
+                        namuh_us_holiday_patch.apply(ns)
+                        # Restore 1m/3m/5m/20m stock-detail AI scores and prioritize chart loading.
+                        import namuh_stock_detail_fix
+                        namuh_stock_detail_fix.apply(ns)
+                        # Speed-only late owner: main stock/AI/coin polling at 1 second.
                         import namuh_speed_patch
                         namuh_speed_patch.apply(ns)
                 except Exception as exc:
