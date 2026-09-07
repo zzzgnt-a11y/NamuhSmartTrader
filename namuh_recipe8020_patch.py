@@ -1,0 +1,203 @@
+from __future__ import annotations
+
+from datetime import datetime
+
+from engine import execution_gate as _execution_gate
+
+
+def _clamp(v, lo=0.0, hi=100.0):
+    try:
+        x=float(v or 0)
+    except Exception:
+        x=0.0
+    return max(lo,min(hi,x))
+
+
+def _completed_prev_bar(core,q):
+    bars=list(getattr(q,'daily_bars',[]) or [])
+    if not bars:return None
+    today=datetime.now(core.KST).strftime('%Y%m%d')
+    completed=[]
+    for b in bars:
+        d=str(b.get('date') or '').replace('-','').replace('/','')
+        if len(d)==8 and d<today:
+            completed.append(b)
+    if completed:return completed[-1]
+    return bars[-2] if len(bars)>=2 else bars[-1]
+
+
+def _daily20(core,q):
+    b=_completed_prev_bar(core,q)
+    if not b:return 0.0,None
+    o=float(b.get('open') or 0);c=float(b.get('close') or 0);h=float(b.get('high') or 0);p=float(getattr(q,'price',0) or 0)
+    if o<=0 or c<=0 or p<=0:return 0.0,None
+    mid=(o+c)/2.0
+    pts=0.0
+    # Main rule: current price above yesterday's (open+close)/2 gets most of the score.
+    if p>=mid:
+        pts=12.0
+        dist=(p/mid-1.0)*100.0
+        pts+=min(4.0,max(0.0,dist/2.0*4.0))
+    else:
+        # Partial credit only when very close to the midpoint from below.
+        gap=(mid-p)/mid*100.0
+        pts=max(0.0,4.0-gap/2.0*4.0)
+    if p>=c:pts+=2.0
+    if h>0 and p>=h:pts+=2.0
+    return round(_clamp(pts,0,20),1),{'prev_open':o,'prev_close':c,'prev_high':h,'mid':mid,'price':p}
+
+
+def _volume15(core,q):
+    cur=float(getattr(q,'volume',0) or 0);prev=float(getattr(q,'prev_day_volume',0) or 0)
+    if cur<=0 or prev<=0:return 0.0,0.0
+    now=datetime.now(core.KST);mins=now.hour*60+now.minute
+    # Pace-adjust regular session volume so 09:10 is compared with ~10 minutes,
+    # not with a full previous trading day.
+    if 540<=mins<=930:
+        elapsed=max(1,mins-540)
+        expected=max(1/390,min(1.0,elapsed/390.0))
+    elif mins<540:
+        expected=0.03
+    else:
+        expected=1.0
+    pace=(cur/prev)/expected
+    if pace>=2.0:pts=15.0
+    elif pace>=1.5:pts=13.0
+    elif pace>=1.2:pts=11.0
+    elif pace>=1.0:pts=9.0
+    elif pace>=0.8:pts=7.0
+    elif pace>=0.6:pts=5.0
+    else:pts=max(0.0,pace/0.6*5.0)
+    return round(pts,1),round(pace,2)
+
+
+def _execution20(q,market):
+    s=float(getattr(q,'execution_strength',0) or 0)
+    if market!='KR':return 0.0,True,'미장 체결강도 점수 미사용'
+    if s>=110:pts=20.0
+    elif s>=105:pts=17.0
+    elif s>=100:pts=14.0
+    elif s>=95:pts=11.0
+    elif s>=90:pts=8.0
+    else:pts=max(0.0,(s-70.0)/20.0*8.0)
+    try:ok,reason=_execution_gate(q)
+    except Exception:ok,reason=False,'체결강도 확인 대기'
+    return round(_clamp(pts,0,20),1),bool(ok),str(reason or '')
+
+
+def _program15(q):
+    net=float(getattr(q,'program_net',0) or 0);vol=float(getattr(q,'volume',0) or 0)
+    if net<=0 or vol<=0:return 0.0,0.0
+    ratio=net/vol*100.0
+    if ratio>=10:pts=15.0
+    elif ratio>=7:pts=13.0
+    elif ratio>=5:pts=11.0
+    elif ratio>=3:pts=9.0
+    elif ratio>=1:pts=6.0
+    else:pts=max(1.0,ratio)
+    return round(pts,1),round(ratio,2)
+
+
+def _technical20(out):
+    comp=dict(out.get('score_components') or {})
+    # Previous stage30 = Envelope 10 + technical indicators 20. Scale the
+    # whole technical confirmation block to the new 20-point maximum.
+    if comp.get('stage30') is not None:
+        return round(_clamp(float(comp.get('stage30') or 0)/30.0*20.0,0,20),1)
+    env=float(comp.get('envelope10') or 0);tech=float(comp.get('technical20') or 0)
+    return round(_clamp((env+tech)/30.0*20.0,0,20),1)
+
+
+def apply(ns):
+    core=ns.get('core') if isinstance(ns,dict) else None
+    if core is None or getattr(core,'_NAMUH_RECIPE_8020',False):return
+    core._NAMUH_RECIPE_8020=True
+
+    old_candidate=core.candidate
+    def candidate(q,market,smart=False,secmap=None,stockmap=None,leadermap=None,sector_rankmap=None,now=None):
+        out=old_candidate(q,market,smart,secmap,stockmap,leadermap,sector_rankmap,now)
+        if smart or not isinstance(out,dict):return out
+        market=str(market or '').upper()
+        if market!='KR':
+            # Do not invent US program/execution data. Only remove the minute hard gate.
+            out['minute_gate_pass']=True
+            blocked=bool(getattr(q,'event_blocked',False))
+            out['entry_gate_pass']=bool(float(out.get('score',0) or 0)>=72 and not blocked)
+            return out
+
+        daily20,dmeta=_daily20(core,q)
+        volume15,pace=_volume15(core,q)
+        exec20,exec_ok,exec_reason=_execution20(q,market)
+        program15,program_ratio=_program15(q)
+        event_score=float(getattr(q,'event_score',0) or 0)
+        news5=round(_clamp(event_score/10.0*5.0,0,5),1)
+        sector_raw=float((secmap or {}).get(core.sector_name(q,market),out.get('sector_score',0)) or 0)
+        sector5=round(_clamp(sector_raw/10.0*5.0,0,5),1)
+        tech20=_technical20(out)
+        recipe80=round(daily20+volume15+exec20+program15+news5+sector5,1)
+        total=round(_clamp(recipe80+tech20,0,100),1)
+
+        blocked=bool(getattr(q,'event_blocked',False))
+        try:blocked=blocked or any(bool(x.get('blocked')) for x in list(getattr(q,'events',[]) or []) if isinstance(x,dict))
+        except Exception:pass
+
+        out['score']=0.0 if blocked else total
+        out['priority_score']=out['score']
+        out['score_model']='RECIPE80+TECH20'
+        out['recipe_score']=recipe80
+        out['technical_score']=tech20
+        out['entry_gate_pass']=bool(not blocked and exec_ok and total>=72.0)
+        out['execution_gate_pass']=bool(exec_ok)
+        out['execution_gate_reason']=exec_reason
+        # Minute/orderbook are no longer score or entry gates in this recipe.
+        out['minute_gate_pass']=True
+        out['orderbook_gate_pass']=True
+        out['daily_gate_pass']=True
+        out['technical_gate_pass']=True
+        out['score_components']={
+            'recipe80':recipe80,'technical20':tech20,'daily20':daily20,'volume15':volume15,
+            'execution20':exec20,'program15':program15,'news5':news5,'sector_flow5':sector5,
+        }
+        out['daily_reference']=dmeta
+        out['volume_pace']=pace
+        out['program_ratio_pct']=program_ratio
+        out['minute_score']=None
+        out['reasons']=[
+            f'레시피 {recipe80:.1f}/80 + 기술 {tech20:.1f}/20 = {total:.1f}/100',
+            (f"일봉 {daily20:.1f}/20 · 현재가 {'>' if dmeta and dmeta['price']>=dmeta['mid'] else '<'} 전일(시가+종가)/2" if dmeta else '일봉 데이터 대기 · 0/20'),
+            f'거래량 {volume15:.1f}/15 · 장중속도 {pace:.2f}배',
+            f'{exec_reason} · {exec20:.1f}/20',
+            f'프로그램 순매수 {float(getattr(q,"program_net",0) or 0):,.0f}주 · {program15:.1f}/15',
+            f'공시/호재 {news5:.1f}/5 · 섹터수급 {sector5:.1f}/5',
+            '1분봉 진입조건 삭제 · 수신 상태만 감시',
+        ]
+        return out
+    core.candidate=candidate
+
+    # runtime_server_v34 installs a five-1m-bar trading wrapper after app import.
+    # Bypass only that wrapper at the final pre-uvicorn point; keep the prior
+    # VI/session/budget/duplicate-position protections intact.
+    base_trade=ns.get('_prev_trade_scalp')
+    if callable(base_trade):
+        def trade_scalp(market,candidates,now=None):
+            rows=[x for x in list(candidates or []) if bool(x.get('entry_gate_pass',False)) and float(x.get('score',0) or 0)>=72.0]
+            return base_trade(market,rows,now)
+        core.trade_scalp=trade_scalp
+
+    # Expose minute reception status without using it as an entry condition.
+    try:
+        old_health=core.health_payload
+        def health():
+            d=dict(old_health())
+            q=core.feed.q('KR','005930')
+            try:bars=len(list(core.feed.bars('KR','005930','1m') or []))
+            except Exception:bars=0
+            d['scalp_score_model']='RECIPE80+TECH20'
+            d['minute_entry_gate']=False
+            d['samsung_1m_bars']=bars
+            d['samsung_daily_bars']=len(list(getattr(q,'daily_bars',[]) or []))
+            return d
+        core.health_payload=health
+    except Exception:pass
+
+    print('NAMUH RECIPE PATCH: KR 80 + TECH20 active; 1m entry gate removed',flush=True)
