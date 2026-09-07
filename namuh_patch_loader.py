@@ -114,19 +114,23 @@ def install():
                         # Restore 1m/3m/5m/20m stock-detail AI scores and prioritize chart loading.
                         import namuh_stock_detail_fix
                         namuh_stock_detail_fix.apply(ns)
-                        # Condition1 V2 is the final KR C1 scoring owner.
+                        # Condition1 V2 is installed first for compatibility; the final condition owner below replaces it.
                         import namuh_condition1_v2_patch
                         namuh_condition1_v2_patch.apply(ns)
                         # Make repeat page loads instant: cached first paint, deferred auxiliary APIs,
                         # versioned static asset cache, and immediate cached stock charts.
                         import namuh_page_speed_patch
                         namuh_page_speed_patch.apply(ns)
-                        # Final stock-detail condition score UI owner.
+                        # Final stock-detail condition score composition UI owner.
                         import namuh_ai_scoreboard_patch
                         namuh_ai_scoreboard_patch.apply(ns)
                         # Speed-only late owner: main stock/AI/coin polling at 1 second.
                         import namuh_speed_patch
                         namuh_speed_patch.apply(ns)
+                        # Absolute final strategy owner. Only Condition1/2/3 internals are replaced;
+                        # unrelated site/runtime variables remain owned by the existing patches above.
+                        import namuh_conditions_final_patch
+                        namuh_conditions_final_patch.apply(ns)
                 except Exception as exc:
                     print('NAMUH USER15 LATE PATCH ERROR:',str(exc)[:220],flush=True)
                 return _prev_run(*args,**kwargs)
