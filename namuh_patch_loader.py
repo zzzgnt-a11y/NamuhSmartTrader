@@ -140,6 +140,10 @@ def install():
                         # Mobile search is a separate static component: no DOM reparenting or viewport listeners.
                         import namuh_search_stable_patch
                         namuh_search_stable_patch.apply(ns)
+                        # Final stock-detail correction: exactly seven technical indicators;
+                        # use chart history for display when live tick history is still warming up.
+                        import namuh_standard_detail_fix
+                        namuh_standard_detail_fix.apply(ns)
                 except Exception as exc:
                     print('NAMUH USER15 LATE PATCH ERROR:',str(exc)[:220],flush=True)
                 return _prev_run(*args,**kwargs)
