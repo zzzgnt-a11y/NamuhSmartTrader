@@ -23,8 +23,6 @@ try:
         text=re.sub(rf'\s*<script\s+src=["\']/static/{re.escape(name)}(?:\?[^"\']*)?["\']\s*></script>\s*','\n',text,flags=re.I)
     tag=f'  <script src="/static/v363_main.js?v={ASSET_VERSION}"></script>'
     text=text.replace('</body>',f'{tag}\n</body>')
-    # Force every main-page JS/CSS asset to this deploy id, preventing a cached
-    # legacy owner from surviving while a fresh tab gets the new owner.
     text=re.sub(
         r'(/static/[^"\'?]+\.(?:js|css))(?:\?v=[^"\']*)?',
         lambda m:f'{m.group(1)}?v={ASSET_VERSION}',
@@ -35,18 +33,28 @@ try:
 except Exception as exc:
     print('NAMUH UI TAG PATCH ERROR:',exc,flush=True)
 
-# Stock account is now 4M KRW.
+# Stock account is 4M KRW and the base page refresh is deliberately slower.
 try:
     p=ROOT/'static'/'app.js';text=p.read_text(encoding='utf-8')
     text=text.replace('amount>1000000','amount>4000000')
     text=text.replace('amount>2000000','amount>4000000')
     text=text.replace('0~1,000,000원 범위','0~4,000,000원 범위')
     text=text.replace('0~2,000,000원 범위','0~4,000,000원 범위')
+    text=text.replace('setInterval(refresh,5000)','setInterval(refresh,10000)')
     p.write_text(text,encoding='utf-8')
-except Exception as exc:print('NAMUH STOCK BUDGET UI PATCH ERROR:',exc,flush=True)
+except Exception as exc:print('NAMUH STOCK BUDGET/POLL UI PATCH ERROR:',exc,flush=True)
 
-# Keep the disclosure list, but remove the unrequested disclosure markers drawn
-# directly over the stock candle chart. Also stop the legacy canvas paint work.
+# Reduce auxiliary main-page polling. These values are status/display refreshes,
+# not strategy engine loops; trading runs server-side independently.
+try:
+    p=ROOT/'static'/'v34.js';text=p.read_text(encoding='utf-8')
+    text=text.replace('setInterval(loadAuto,12000)','setInterval(loadAuto,30000)')
+    text=text.replace('setInterval(loadDisclosureAlerts,7000)','setInterval(loadDisclosureAlerts,30000)')
+    text=text.replace('setInterval(loadFlowAlerts,4000)','setInterval(loadFlowAlerts,15000)')
+    p.write_text(text,encoding='utf-8')
+except Exception as exc:print('NAMUH V34 POLL PATCH ERROR:',exc,flush=True)
+
+# Keep the disclosure list, but remove unrequested chart disclosure markers.
 try:
     p=ROOT/'static'/'stock-fix.js'
     if p.exists():
@@ -97,6 +105,7 @@ try:
                     import namuh_strategy23_fix;namuh_strategy23_fix.apply(ns)
                     import namuh_c2_window_patch;namuh_c2_window_patch.apply(ns)
                     import namuh_condition_threshold_patch;namuh_condition_threshold_patch.apply(ns)
+                    import v363_market_flow_patch;v363_market_flow_patch.apply(ns)
             except Exception as exc:
                 print('LATE RUNTIME PATCH ERROR:',exc,flush=True)
             return _orig_uvicorn_run(*args,**kwargs)
