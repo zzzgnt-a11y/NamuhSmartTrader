@@ -32,20 +32,16 @@ def _history(q, now_ts=None, max_age=120):
 
 def _sample_values(q, ages, now_ts=None):
     now_ts,hist=_history(q,now_ts,max_age=max(120,max(ages or [0])+10))
-    if not hist:
-        return None
+    if not hist:return None
     current=float(getattr(q,'execution_strength',0) or 0)
-    if now_ts-hist[0][0] < float(max(ages or [0])):
-        return None
+    if now_ts-hist[0][0] < float(max(ages or [0])):return None
     vals=[]
     for age in ages:
         if age==0:
-            vals.append(current)
-            continue
+            vals.append(current);continue
         target=now_ts-float(age)
         cand=[v for ts,v in hist if ts<=target]
-        if not cand:
-            return None
+        if not cand:return None
         vals.append(float(cand[-1]))
     return vals
 
@@ -59,33 +55,23 @@ def _checkpoint_values_60s_5s(q, now_ts=None):
 
 
 def _net_rise_reason(vals, floor, label):
-    if vals is None:
-        return False,f'체결강도 {label} 추세 축적 중(5초 간격)'
+    if vals is None:return False,f'체결강도 {label} 추세 축적 중(5초 간격)'
     start=float(vals[0]);end=float(vals[-1])
     rises=sum(1 for a,b in zip(vals,vals[1:]) if b>a)
     falls=sum(1 for a,b in zip(vals,vals[1:]) if b<a)
     flats=max(0,len(vals)-1-rises-falls)
-    if start<floor:
-        return False,f'체결강도 {label} 시작값 {start:.1f} < {floor:.0f} 대기'
-    if end>start:
-        return True,f'체결강도 {label} 순상승 {start:.1f}→{end:.1f} · 상승{rises}/하락{falls}/보합{flats}'
+    if start<floor:return False,f'체결강도 {label} 시작값 {start:.1f} < {floor:.0f} 대기'
+    if end>start:return True,f'체결강도 {label} 순상승 {start:.1f}→{end:.1f} · 상승{rises}/하락{falls}/보합{flats}'
     return False,f'체결강도 {label} 순상승 미충족 {start:.1f}→{end:.1f} · 중간하락 허용'
 
 
 def execution_gate(q, now_ts=None):
     s=float(getattr(q,'execution_strength',0) or 0)
-    if s>=110:
-        return True,'체결강도 110+ · 20/20 즉시 통과'
-    if s>=105:
-        return True,'체결강도 105+ · 16/20 즉시 통과'
-    if s>=100:
-        return True,'체결강도 100+ · 14/20 즉시 통과'
-    if s>=95:
-        vals=_checkpoint_values_30s_5s(q,now_ts)
-        return _net_rise_reason(vals,95.0,'95+ · 30초')
-    if s>=90:
-        vals=_checkpoint_values_60s_5s(q,now_ts)
-        return _net_rise_reason(vals,90.0,'90~94.9 · 1분')
+    if s>=110:return True,'체결강도 110+ · 20/20 즉시 통과'
+    if s>=105:return True,'체결강도 105+ · 16/20 즉시 통과'
+    if s>=100:return True,'체결강도 100+ · 14/20 즉시 통과'
+    if s>=95:return _net_rise_reason(_checkpoint_values_30s_5s(q,now_ts),95.0,'95+ · 30초')
+    if s>=90:return _net_rise_reason(_checkpoint_values_60s_5s(q,now_ts),90.0,'90~94.9 · 1분')
     return False,'체결강도 90 미만 · 0/20 · 미진입'
 
 
@@ -117,29 +103,37 @@ def _daily20_from_open(core,q,recipe):
     }
 
 
+def _refresh_kr_entry(core,code):
+    try:
+        from nhplug import call
+        for market_cd in core.feed._market_order():
+            try:
+                data=call('/krstock/quote/v1/currentPrice',{'iem_cd':str(code),'market_cd':market_cd})
+                core.feed._apply_kr(str(code),data)
+                q=core.feed.quotes_for('KR').get(str(code))
+                if q is not None and float(getattr(q,'price',0) or 0)>0:return True
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return False
+
+
 def _install_late_scalp_bypass(core):
     core._NAMUH_SCALP_1M_BYPASSED=False
-
     def worker():
-        # runtime_server_v34 installs its legacy five-1m-bar wrapper after app import.
-        # Wait for that outer wrapper, then replace only the SCALP layer with the
-        # pre-v34 trade function so the user-selected RECIPE80+TECH20 gate is final.
         for _ in range(300):
             try:
-                current=getattr(core,'trade_scalp',None)
-                owner=None
-                prev=None
+                current=getattr(core,'trade_scalp',None);prev=None
                 for mod in list(sys.modules.values()):
                     if mod is None:continue
                     cand=getattr(mod,'_prev_trade_scalp',None)
                     cur_v34=getattr(mod,'trade_scalp_v34',None)
                     if callable(cand) and callable(cur_v34) and current is cur_v34:
-                        owner=mod;prev=cand;break
+                        prev=cand;break
                 if callable(prev):
                     def trade_scalp_no_1m(market,candidates,now=None):
-                        rows=[x for x in list(candidates or [])
-                              if float(x.get('score',0) or 0)>=72.0
-                              and bool(x.get('entry_gate_pass',False))]
+                        rows=[x for x in list(candidates or []) if float(x.get('score',0) or 0)>=72.0 and bool(x.get('entry_gate_pass',False))]
                         return prev(market,rows,now)
                     core.trade_scalp=trade_scalp_no_1m
                     core._NAMUH_SCALP_1M_BYPASSED=True
@@ -149,77 +143,92 @@ def _install_late_scalp_bypass(core):
                 print('NAMUH SCALP BYPASS retry:',exc,flush=True)
             time.sleep(0.1)
         print('NAMUH SCALP BYPASS WARNING: runtime_v34 wrapper not found',flush=True)
-
     threading.Thread(target=worker,name='namuh-scalp-final-gate',daemon=True).start()
 
 
 def apply(ns):
     core=ns.get('core') if isinstance(ns,dict) else None
-    if core is None or getattr(core,'_NAMUH_EXEC_EXIT_PATCHED',False):
-        return
+    if core is None or getattr(core,'_NAMUH_EXEC_EXIT_PATCHED',False):return
     core._NAMUH_EXEC_EXIT_PATCHED=True
 
-    # Replace only KR RECIPE80 daily/execution rules; coin/US logic stays untouched.
     try:
         import namuh_recipe8020_patch as recipe
         def execution20(q,market):
             s=float(getattr(q,'execution_strength',0) or 0)
-            if str(market or '').upper()!='KR':
-                return 0.0,True,'미장 체결강도 점수 미사용'
-            pts=_execution_points(s)
-            ok,reason=execution_gate(q)
+            if str(market or '').upper()!='KR':return 0.0,True,'미장 체결강도 점수 미사용'
+            pts=_execution_points(s);ok,reason=execution_gate(q)
             return round(max(0.0,min(20.0,pts)),1),bool(ok),str(reason)
-        def daily20(core_arg,q):
-            return _daily20_from_open(core_arg,q,recipe)
+        def daily20(core_arg,q):return _daily20_from_open(core_arg,q,recipe)
         recipe._execution20=execution20
         recipe._daily20=daily20
     except Exception as exc:
         print('NAMUH DAILY/EXEC PATCH ERROR:',exc,flush=True)
 
-    # Force-flat KR positions before KRX closing call auction, and at NXT close.
+    # Final entry freshness for the wide KR scanner: refresh only an actually
+    # eligible candidate instead of letting the broad REST scan age past 25s.
+    old_entry_status=getattr(core.feed,'entry_data_status',None)
+    entry_refresh_at={}
+    if callable(old_entry_status):
+        def entry_data_status(market,code,now_ts=None):
+            market=str(market or '').upper();now_ts=float(now_ts or time.time())
+            if market!='KR':return old_entry_status(market,code,now_ts)
+            code=str(code).upper();q=core.feed.quotes_for('KR').get(code)
+            stale=(not q or float(getattr(q,'price',0) or 0)<=0 or now_ts-float(getattr(q,'updated_at',0) or 0)>20)
+            if stale and now_ts-float(entry_refresh_at.get(code,0) or 0)>=5:
+                entry_refresh_at[code]=now_ts;_refresh_kr_entry(core,code)
+                q=core.feed.quotes_for('KR').get(code)
+            if not q or float(getattr(q,'price',0) or 0)<=0:return False,'현재가 미수신'
+            if now_ts-float(getattr(q,'updated_at',0) or 0)>25:return False,'현재가 즉시 재조회 실패/25초 초과'
+            eh=list(getattr(q,'execution_history',[]) or [])
+            if not eh or now_ts-float(eh[-1][0])>30:return False,'체결강도 30초 이상 지연'
+            # Investor-flow age is no longer a hard entry gate in RECIPE80+TECH20.
+            return True,'정상(후보 즉시 재조회)'
+        core.feed.entry_data_status=entry_data_status
+
     old_sell=core.mark_and_sell
     def mark_and_sell(market,scalp,smart,now=None):
         now=(now or core.datetime.now(core.KST)).astimezone(core.KST)
         if str(market).upper()=='KR':
-            mins=now.hour*60+now.minute
-            fx=core._fx('KR')
-            qs=core.feed.quotes_for('KR')
-            sold=False
+            mins=now.hour*60+now.minute;fx=core._fx('KR');qs=core.feed.quotes_for('KR');sold=False
             for p in list(core.paper.market_positions('KR')):
                 try:
-                    entered=datetime.fromtimestamp(float(getattr(p,'entry_ts',0) or 0),core.KST)
-                    entry_mins=entered.hour*60+entered.minute
-                except Exception:
-                    entry_mins=0
-                nxt_after=entry_mins>=15*60+40
-                deadline=19*60+59 if nxt_after else 15*60+19
-                if mins < deadline:
-                    continue
-                q=qs.get(p.code)
-                px=float(getattr(q,'price',0) or getattr(p,'current_price',0) or getattr(p,'avg_price',0) or 0)
-                if px<=0:
-                    continue
+                    entered=datetime.fromtimestamp(float(getattr(p,'entry_ts',0) or 0),core.KST);entry_mins=entered.hour*60+entered.minute
+                except Exception:entry_mins=0
+                nxt_after=entry_mins>=15*60+40;deadline=19*60+59 if nxt_after else 15*60+19
+                if mins<deadline:continue
+                q=qs.get(p.code);px=float(getattr(q,'price',0) or getattr(p,'current_price',0) or getattr(p,'avg_price',0) or 0)
+                if px<=0:continue
                 try:core.paper.mark('KR',p.code,px,fx)
                 except Exception:pass
                 reason='NXT 19:59 장마감 강제청산' if nxt_after else 'KRX 15:19 동시호가 전 강제청산'
                 if core.paper.sell('KR',p.code,px,fx,reason):
-                    sold=True
-                    print(f'FORCE EXIT {p.code} {reason} price={px}',flush=True)
+                    sold=True;print(f'FORCE EXIT {p.code} {reason} price={px}',flush=True)
             if sold:
                 try:core._persist_paper()
                 except Exception:pass
         return old_sell(market,scalp,smart,now)
     core.mark_and_sell=mark_and_sell
 
-    old_trade=core.trade_scalp
+    old_trade=core.trade_scalp;diag_at=[0.0]
     def trade_scalp(market,candidates,now=None):
         now=(now or core.datetime.now(core.KST)).astimezone(core.KST)
         if str(market).upper()=='KR':
             mins=now.hour*60+now.minute
-            if (15*60+19)<=mins<(15*60+40):
-                return
-            if mins>=19*60+59:
-                return
+            if (15*60+19)<=mins<(15*60+40) or mins>=19*60+59:return
+            eligible=[x for x in list(candidates or []) if float(x.get('score',0) or 0)>=72 and bool(x.get('entry_gate_pass',False))]
+            before={getattr(p,'code','') for p in core.paper.market_positions('KR')}
+            out=old_trade(market,candidates,now)
+            after={getattr(p,'code','') for p in core.paper.market_positions('KR')};added=sorted(after-before)
+            if added:print(f'KR ENTRY BUY codes={added}',flush=True)
+            elif eligible and time.time()-diag_at[0]>=15:
+                diag_at[0]=time.time();rows=[]
+                for x in eligible[:5]:
+                    code=str(x.get('code') or '')
+                    try:ok,reason=core.feed.entry_data_status('KR',code,now.timestamp())
+                    except Exception as exc:ok,reason=False,str(exc)
+                    rows.append(f"{code}:{float(x.get('score',0) or 0):.1f}:{'OK' if ok else 'BLOCK'}:{reason}")
+                print('KR ENTRY DIAG '+' | '.join(rows),flush=True)
+            return out
         return old_trade(market,candidates,now)
     core.trade_scalp=trade_scalp
 
@@ -231,12 +240,11 @@ def apply(ns):
             d=dict(old_health())
             d['daily20_model']='today open vs previous (high+low)/2'
             d['execution_gate_model']='110=20 immediate / 105=16 immediate / 100=14 immediate / 95=10 + 30s net-rise / 90=6 + 60s net-rise / <90 blocked'
+            d['entry_freshness_model']='eligible KR on-demand quote refresh; price<=25s; execution<=30s; investor-flow not hard gate'
             d['runtime_v34_1m_scalp_gate_bypassed']=bool(getattr(core,'_NAMUH_SCALP_1M_BYPASSED',False))
-            d['krx_force_exit']='15:19'
-            d['nxt_force_exit']='19:59'
+            d['krx_force_exit']='15:19';d['nxt_force_exit']='19:59'
             return d
         core.health_payload=health
-    except Exception:
-        pass
+    except Exception:pass
 
-    print('NAMUH DAILY/EXEC PATCH active: daily=today open vs prev (high+low)/2; EXEC 20/16/14/10/6/0; KRX 15:19; NXT 19:59',flush=True)
+    print('NAMUH DAILY/EXEC PATCH active: daily=today open vs prev (high+low)/2; EXEC 20/16/14/10/6/0; candidate refresh ON; KRX 15:19; NXT 19:59',flush=True)
