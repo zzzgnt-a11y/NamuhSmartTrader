@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id),esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
 const won=n=>"₩"+Math.round(Number(n||0)).toLocaleString("ko-KR"),pct=n=>(Number(n||0)>=0?"+":"")+Number(n||0).toFixed(2)+"%";
-let settingsInitialized=false,currentCoinEquity=1500000;
+let settingsInitialized=false,currentCoinEquity=1500000,coinTradeFilter="ALL",coinLastTrades=[];
 try{localStorage.setItem("GY_MARKET","COIN")}catch(_){};
 function goMode(m){try{localStorage.setItem("GY_MARKET",m)}catch(_){};if(m==="COIN")location.href="/coin";else location.href="/"}
 function fmtPrice(n){const v=Number(n||0);return v>=1000?won(v):v.toLocaleString(undefined,{maximumFractionDigits:8})+"원"}
@@ -9,6 +9,14 @@ function marketCard(x){const c=Number(x.change_pct||0);return `<article class="c
 function candidateCard(x,i,entryScore){const c=Number(x.change_pct||0),sp=x.spread_pct==null?"-":Number(x.spread_pct).toFixed(3)+"%",pass=Number(x.score||0)>=entryScore;return `<article class="candidate coin-candidate ${pass?"entry-ready":""}" data-coin="${esc(x.code)}"><div class="candidate-top"><div class="candidate-name"><b>${i+1}. ${esc(x.name||x.code)}</b><small>${esc(x.code)} · COINONE KRW</small></div><div class="score-badge">${Number(x.score||0).toFixed(0)}</div></div><div class="reason-row">${(x.reasons||[]).map(r=>`<span class="pill">${esc(r)}</span>`).join("")}</div><div class="metrics"><div class="metric"><span>현재가</span><b>${fmtPrice(x.price)}</b></div><div class="metric"><span>24H</span><b class="${c>=0?"pos":"neg"}">${pct(c)}</b></div><div class="metric"><span>체결강도</span><b>${Number(x.volume_power||0).toFixed(0)}</b></div><div class="metric"><span>스프레드</span><b>${sp}</b></div><div class="metric"><span>거래대금</span><b>${compact(x.quote_volume)}원</b></div></div></article>`}
 function posRow(p){return `<div class="position-row" data-coin="${esc(p.code)}"><div><b>${esc(p.name||p.code)}</b> <span class="market-badge">COIN</span> <span class="strategy-tag">${esc(p.strategy||"COIN_SCALP")}</span><br><small>${esc(p.code)} · ${Number(p.qty||0).toLocaleString(undefined,{maximumFractionDigits:8})}개 · 24H</small></div><div class="position-right"><b class="${p.pnl>=0?"pos":"neg"}">${pct(p.pnl_pct)}</b><br><small>${won(p.pnl)} · ${fmtPrice(p.current_price)}</small></div></div>`}
 function tradeRow(t){return `<div class="coin-trade-row"><div><span class="trade-side ${t.side==="BUY"?"buy":"sell"}">${esc(t.side)}</span><b>${esc(t.name||t.code)}</b><small>${esc(t.date)} ${esc(t.time)} · ${esc(t.reason||t.strategy||"")}</small></div><div><b>${fmtPrice(t.price)}</b><small class="${Number(t.pnl||0)>=0?"pos":"neg"}">${t.side==="SELL"?won(t.pnl)+" · "+pct(t.pnl_pct):won(t.gross_krw)}</small></div></div>`}
+function installCoinTradeFilter(){
+  const sec=$("coinTradeSec"),head=sec?.querySelector(".section-head");if(!head||$("coinTradeFilters"))return;
+  const old=head.querySelector(":scope > b");if(old)old.remove();
+  const box=document.createElement("div");box.id="coinTradeFilters";box.className="coin-trade-filters";box.innerHTML='<button data-trade-filter="ALL" class="active">전체</button><button data-trade-filter="BUY">매수</button><button data-trade-filter="SELL">매도</button>';head.appendChild(box);
+  box.addEventListener("click",e=>{const b=e.target.closest("[data-trade-filter]");if(!b)return;coinTradeFilter=b.dataset.tradeFilter||"ALL";renderCoinTrades();});
+  if(!$("coinTradeFilterStyle")){const s=document.createElement("style");s.id="coinTradeFilterStyle";s.textContent='.coin-trade-filters{display:flex;gap:6px}.coin-trade-filters button{border:1px solid rgba(255,255,255,.16);border-radius:999px;padding:7px 11px;background:transparent;color:inherit;font-weight:800}.coin-trade-filters button.active{background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.34)}';document.head.appendChild(s)}
+}
+function renderCoinTrades(trades){if(Array.isArray(trades))coinLastTrades=trades;installCoinTradeFilter();const rows=coinLastTrades.filter(t=>coinTradeFilter==="ALL"||String(t.side||"").toUpperCase()===coinTradeFilter).slice(0,80);$("coinTradeFilters")?.querySelectorAll("button").forEach(b=>b.classList.toggle("active",b.dataset.tradeFilter===coinTradeFilter));$("coinTrades").innerHTML=rows.map(tradeRow).join("")||'<div class="empty">해당 필터 거래내역이 없습니다.</div>'}
 async function saveCoinSettings(){
   const raw=String($("coinBudget")?.value||"").replace(/,/g,"").trim();
   const amount=raw===""?null:Number(raw.replace(/\D/g,""));
@@ -34,9 +42,9 @@ function render(d){
   $("coinCandidateList").innerHTML=(d.candidates||[]).map((x,i)=>candidateCard(x,i,entryScore)).join("")||'<div class="empty">후보 데이터 축적 중</div>';
   $("coinHoldingSummary").textContent=`${(a.positions||[]).length}종 보유 · 보유원가 ${won(a.held_cost)}`;
   $("coinPositions").innerHTML=(a.positions||[]).map(posRow).join("")||'<div class="empty">현재 코인 보유 없음</div>';
-  $("coinTrades").innerHTML=(a.trades||[]).slice(0,80).map(tradeRow).join("")||'<div class="empty">아직 코인 모의매매 내역이 없습니다.</div>';
+  renderCoinTrades(a.trades||[]);
 }
-async function refresh(){try{const r=await fetch("/api/coin/state",{cache:"no-store"});const d=await r.json();if(!r.ok)throw new Error(d.detail||r.status);render(d)}catch(e){console.error(e);$("coinHealth").textContent="연결 오류";$("coinHealthSub").textContent=String(e.message||e)}}
+async function refresh(){if(document.hidden)return;try{const r=await fetch("/api/coin/state",{cache:"no-store"});const d=await r.json();if(!r.ok)throw new Error(d.detail||r.status);render(d)}catch(e){console.error(e);$("coinHealth").textContent="연결 오류";$("coinHealthSub").textContent=String(e.message||e)}}
 document.addEventListener("click",e=>{const c=e.target.closest?.("[data-coin]");if(c){location.href="/coin/"+encodeURIComponent(c.dataset.coin);return}const s=e.target.closest?.("[data-scroll]");if(s)$(s.dataset.scroll)?.scrollIntoView({behavior:"smooth",block:"start"})});
 $("saveCoinSettingsBtn")?.addEventListener("click",saveCoinSettings);$("krModeLabel")?.addEventListener("click",()=>goMode("KR"));$("usModeLabel")?.addEventListener("click",()=>goMode("US"));$("coinModeLabel")?.addEventListener("click",()=>goMode("COIN"));
-refresh();setInterval(refresh,5000);
+installCoinTradeFilter();refresh();setInterval(refresh,10000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh()});
