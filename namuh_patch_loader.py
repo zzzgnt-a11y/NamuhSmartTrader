@@ -114,6 +114,10 @@ def install():
                         # Restore 1m/3m/5m/20m stock-detail AI scores and prioritize chart loading.
                         import namuh_stock_detail_fix
                         namuh_stock_detail_fix.apply(ns)
+                        # Make repeat page loads instant: cached first paint, deferred auxiliary APIs,
+                        # versioned static asset cache, and immediate cached stock charts.
+                        import namuh_page_speed_patch
+                        namuh_page_speed_patch.apply(ns)
                         # Speed-only late owner: main stock/AI/coin polling at 1 second.
                         import namuh_speed_patch
                         namuh_speed_patch.apply(ns)
