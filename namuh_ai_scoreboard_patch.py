@@ -12,12 +12,17 @@ def apply(ns=None):
         return True
     root = Path(__file__).resolve().parent
 
+    # Only the strategy score composition UI is changed. No polling, charts,
+    # budgets, page layout, refresh intervals, or other site variables are touched.
     try:
         p = root / "static" / "stock.html"
         text = p.read_text(encoding="utf-8")
-        text = text.replace("<span class=\"v346-kicker\">05 · SCORE MAP</span><h2>AI 점수 분해</h2>",
-                            "<span class=\"v346-kicker\">05 · SCORE MAP</span><h2>AI 분석 점수표</h2>")
-        text = text.replace("<small>점수 근거 확인</small>", "<small>조건1 · 조건2 · 조건3 상세</small>")
+        text = text.replace('<span class="v346-kicker">05 · SCORE MAP</span><h2>AI 점수 분해</h2>',
+                            '<span class="v346-kicker">05 · SCORE MAP</span><h2>AI 점수 구성표</h2>')
+        text = text.replace('<span class="v346-kicker">05 · SCORE MAP</span><h2>AI 분석 점수표</h2>',
+                            '<span class="v346-kicker">05 · SCORE MAP</span><h2>AI 점수 구성표</h2>')
+        text = text.replace("<small>점수 근거 확인</small>", "<small>조건1 · 조건2 · 조건3 구성</small>")
+        text = text.replace("<small>조건1 · 조건2 · 조건3 상세</small>", "<small>조건1 · 조건2 · 조건3 구성</small>")
         p.write_text(text, encoding="utf-8")
     except Exception as exc:
         print("NAMUH SCOREBOARD HTML ERROR:", str(exc)[:180], flush=True)
@@ -35,58 +40,66 @@ function renderScores(d){
  $('scoreGrid').innerHTML=Object.entries(d.scores||{}).map(([k,v])=>`<div class="score-tile ${k===TF?'active':''}"><span>${labels[k]||esc(k)}</span><strong>${v==null?'—':num(v).toFixed(0)}</strong></div>`).join('')||'<div class="empty">AI 점수 축적 중</div>';
  const a=d.analysis;
  $('analysisReasons').innerHTML=a?(a.reasons||[]).slice(0,8).map(x=>`<span>${esc(x)}</span>`).join(''):'<div class="empty">해당 봉 기준 분석 데이터 축적 중</div>';
- const sc=d.strategy_conditions||{},c1=sc.condition1||{},b=c1.breakdown||{},g=c1.gates||{};
- const c2=sc.condition2||{},f2=c2.front60||{},k2=c2.kospi_1m||c2.market_1m||{},m2=c2.monthly_discount||{};
+ const sc=d.strategy_conditions||{},c1=sc.condition1||{},b=c1.breakdown||{},g=c1.gates||{},raw=c1.standard_raw||{};
+ const c2=sc.condition2||{},b2=c2.breakdown||{},m2=c2.market_1m||c2.kospi_1m||{};
  const c3=sc.condition3||{};
  if(!Object.keys(c1).length&&!Object.keys(c2).length&&!Object.keys(c3).length){
    const br=a?.breakdown||a?.components||{};
    $('breakdown').innerHTML=Object.entries(br).length?Object.entries(br).map(([k,v])=>aiBar(k,num(v),10)).join(''):'<div class="empty">전략 점수 데이터 축적 중</div>';
    return;
  }
+ const ratio=c1.orderbook?.ratio;
  const c1html=`<section class="ai-condition-card primary">
-   <div class="ai-condition-head"><div><small>CONDITION 1</small><h3>조건1</h3></div><strong>${num(c1.score).toFixed(1)}점</strong></div>
-   <div class="ai-stage"><h4>진입 조건</h4>
-     ${aiBar('일봉',b.daily20,20,g.daily?'통과':'기준 8/20 이상 필요')}
-     ${aiBar('1분봉',b.minute20,20,g.minute1m?'통과':'완료 1분봉 기준 10/20 이상 필요')}
-     ${aiBar('체결강도',b.execution20,20,c1.execution_reason||'체결강도 인터락')}
-     <div class="ai-gates">${aiGate(g.daily,'일봉')}${aiGate(g.minute1m,'1분봉')}${aiGate(g.execution,'체결강도')}</div>
+   <div class="ai-condition-head"><div><small>CONDITION 1 · STANDARD</small><h3>조건1 구성표</h3></div><strong>${num(c1.score).toFixed(1)} / 100</strong></div>
+   <div class="ai-stage"><h4>① 선행조건 · 40점</h4>
+     ${aiBar('일봉',b.daily10,10,'현재가 > 전일 저가 + (전일 고가-저가)×0.5')}
+     ${aiBar('분봉',b.minute10,10,'하락→저점 형성→직전 1분봉 고가 돌파 + 현재 양봉')}
+     ${aiBar('체결강도',b.execution12,12,c1.execution_reason||'110↑ 즉시 / 90~110 50초·10초당 +0.5 / 90↓ 미진입')}
+     ${aiBar('호가',b.orderbook8,8,ratio==null?'매도잔량÷매수잔량 수신 대기':`매도잔량÷매수잔량 ${num(ratio).toFixed(2)}배`)}
+     <div class="ai-gates">${aiGate(g.daily,'일봉')}${aiGate(g.minute1m,'1분봉')}${aiGate(g.execution,'체결')}${aiGate(g.orderbook,'호가')}</div>
    </div>
    <div class="ai-down">↓</div>
-   <div class="ai-stage"><h4>구매 확정 조건</h4>
-     ${aiBar('기술지표 종합',b.technical25,25,'MACD · RSI · 볼린저 · 이평 · 가격구조 종합')}
-     <div class="ai-gates">${aiGate(g.technical,'기술지표')}</div>
+   <div class="ai-stage"><h4>② 스탠다드 · 45점</h4>
+     ${aiBar('스탠다드 기술지표',b.standard45,45,'원점수 75점을 45점으로 환산 · 엔벨로프 제외')}
+     <div class="ai-c3-grid">
+       <div><span>MACD</span><b>${num(raw.MACD).toFixed(1)}/10</b></div><div><span>RSI</span><b>${num(raw.RSI).toFixed(1)}/10</b></div>
+       <div><span>볼린저</span><b>${num(raw['볼린저']).toFixed(1)}/10</b></div><div><span>거래량</span><b>${num(raw['거래량']).toFixed(1)}/15</b></div>
+       <div><span>이동평균</span><b>${num(raw['이평']).toFixed(1)}/10</b></div><div><span>가격구조</span><b>${num(raw['가격구조']).toFixed(1)}/10</b></div>
+       <div><span>엘리어트</span><b>${num(raw['엘리어트']).toFixed(1)}/10</b></div><div><span>환산</span><b>${num(b.standard45).toFixed(1)}/45</b></div>
+     </div>
    </div>
    <div class="ai-down">↓</div>
-   <div class="ai-stage"><h4>추가 가점 조건</h4>
-     ${aiBar('주도섹터',b.leading_sector5,5,c1.leading_sector_rank?`섹터 ${c1.leading_sector_rank}위`:'' )}
-     ${aiBar('섹터내 수급',b.sector_inner_flow5,5,c1.sector_inner_flow_rank?`섹터내 수급 ${c1.sector_inner_flow_rank}/${c1.sector_peer_count||'-'}위`:'' )}
-     ${aiBar('공시 및 뉴스',b.news5,5,'호재 가점 · 중대 악재는 진입 차단')}
+   <div class="ai-stage"><h4>③ 추가가점 · 15점</h4>
+     ${aiBar('섹터 상대강도',b.sector_relative7_5,7.5,'전체 섹터 대비 상대강도')}
+     ${aiBar('주도섹터 수급',b.leading_sector_flow3_75,3.75,'주도섹터 수급 강도')}
+     ${aiBar('뉴스 / 공시',b.news3_75,3.75,'호재 가점 · 중대 악재 진입 차단')}
    </div>
-   <div class="ai-total-note">총점 72점 이상 + 진입/구매확정 인터락 통과 시 조건1 활성</div>
+   <div class="ai-total-note">조건1 = 선행조건 40 + 스탠다드 45 + 추가가점 15 = 100점 · 총점 72점 이상 + 선행조건 통과</div>
  </section>`;
  const c2score=c2.score!=null?num(c2.score):num(sc.condition2_score);
  const c2html=`<section class="ai-condition-card">
-   <div class="ai-condition-head"><div><small>CONDITION 2</small><h3>조건2</h3></div><strong>${c2score.toFixed(1)}점</strong></div>
-   <div class="ai-stage"><h4>점수 구성</h4>
-     ${aiBar('거래량',f2.volume20,20,'장중 거래량 속도')}
-     ${aiBar('체결강도',f2.execution20,20,'체결강도')}
-     ${aiBar('등락률',f2.change20,20,f2.change_pct!=null?`전일 종가 대비 ${num(f2.change_pct).toFixed(2)}%`:'' )}
-     ${aiBar('기술지표',c2.technical40,40,'기술지표 비중을 크게 보는 조건')}
+   <div class="ai-condition-head"><div><small>CONDITION 2</small><h3>조건2 구성표</h3></div><strong>${c2score.toFixed(1)} / 100</strong></div>
+   <div class="ai-stage"><h4>점수 구성 · 공통 선행조건 미적용</h4>
+     ${aiBar('체결강도',b2.execution40,40,'진입 우선순위 1')}
+     ${aiBar('호가',b2.orderbook25,25,'진입 우선순위 2')}
+     ${aiBar('거래량',b2.volume25,25,'조건1 거래량 기준을 25점으로 환산')}
+     ${aiBar('기술점수',b2.technical5,5,'조건1 스탠다드 기술점수를 5점으로 환산')}
+     ${aiBar('등락률',b2.change5,5,c2.change_pct==null?'등락률 대기':`${num(c2.change_pct).toFixed(2)}%`)}
    </div>
-   <div class="ai-gates wide">${aiGate(c2score>=num(c2.entry_threshold||70),`총점 ${num(c2.entry_threshold||70).toFixed(0)}↑`)}${aiGate(Boolean(k2.ready&&k2.up),'KOSPI 직전 완료 1분봉 상승')}${aiGate(Boolean(m2.ready&&m2.pass),'장기 고점일 종가 대비 60% 이하')}${aiGate(!g.event_block,'중대 악재 없음')}</div>
-   <div class="ai-total-note">진입시간: 09:00~09:30 · 13:00~15:00 / 시간 외 예외진입 없음</div>
+   <div class="ai-gates wide">${aiGate(c2score>70,'총점 70 초과')}${aiGate(Boolean(m2.ready&&m2.up),`${esc(m2.market||'KOSPI')} 직전 완료 1분봉 상승`)}${aiGate(Boolean(c2.long_daily_ready),'장기 일봉 데이터 완료')}</div>
+   <div class="ai-total-note">국장 매수 09:00~09:45 / 13:00~14:00 · 시간 외 점수상승 예외매수 없음 · 우선순위 체결 &gt; 호가 &gt; 거래량 &gt; 기술 &gt; 등락</div>
  </section>`;
- const c3score=num(c3.score||c1.score||0),entry=c3.entry_band||[2.7,3.3],target=c3.target_band||[4.7,5.3];
  const c3html=`<section class="ai-condition-card">
-   <div class="ai-condition-head"><div><small>CONDITION 3</small><h3>조건3</h3></div><strong>${c3score.toFixed(1)}점</strong></div>
+   <div class="ai-condition-head"><div><small>CONDITION 3</small><h3>조건3 · 횡보 종목 진입형</h3></div><strong>${c3.gate?'진입대기':'감시'}</strong></div>
    <div class="ai-c3-grid">
-     <div><span>전종목 감시</span><b>09:00~11:00</b><small>KOSPI·KOSDAQ 전체 스캔</small></div>
-     <div><span>관찰 패턴</span><b>2.7~5.3%</b><small>관찰값 70% 이상 구간 유지 · 최소 15분</small></div>
-     <div><span>진입 구간</span><b>${num(entry[0]).toFixed(1)}~${num(entry[1]).toFixed(1)}%</b><small>11:00~13:00 재진입 구간</small></div>
-     <div><span>목표 구간</span><b>${num(target[0]).toFixed(1)}%↑</b><small>목표등락률 도달 시 청산</small></div>
+     <div><span>국장 감시</span><b>09:00~10:00</b><small>오후 13:00~14:00 추가 감시</small></div>
+     <div><span>횡보폭</span><b>3% 이상</b><small>동일 횡보구간 확인</small></div>
+     <div><span>왕복 확인</span><b>2회 이상</b><small>최대 3종목 선정</small></div>
+     <div><span>섹터</span><b>주도 TOP 3</b><small>현재 주도섹터 포함 필수</small></div>
+     <div><span>국장 매수</span><b>10:30~13:00</b><small>오후 14:00~15:25</small></div>
+     <div><span>매매 위치</span><b>하단 매수 → 상단 매도</b><small>횡보구간 최하단/최상단 기준</small></div>
    </div>
-   <div class="ai-gates wide">${aiGate(Boolean(c3.sector_top3),'주도섹터 TOP3')}${aiGate(c3score>=num(c3.entry_threshold||75),`AI 점수 ${num(c3.entry_threshold||75).toFixed(0)}↑`)}${aiGate(num(c3.change_pct)>=num(entry[0])&&num(c3.change_pct)<=num(entry[1]),'현재 진입밴드')}</div>
-   <div class="ai-total-note">전종목 스캔 90% 이상 완료 후 패턴 확정 · 13:00 전략 종료</div>
+   <div class="ai-total-note">기존 2.7~3.3% 진입밴드 · 4.7% 목표 · AI 75점 조건은 사용하지 않음</div>
  </section>`;
  $('breakdown').innerHTML=`<div class="ai-scoreboard">${c1html}<div class="ai-condition-sep"></div>${c2html}<div class="ai-condition-sep"></div>${c3html}</div>`;
 }'''
@@ -120,5 +133,5 @@ function renderScores(d){
         print("NAMUH SCOREBOARD CSS ERROR:", str(exc)[:180], flush=True)
 
     _INSTALLED = True
-    print("NAMUH AI SCOREBOARD active: C1 entry->confirm->bonus + detailed C2/C3", flush=True)
+    print("NAMUH AI SCOREBOARD active: 구성표 C1 40/45/15 + C2 40/25/25/5/5 + C3 횡보형", flush=True)
     return True
