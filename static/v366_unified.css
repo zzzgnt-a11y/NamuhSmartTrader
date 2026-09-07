@@ -1,0 +1,238 @@
+/* v366 — final mobile UI unification. Geometry only; trading/runtime variables untouched. */
+
+/* ---------- Main/coin calendars: same mobile geometry ---------- */
+#profitSec .calendar-toolbar,
+#coinCalendarSec .coin-calendar-top > div{
+  display:grid!important;
+  grid-template-columns:52px minmax(0,1fr) 52px!important;
+  align-items:center!important;
+  gap:12px!important;
+  width:100%!important;
+  max-width:420px!important;
+  margin:0 auto 14px!important;
+}
+#profitSec .calendar-toolbar button,
+#coinCalendarSec .coin-calendar-top button{
+  width:52px!important;
+  height:52px!important;
+  min-height:52px!important;
+  padding:0!important;
+  border-radius:16px!important;
+  box-shadow:none!important;
+  font-size:22px!important;
+  font-weight:900!important;
+}
+#profitSec .calendar-toolbar strong,
+#coinCalendarSec .coin-calendar-top strong{
+  min-width:0!important;
+  text-align:center!important;
+  font-size:22px!important;
+  font-weight:900!important;
+  letter-spacing:-.7px!important;
+  white-space:nowrap!important;
+}
+#coinCalendarSec .coin-calendar-top{
+  display:block!important;
+  margin-bottom:10px!important;
+}
+#coinCalendarSec .coin-calendar-top > span{
+  display:block!important;
+  text-align:right!important;
+  font-size:10px!important;
+  opacity:.68!important;
+  margin:-6px 2px 10px!important;
+}
+#profitSec .weekday-row,
+#profitSec .calendar-grid,
+#coinCalendarSec .coin-calendar-grid{
+  display:grid!important;
+  grid-template-columns:repeat(7,minmax(0,1fr))!important;
+  gap:6px!important;
+}
+#profitSec .weekday-row{margin-bottom:6px!important}
+#profitSec .weekday-row div,
+#coinCalendarSec .coin-cal-week{
+  min-height:24px!important;
+  padding:4px 0!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  font-size:10px!important;
+  font-weight:800!important;
+  opacity:.68!important;
+}
+#profitSec .day-cell,
+#coinCalendarSec .coin-cal-day{
+  min-width:0!important;
+  min-height:88px!important;
+  height:88px!important;
+  padding:8px!important;
+  border-radius:15px!important;
+  text-align:left!important;
+  box-sizing:border-box!important;
+  overflow:hidden!important;
+}
+#profitSec .day-cell .d,
+#coinCalendarSec .coin-cal-day .num{
+  font-size:13px!important;
+  font-weight:900!important;
+  line-height:1!important;
+}
+#coinCalendarSec .coin-cal-day .pnl,
+#profitSec .day-cell .p{
+  margin-top:8px!important;
+  font-size:9px!important;
+  font-weight:900!important;
+  line-height:1.25!important;
+}
+#coinCalendarSec .coin-cal-day .cnt{
+  margin-top:4px!important;
+  font-size:8px!important;
+  line-height:1.2!important;
+}
+
+/* ---------- Trade filters: exact same 3-button component ---------- */
+.v364-filter,
+.coin-trade-filters,
+.v360-trade-controls{
+  display:grid!important;
+  grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  gap:9px!important;
+  width:258px!important;
+  max-width:100%!important;
+  margin-left:auto!important;
+  flex-wrap:nowrap!important;
+}
+.v360-trade-controls > span{display:none!important}
+.v364-filter button,
+.coin-trade-filters button,
+.v360-trade-controls button{
+  width:100%!important;
+  min-width:0!important;
+  height:52px!important;
+  min-height:52px!important;
+  padding:0 12px!important;
+  border-radius:999px!important;
+  font-size:16px!important;
+  font-weight:900!important;
+  line-height:1!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  white-space:nowrap!important;
+  box-shadow:0 8px 18px rgba(30,55,95,.08)!important;
+}
+.v364-filter button[data-f="ALL"],
+.coin-trade-filters button[data-trade-filter="ALL"],
+.v360-trade-controls button[data-trade-filter="ALL"]{
+  border:1.5px solid #475569!important;background:#f8fafc!important;color:#334155!important;
+}
+.v364-filter button[data-f="BUY"],
+.coin-trade-filters button[data-trade-filter="BUY"],
+.v360-trade-controls button[data-trade-filter="BUY"]{
+  border:1.5px solid #60a5fa!important;background:#eff6ff!important;color:#1d4ed8!important;
+}
+.v364-filter button[data-f="SELL"],
+.coin-trade-filters button[data-trade-filter="SELL"],
+.v360-trade-controls button[data-trade-filter="SELL"]{
+  border:1.5px solid #f87171!important;background:#fff1f2!important;color:#b91c1c!important;
+}
+.v364-filter button.active[data-f="ALL"],
+.coin-trade-filters button.active[data-trade-filter="ALL"],
+.v360-trade-controls button.active[data-trade-filter="ALL"]{background:#334155!important;color:#fff!important;border-color:#334155!important}
+.v364-filter button.active[data-f="BUY"],
+.coin-trade-filters button.active[data-trade-filter="BUY"],
+.v360-trade-controls button.active[data-trade-filter="BUY"]{background:#2563eb!important;color:#fff!important;border-color:#2563eb!important}
+.v364-filter button.active[data-f="SELL"],
+.coin-trade-filters button.active[data-trade-filter="SELL"],
+.v360-trade-controls button.active[data-trade-filter="SELL"]{background:#dc2626!important;color:#fff!important;border-color:#dc2626!important}
+
+/* ---------- Mobile stock search: always above the hero, results directly below ---------- */
+@media(max-width:780px){
+  #v34SearchBox.v366-mobile-search{
+    position:relative!important;
+    z-index:13000!important;
+    width:100%!important;
+    margin:0 0 12px!important;
+    overflow:visible!important;
+  }
+  #v34SearchBox.v366-mobile-search #v34SearchResults{
+    position:absolute!important;
+    left:0!important;
+    right:0!important;
+    top:calc(100% + 6px)!important;
+    bottom:auto!important;
+    width:auto!important;
+    max-height:min(360px,58vh)!important;
+    z-index:13010!important;
+  }
+  #v364TradeSec .section-head,
+  #coinTradeSec .section-head,
+  #tradeSec .section-head{
+    align-items:flex-start!important;
+    flex-wrap:wrap!important;
+  }
+  #v364TradeSec .v364-filter,
+  #coinTradeSec .coin-trade-filters,
+  #tradeSec .v360-trade-controls{
+    width:100%!important;
+    max-width:none!important;
+    margin:8px 0 0!important;
+  }
+  #profitSec .day-cell,
+  #coinCalendarSec .coin-cal-day{
+    min-height:78px!important;
+    height:78px!important;
+    padding:6px!important;
+    border-radius:13px!important;
+  }
+  #profitSec .calendar-toolbar,
+  #coinCalendarSec .coin-calendar-top > div{
+    grid-template-columns:56px minmax(0,1fr) 56px!important;
+    gap:10px!important;
+  }
+  #profitSec .calendar-toolbar button,
+  #coinCalendarSec .coin-calendar-top button{
+    width:56px!important;height:56px!important;min-height:56px!important;
+  }
+}
+
+/* ---------- Condition 1 score composition: sequential Venn-like map ---------- */
+.v366-scoremap{display:grid;gap:16px}
+.v366-score-head{display:flex;justify-content:space-between;gap:14px;align-items:flex-end}
+.v366-score-head small{display:block;color:#71d7ee;font-size:10px;font-weight:900;letter-spacing:.12em}
+.v366-score-head h3{margin:4px 0 0;font-size:20px;color:#f3f8ff}
+.v366-score-total{font-size:28px;font-weight:950;color:#fff;white-space:nowrap}
+.v366-score-total span{font-size:13px;color:#8fa7c0;font-weight:800}
+.v366-venn{display:flex;align-items:center;justify-content:center;padding:4px 8px 10px;overflow:visible}
+.v366-orb{position:relative;width:31%;max-width:180px;min-width:105px;aspect-ratio:1/1;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;border:1px solid rgba(117,218,236,.34);background:radial-gradient(circle at 35% 30%,rgba(73,207,225,.25),rgba(24,61,91,.58) 68%);box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 14px 28px rgba(0,0,0,.12)}
+.v366-orb+.v366-orb{margin-left:-8%}
+.v366-orb:nth-child(2){z-index:2;background:radial-gradient(circle at 35% 30%,rgba(100,145,255,.28),rgba(27,48,91,.66) 68%)}
+.v366-orb:nth-child(3){z-index:3;background:radial-gradient(circle at 35% 30%,rgba(95,222,181,.26),rgba(24,70,77,.65) 68%)}
+.v366-orb small{font-size:9px;color:#7fdcf0;font-weight:900;letter-spacing:.1em}
+.v366-orb b{font-size:13px;color:#eaf4ff;margin:5px 0 4px}
+.v366-orb strong{font-size:21px;color:#fff;font-weight:950}
+.v366-orb em{font-style:normal;font-size:9px;color:#91a9c0;margin-top:3px}
+.v366-eq{display:flex;align-items:center;justify-content:center;gap:7px;flex-wrap:wrap;padding:11px 12px;border:1px solid rgba(95,202,224,.18);border-radius:13px;background:rgba(17,37,60,.58);font-size:11px;color:#8fa7c0}
+.v366-eq b{font-size:14px;color:#fff}.v366-eq strong{color:#68d9bf;font-size:15px}
+.v366-stage{padding:13px;border-radius:15px;background:rgba(9,24,42,.46);border:1px solid rgba(110,143,180,.14)}
+.v366-stage h4{margin:0 0 10px;font-size:12px;color:#c9d8e8;display:flex;justify-content:space-between;gap:10px}
+.v366-stage h4 b{color:#fff}
+.v366-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.v366-metric{padding:9px 10px;border-radius:11px;background:rgba(20,40,63,.62);min-width:0}
+.v366-metric-line{display:flex;justify-content:space-between;gap:8px;font-size:10px}
+.v366-metric-line span{color:#a8bad0;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.v366-metric-line b{color:#f4f8ff;white-space:nowrap}
+.v366-meter{height:6px;border-radius:999px;background:rgba(127,151,180,.13);overflow:hidden;margin-top:6px}
+.v366-meter i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#42bde0,#65d6bb)}
+.v366-gate{margin-top:10px;font-size:9px;color:#8fa7c0}
+.v366-gate.pass{color:#6fddba}.v366-gate.wait{color:#d7a760}
+
+@media(max-width:520px){
+  .v366-score-head{align-items:flex-start;flex-direction:column;gap:8px}
+  .v366-score-total{font-size:24px}
+  .v366-orb{min-width:96px;width:34%}.v366-orb+.v366-orb{margin-left:-10%}
+  .v366-orb b{font-size:11px}.v366-orb strong{font-size:18px}.v366-orb em{font-size:8px}
+  .v366-metrics{grid-template-columns:1fr 1fr;gap:6px}
+  .v366-metric{padding:8px}.v366-metric-line{font-size:9px}
+}
