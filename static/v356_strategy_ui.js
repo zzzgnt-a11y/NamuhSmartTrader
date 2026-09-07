@@ -1,24 +1,34 @@
 (()=>{
 'use strict';
 const $=s=>document.querySelector(s);
-function market(){return $('#usModeLabel')?.classList.contains('active')?'US':'KR'}
 let queued=false;
+function matched(x){
+  const exact=String(x?.condition_display||'').trim();
+  if(exact==='복합조건'||/^조건[123]$/.test(exact))return exact;
+  const labels=[];
+  for(const raw of (Array.isArray(x?.condition_labels)?x.condition_labels:[])){
+    const s=String(raw||'').trim();
+    if(/^조건[123]$/.test(s)&&!labels.includes(s))labels.push(s);
+  }
+  if(!labels.length){
+    if(x?.condition1?.gate)labels.push('조건1');
+    if(x?.condition2?.gate||x?.condition2_gate_pass)labels.push('조건2');
+    if(x?.condition3?.gate)labels.push('조건3');
+  }
+  return labels.length>1?'복합조건':labels[0]||'';
+}
 function apply(){
   queued=false;
-  if(market()!=='KR')return;
   const map=window.NAMUH_ALL_SCORE_MAP;
   document.querySelectorAll('#scalpList .v352-ai-card').forEach(card=>{
     const code=String(card.dataset.stock||'').split('/').pop().toUpperCase();
     const x=map?.get(code);if(!x)return;
     const reason=card.querySelector('.reason-row');if(reason)reason.style.display='none';
     const box=card.querySelector('.metrics');if(!box)return;
-    const c1=x.condition1||{},c2=x.condition2||{},c3=x.condition3||{};
-    const next=[
-      `<span class="strategy123-chip ${c1.gate?'on':''}">조건1 ${Number(c1.score??x.score??0).toFixed(0)}${c1.gate?' ✓':''}</span>`,
-      `<span class="strategy123-chip ${c2.gate?'on':''}">조건2 ${Number(c2.score??x.condition2_score??0).toFixed(0)}${c2.gate?' ✓':''}</span>`,
-      `<span class="strategy123-chip ${c3.sector_top3?'watch':''}">조건3 ${c3.sector_top3?'주도섹터 '+Number(c3.sector_rank||0)+'위':'감시대기'}</span>`
-    ].join('');
-    box.classList.add('strategy123-box');if(box.innerHTML!==next)box.innerHTML=next;
+    const label=matched(x);
+    const next=label?`<span class="strategy123-chip on">${label}</span>`:`<span class="strategy123-chip">조건 충족 없음</span>`;
+    box.classList.add('strategy123-box');
+    if(box.innerHTML!==next)box.innerHTML=next;
   });
   document.querySelectorAll('#positions .strategy-tag').forEach(t=>{if(t.textContent.trim()==='SCALP')t.textContent='조건1'});
 }
@@ -29,17 +39,16 @@ function style(){
   .strategy123-box{display:flex!important;gap:6px!important;flex-wrap:wrap!important}
   .strategy123-chip{display:inline-flex;align-items:center;border:1px solid rgba(80,105,160,.18);border-radius:999px;padding:7px 10px;font-size:12px;font-weight:800;background:rgba(90,105,145,.06)}
   .strategy123-chip.on{border-color:rgba(35,145,95,.28);background:rgba(35,145,95,.10)}
-  .strategy123-chip.watch{border-color:rgba(70,105,210,.28);background:rgba(70,105,210,.09)}
-  #scalpList .v352-ai-card .reason-row{display:none!important}
-  `;document.head.appendChild(s)
+  #scalpList .v352-ai-card .reason-row{display:none!important}`;
+  document.head.appendChild(s);
 }
 function init(){
   style();apply();
-  const opts={childList:true,subtree:true};
-  const scalp=$('#scalpList'),positions=$('#positions');
-  if(scalp)new MutationObserver(schedule).observe(scalp,opts);
-  if(positions)new MutationObserver(schedule).observe(positions,opts);
-  setInterval(schedule,2000);
+  const scalp=$('#scalpList'),positions=$('#positions'),obs=new MutationObserver(schedule);
+  if(scalp)obs.observe(scalp,{childList:true,subtree:false});
+  if(positions)obs.observe(positions,{childList:true,subtree:true});
+  $('#krModeLabel')?.addEventListener('click',schedule);
+  $('#usModeLabel')?.addEventListener('click',schedule);
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
 })();
