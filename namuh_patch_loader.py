@@ -131,6 +131,9 @@ def install():
                         # unrelated site/runtime variables remain owned by the existing patches above.
                         import namuh_conditions_final_patch
                         namuh_conditions_final_patch.apply(ns)
+                        # Coin auto-entry position sizing: use 50% of effective coin budget per C1/C2 entry.
+                        import namuh_coin_position50_patch
+                        namuh_coin_position50_patch.apply(ns)
                         # Isolated C3 bridge: only lets the final C3 resolver reuse a fresh PC-sync price.
                         import namuh_c3_sync_price_patch
                         namuh_c3_sync_price_patch.apply(ns)
