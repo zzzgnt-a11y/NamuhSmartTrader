@@ -57,6 +57,8 @@ try:
                 if ns.get('core') is not None:
                     import namuh_recipe8020_patch
                     namuh_recipe8020_patch.apply(ns)
+                    import namuh_execution_exit_patch
+                    namuh_execution_exit_patch.apply(ns)
             except Exception as exc:
                 print('LATE RUNTIME PATCH ERROR:',exc,flush=True)
             return _orig_uvicorn_run(*args,**kwargs)
