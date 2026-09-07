@@ -7,11 +7,11 @@ from datetime import datetime
 def _execution_points(strength):
     s=float(strength or 0)
     if s>=110:return 20.0
-    if s>=105:return 17.0
+    if s>=105:return 16.0
     if s>=100:return 14.0
-    if s>=95:return 11.0
-    if s>=90:return 8.0
-    return max(0.0,(s-70.0)/20.0*8.0)
+    if s>=95:return 10.0
+    if s>=90:return 6.0
+    return 0.0
 
 
 def _history(q, now_ts=None, max_age=120):
@@ -48,49 +48,69 @@ def _sample_values(q, ages, now_ts=None):
     return vals
 
 
-def _checkpoint_values_30s(q, now_ts=None):
-    return _sample_values(q,(30,20,10,0),now_ts)
+def _checkpoint_values_30s_5s(q, now_ts=None):
+    return _sample_values(q,tuple(range(30,-1,-5)),now_ts)
 
 
 def _checkpoint_values_60s_5s(q, now_ts=None):
-    # 60,55,...,5,0 seconds: 13 points, 12 five-second intervals.
     return _sample_values(q,tuple(range(60,-1,-5)),now_ts)
 
 
-def execution_gate_30s(q, now_ts=None):
+def _net_rise_reason(vals, floor, label):
+    if vals is None:
+        return False,f'체결강도 {label} 추세 축적 중(5초 간격)'
+    start=float(vals[0]);end=float(vals[-1])
+    rises=sum(1 for a,b in zip(vals,vals[1:]) if b>a)
+    falls=sum(1 for a,b in zip(vals,vals[1:]) if b<a)
+    flats=max(0,len(vals)-1-rises-falls)
+    if start<floor:
+        return False,f'체결강도 {label} 시작값 {start:.1f} < {floor:.0f} 대기'
+    if end>start:
+        return True,f'체결강도 {label} 순상승 {start:.1f}→{end:.1f} · 상승{rises}/하락{falls}/보합{flats}'
+    return False,f'체결강도 {label} 순상승 미충족 {start:.1f}→{end:.1f} · 중간하락 허용'
+
+
+def execution_gate(q, now_ts=None):
     s=float(getattr(q,'execution_strength',0) or 0)
     if s>=110:
-        return True,'체결강도 110+ 즉시 통과'
-    if s<90:
-        return False,'체결강도 90 미만'
-
-    # 100~109.9: observe one full minute in 5-second buckets.
-    # Intermediate drops are allowed. The gate only requires that both the
-    # 60-second starting value and current value are 100+, and current is
-    # above the value from 60 seconds ago (net rise over one minute).
+        return True,'체결강도 110+ · 20/20 즉시 통과'
+    if s>=105:
+        return True,'체결강도 105+ · 16/20 즉시 통과'
     if s>=100:
+        return True,'체결강도 100+ · 14/20 즉시 통과'
+    if s>=95:
+        vals=_checkpoint_values_30s_5s(q,now_ts)
+        return _net_rise_reason(vals,95.0,'95+ · 30초')
+    if s>=90:
         vals=_checkpoint_values_60s_5s(q,now_ts)
-        if vals is None:
-            return False,'체결강도 100+ · 1분 추세 축적 중(5초 간격)'
-        start=float(vals[0]);end=float(vals[-1])
-        rises=sum(1 for a,b in zip(vals,vals[1:]) if b>a)
-        falls=sum(1 for a,b in zip(vals,vals[1:]) if b<a)
-        flats=12-rises-falls
-        if start<100:
-            return False,f'체결강도 현재 100+ · 1분 전 {start:.1f} < 100 대기'
-        if end>start:
-            return True,f'체결강도 100+ · 1분 순상승 {start:.1f}→{end:.1f} · 5초구간 상승{rises}/하락{falls}/보합{flats}'
-        return False,f'체결강도 100+ · 1분 순상승 미충족 {start:.1f}→{end:.1f} · 중간하락 허용'
+        return _net_rise_reason(vals,90.0,'90~94.9 · 1분')
+    return False,'체결강도 90 미만 · 0/20 · 미진입'
 
-    # 90~99.9: keep the existing stricter 30-second rising rule.
-    vals=_checkpoint_values_30s(q,now_ts)
-    if vals is None:
-        return False,'체결강도 90+ · 30초 추세 축적 중'
-    if min(vals)<90:
-        return False,'체결강도 90+ 30초 유지 대기'
-    if all(vals[i+1] > vals[i] for i in range(len(vals)-1)):
-        return True,'체결강도 90+ · 30초 연속 상승'
-    return False,'체결강도 90+이나 30초 연속 상승 미충족'
+
+def _daily20_from_open(core,q,recipe):
+    b=recipe._completed_prev_bar(core,q)
+    if not b:return 0.0,None
+    prev_open=float(b.get('open') or 0)
+    prev_close=float(b.get('close') or 0)
+    prev_high=float(b.get('high') or 0)
+    today_open=float(getattr(q,'open',0) or 0)
+    if prev_open<=0 or prev_close<=0 or today_open<=0:return 0.0,None
+    mid=(prev_open+prev_close)/2.0
+    pts=0.0
+    if today_open>=mid:
+        pts=12.0
+        dist=(today_open/mid-1.0)*100.0
+        pts+=min(4.0,max(0.0,dist/2.0*4.0))
+    else:
+        gap=(mid-today_open)/mid*100.0
+        pts=max(0.0,4.0-gap/2.0*4.0)
+    if today_open>=prev_close:pts+=2.0
+    if prev_high>0 and today_open>=prev_high:pts+=2.0
+    pts=round(max(0.0,min(20.0,pts)),1)
+    return pts,{
+        'prev_open':prev_open,'prev_close':prev_close,'prev_high':prev_high,
+        'mid':mid,'today_open':today_open,'price':today_open,'basis':'today_open'
+    }
 
 
 def apply(ns):
@@ -99,7 +119,7 @@ def apply(ns):
         return
     core._NAMUH_EXEC_EXIT_PATCHED=True
 
-    # Replace only the KR RECIPE80 execution gate; coin/other strategies stay untouched.
+    # Replace only KR RECIPE80 daily/execution rules; coin/US logic stays untouched.
     try:
         import namuh_recipe8020_patch as recipe
         def execution20(q,market):
@@ -107,11 +127,14 @@ def apply(ns):
             if str(market or '').upper()!='KR':
                 return 0.0,True,'미장 체결강도 점수 미사용'
             pts=_execution_points(s)
-            ok,reason=execution_gate_30s(q)
+            ok,reason=execution_gate(q)
             return round(max(0.0,min(20.0,pts)),1),bool(ok),str(reason)
+        def daily20(core_arg,q):
+            return _daily20_from_open(core_arg,q,recipe)
         recipe._execution20=execution20
+        recipe._daily20=daily20
     except Exception as exc:
-        print('NAMUH EXEC GATE PATCH ERROR:',exc,flush=True)
+        print('NAMUH DAILY/EXEC PATCH ERROR:',exc,flush=True)
 
     # Force-flat KR positions before KRX closing call auction, and at NXT close.
     old_sell=core.mark_and_sell
@@ -128,7 +151,6 @@ def apply(ns):
                     entry_mins=entered.hour*60+entered.minute
                 except Exception:
                     entry_mins=0
-                # Positions opened in the NXT after-market (15:40+) may run to 19:59.
                 nxt_after=entry_mins>=15*60+40
                 deadline=19*60+59 if nxt_after else 15*60+19
                 if mins < deadline:
@@ -149,7 +171,6 @@ def apply(ns):
         return old_sell(market,scalp,smart,now)
     core.mark_and_sell=mark_and_sell
 
-    # Do not re-enter after the forced exit deadline / during the KRX-NXT handoff.
     old_trade=core.trade_scalp
     def trade_scalp(market,candidates,now=None):
         now=(now or core.datetime.now(core.KST)).astimezone(core.KST)
@@ -166,7 +187,8 @@ def apply(ns):
         old_health=core.health_payload
         def health():
             d=dict(old_health())
-            d['execution_gate_model']='110 immediate / 100+ 60s net-rise (5s samples, dips allowed) / 90+ 30s rising'
+            d['daily20_model']='today open vs previous (open+close)/2'
+            d['execution_gate_model']='110=20 immediate / 105=16 immediate / 100=14 immediate / 95=10 + 30s net-rise / 90=6 + 60s net-rise / <90 blocked'
             d['krx_force_exit']='15:19'
             d['nxt_force_exit']='19:59'
             return d
@@ -174,4 +196,4 @@ def apply(ns):
     except Exception:
         pass
 
-    print('NAMUH EXEC/EXIT PATCH active: 110 immediate; 100+ 60s net-rise with 5s samples/dips allowed; 90+ rise 30s; KRX 15:19; NXT 19:59',flush=True)
+    print('NAMUH DAILY/EXEC PATCH active: daily=today open vs prev mid; EXEC 20/16/14/10/6/0 with 30s/60s net-rise gates; KRX 15:19; NXT 19:59',flush=True)
