@@ -89,6 +89,8 @@ try:
                     import namuh_strategy23_fix;namuh_strategy23_fix.apply(ns)
                     # User override: Condition 2 afternoon entries remain open until 15:00.
                     import namuh_c2_window_patch;namuh_c2_window_patch.apply(ns)
+                    # Final user entry thresholds: C2 >=70 / C3 >=75.
+                    import namuh_condition_threshold_patch;namuh_condition_threshold_patch.apply(ns)
             except Exception as exc:
                 print('LATE RUNTIME PATCH ERROR:',exc,flush=True)
             return _orig_uvicorn_run(*args,**kwargs)
