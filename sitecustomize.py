@@ -9,13 +9,13 @@ import sitecustomize_legacy
 ROOT=Path(__file__).resolve().parent
 INDEX=ROOT/'static'/'index.html'
 ASSET_VERSION=(os.getenv('RENDER_GIT_COMMIT') or os.getenv('GY_BUILD_ID') or str(int(__import__('time').time())))[:12]
-SCRIPT_NAMES=('v352.js','v353_searchfix.js','v355_unified_ui.js','v356_strategy_ui.js')
+SCRIPT_NAMES=('v352.js','v353_searchfix.js','v355_unified_ui.js','v356_strategy_ui.js','v357_ui_restore.js')
 
 # One fresh copy of each late UI owner. v354 is intentionally removed because
 # its old 50/30/20 timer could overwrite the active strategy display.
 try:
     text=INDEX.read_text(encoding='utf-8')
-    for name in ('v352.js','v353_searchfix.js','v354_scoreui.js','v355_unified_ui.js','v356_strategy_ui.js'):
+    for name in ('v352.js','v353_searchfix.js','v354_scoreui.js','v355_unified_ui.js','v356_strategy_ui.js','v357_ui_restore.js'):
         text=re.sub(rf'\s*<script\s+src=["\']/static/{re.escape(name)}(?:\?[^"\']*)?["\']\s*></script>\s*','\n',text,flags=re.I)
     tags='\n'.join(f'  <script src="/static/{name}?v={ASSET_VERSION}"></script>' for name in SCRIPT_NAMES)
     text=text.replace('</body>',f'{tags}\n</body>')
@@ -75,8 +75,10 @@ try:
                     import namuh_entry_gate_fix;namuh_entry_gate_fix.apply(ns)
                     import namuh_crossmarket_patch;namuh_crossmarket_patch.apply(ns)
                     import namuh_stock_asset_patch;namuh_stock_asset_patch.apply(ns)
-                    # Must be last: owns KR condition1/2/3 entry/exit and final event/sector scoring.
+                    # Must be last among base strategy owners.
                     import namuh_strategy123_patch;namuh_strategy123_patch.apply(ns)
+                    # Final corrective owner: strict C2 + all-market C3 only.
+                    import namuh_strategy23_fix;namuh_strategy23_fix.apply(ns)
             except Exception as exc:
                 print('LATE RUNTIME PATCH ERROR:',exc,flush=True)
             return _orig_uvicorn_run(*args,**kwargs)
