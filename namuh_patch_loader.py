@@ -101,6 +101,8 @@ def install():
                     if ns.get('core') is not None:
                         import namuh_user15_patch
                         namuh_user15_patch.apply(ns)
+                        import namuh_user15_stability
+                        namuh_user15_stability.apply(ns)
                 except Exception as exc:
                     print('NAMUH USER15 LATE PATCH ERROR:',str(exc)[:220],flush=True)
                 return _prev_run(*args,**kwargs)
