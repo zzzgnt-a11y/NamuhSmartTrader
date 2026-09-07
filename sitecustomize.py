@@ -36,16 +36,32 @@ try:
 except Exception as exc:
     print('NAMUH UI TAG PATCH ERROR:',exc,flush=True)
 
-# Stock account is 4M KRW and the base page refresh is deliberately slower.
+# Stock account is 4M KRW. Keep the base state refresh at the native 5 seconds;
+# a previous hotfix stretched this to 10 seconds and made the UI feel sluggish.
 try:
     p=ROOT/'static'/'app.js';text=p.read_text(encoding='utf-8')
     text=text.replace('amount>1000000','amount>4000000')
     text=text.replace('amount>2000000','amount>4000000')
     text=text.replace('0~1,000,000원 범위','0~4,000,000원 범위')
     text=text.replace('0~2,000,000원 범위','0~4,000,000원 범위')
-    text=text.replace('setInterval(refresh,5000)','setInterval(refresh,10000)')
+    text=text.replace('setInterval(refresh,10000)','setInterval(refresh,5000)')
     p.write_text(text,encoding='utf-8')
 except Exception as exc:print('NAMUH STOCK BUDGET/POLL UI PATCH ERROR:',exc,flush=True)
+
+# Time-AI snapshots refresh twice as often while keeping the 10-minute history
+# buckets unchanged. KRX official flow remains deliberately slower.
+try:
+    p=ROOT/'static'/'v364_main.js';text=p.read_text(encoding='utf-8')
+    text=text.replace('setInterval(loadScores,20000)','setInterval(loadScores,10000)')
+    p.write_text(text,encoding='utf-8')
+except Exception as exc:print('NAMUH V364 SPEED PATCH ERROR:',exc,flush=True)
+
+# Coin account/candidates/trades refresh every 5 seconds instead of 10 seconds.
+try:
+    p=ROOT/'static'/'coin.js';text=p.read_text(encoding='utf-8')
+    text=text.replace('setInterval(refresh,10000)','setInterval(refresh,5000)')
+    p.write_text(text,encoding='utf-8')
+except Exception as exc:print('NAMUH COIN SPEED PATCH ERROR:',exc,flush=True)
 
 # Reduce auxiliary main-page polling and disable the legacy calendar detail
 # request that ignored the selected KR/US market and could re-mix trades.
