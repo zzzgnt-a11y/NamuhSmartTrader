@@ -85,3 +85,25 @@ def install():
         try:patch(sys.modules['app'])
         except Exception:pass
     else:sys.meta_path.insert(0,Finder())
+
+    # sitecustomize wraps uvicorn.run after this install() returns. Wrapping it
+    # here means the user15 patch executes after all later strategy owners have
+    # been installed, but still before the FastAPI lifespan/background loops.
+    try:
+        import uvicorn
+        if not getattr(uvicorn,'_NAMUH_USER15_WRAPPED',False):
+            uvicorn._NAMUH_USER15_WRAPPED=True
+            _prev_run=uvicorn.run
+            def _run_with_user15(*args,**kwargs):
+                try:
+                    main=sys.modules.get('__main__')
+                    ns=getattr(main,'__dict__',{}) if main else {}
+                    if ns.get('core') is not None:
+                        import namuh_user15_patch
+                        namuh_user15_patch.apply(ns)
+                except Exception as exc:
+                    print('NAMUH USER15 LATE PATCH ERROR:',str(exc)[:220],flush=True)
+                return _prev_run(*args,**kwargs)
+            uvicorn.run=_run_with_user15
+    except Exception:
+        pass
