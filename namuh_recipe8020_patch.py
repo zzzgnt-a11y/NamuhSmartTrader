@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import time
 
 from engine import execution_gate as _execution_gate
 
@@ -33,13 +34,11 @@ def _daily20(core,q):
     if o<=0 or c<=0 or p<=0:return 0.0,None
     mid=(o+c)/2.0
     pts=0.0
-    # Main rule: current price above yesterday's (open+close)/2 gets most of the score.
     if p>=mid:
         pts=12.0
         dist=(p/mid-1.0)*100.0
         pts+=min(4.0,max(0.0,dist/2.0*4.0))
     else:
-        # Partial credit only when very close to the midpoint from below.
         gap=(mid-p)/mid*100.0
         pts=max(0.0,4.0-gap/2.0*4.0)
     if p>=c:pts+=2.0
@@ -51,8 +50,6 @@ def _volume15(core,q):
     cur=float(getattr(q,'volume',0) or 0);prev=float(getattr(q,'prev_day_volume',0) or 0)
     if cur<=0 or prev<=0:return 0.0,0.0
     now=datetime.now(core.KST);mins=now.hour*60+now.minute
-    # Pace-adjust regular session volume so 09:10 is compared with ~10 minutes,
-    # not with a full previous trading day.
     if 540<=mins<=930:
         elapsed=max(1,mins-540)
         expected=max(1/390,min(1.0,elapsed/390.0))
@@ -100,8 +97,6 @@ def _program15(q):
 
 def _technical20(out):
     comp=dict(out.get('score_components') or {})
-    # Previous stage30 = Envelope 10 + technical indicators 20. Scale the
-    # whole technical confirmation block to the new 20-point maximum.
     if comp.get('stage30') is not None:
         return round(_clamp(float(comp.get('stage30') or 0)/30.0*20.0,0,20),1)
     env=float(comp.get('envelope10') or 0);tech=float(comp.get('technical20') or 0)
@@ -114,12 +109,12 @@ def apply(ns):
     core._NAMUH_RECIPE_8020=True
 
     old_candidate=core.candidate
+    samsung_log=[0.0]
     def candidate(q,market,smart=False,secmap=None,stockmap=None,leadermap=None,sector_rankmap=None,now=None):
         out=old_candidate(q,market,smart,secmap,stockmap,leadermap,sector_rankmap,now)
         if smart or not isinstance(out,dict):return out
         market=str(market or '').upper()
         if market!='KR':
-            # Do not invent US program/execution data. Only remove the minute hard gate.
             out['minute_gate_pass']=True
             blocked=bool(getattr(q,'event_blocked',False))
             out['entry_gate_pass']=bool(float(out.get('score',0) or 0)>=72 and not blocked)
@@ -149,7 +144,6 @@ def apply(ns):
         out['entry_gate_pass']=bool(not blocked and exec_ok and total>=72.0)
         out['execution_gate_pass']=bool(exec_ok)
         out['execution_gate_reason']=exec_reason
-        # Minute/orderbook are no longer score or entry gates in this recipe.
         out['minute_gate_pass']=True
         out['orderbook_gate_pass']=True
         out['daily_gate_pass']=True
@@ -171,12 +165,17 @@ def apply(ns):
             f'공시/호재 {news5:.1f}/5 · 섹터수급 {sector5:.1f}/5',
             '1분봉 진입조건 삭제 · 수신 상태만 감시',
         ]
+        if str(getattr(q,'code',''))=='005930' and time.time()-samsung_log[0]>=10:
+            samsung_log[0]=time.time()
+            print(
+                f"SAMSUNG SCORE total={out['score']:.1f} recipe={recipe80:.1f} tech={tech20:.1f} "
+                f"daily={daily20:.1f} volume={volume15:.1f} exec={exec20:.1f} program={program15:.1f} "
+                f"news={news5:.1f} sector={sector5:.1f} price={float(getattr(q,'price',0) or 0):.0f} "
+                f"strength={float(getattr(q,'execution_strength',0) or 0):.1f} program_net={float(getattr(q,'program_net',0) or 0):.0f} "
+                f"entry={bool(out['entry_gate_pass'])}", flush=True)
         return out
     core.candidate=candidate
 
-    # runtime_server_v34 installs a five-1m-bar trading wrapper after app import.
-    # Bypass only that wrapper at the final pre-uvicorn point; keep the prior
-    # VI/session/budget/duplicate-position protections intact.
     base_trade=ns.get('_prev_trade_scalp')
     if callable(base_trade):
         def trade_scalp(market,candidates,now=None):
@@ -184,7 +183,6 @@ def apply(ns):
             return base_trade(market,rows,now)
         core.trade_scalp=trade_scalp
 
-    # Expose minute reception status without using it as an entry condition.
     try:
         old_health=core.health_payload
         def health():
