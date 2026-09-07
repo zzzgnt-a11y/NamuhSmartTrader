@@ -135,6 +135,13 @@ def apply(ns=None):
             _wrap_stock_detail(core)
     except Exception as exc:
         print("NAMUH STANDARD DETAIL FIX ERROR:", str(exc)[:180], flush=True)
+    # Absolute last score guard: classify every zero as genuine recipe zero or
+    # missing-data zero, backfill exact 15-session same-time volume, and label UI waits.
+    try:
+        import namuh_zero_score_audit_patch
+        namuh_zero_score_audit_patch.apply(ns)
+    except Exception as exc:
+        print("NAMUH ZERO SCORE AUDIT LOAD ERROR:", str(exc)[:180], flush=True)
     _INSTALLED = True
     print("NAMUH standard detail fix active: 7 indicators only; history-backed detail score", flush=True)
     return True
