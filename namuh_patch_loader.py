@@ -108,6 +108,9 @@ def install():
                         # the sole UI owners and trade filters cannot be deleted.
                         import v364_ui_cleanup_patch
                         v364_ui_cleanup_patch.apply(ns)
+                        # Speed-only late owner: stock 3s / AI 5s / coin 3s.
+                        import namuh_speed_patch
+                        namuh_speed_patch.apply(ns)
                 except Exception as exc:
                     print('NAMUH USER15 LATE PATCH ERROR:',str(exc)[:220],flush=True)
                 return _prev_run(*args,**kwargs)
