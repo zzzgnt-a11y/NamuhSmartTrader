@@ -59,6 +59,11 @@ try:
                     namuh_recipe8020_patch.apply(ns)
                     import namuh_execution_exit_patch
                     namuh_execution_exit_patch.apply(ns)
+                    # Final KR scalp gate owner. This intentionally removes old
+                    # 1m/orderbook/legacy freshness blockers and leaves only the
+                    # current user-selected execution rule + price freshness.
+                    import namuh_entry_gate_fix
+                    namuh_entry_gate_fix.apply(ns)
             except Exception as exc:
                 print('LATE RUNTIME PATCH ERROR:',exc,flush=True)
             return _orig_uvicorn_run(*args,**kwargs)
