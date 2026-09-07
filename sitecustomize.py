@@ -31,11 +31,11 @@ try:
 except Exception as exc:
     print('NAMUH UI TAG PATCH ERROR:',exc,flush=True)
 
-# Remove legacy title/caption ownership so section 3 no longer flips wording.
+# Keep section 3 title stable across every late UI owner.
 try:
     p=ROOT/'static'/'v352.js';text=p.read_text(encoding='utf-8')
     text=text.replace("if(title)title.textContent=m==='US'?'미장 전체 종목 AI 점수':'국장 전체 종목 AI 점수';",
-                      "if(title)title.textContent=m==='US'?'미장 단타 탐지':'국장 단타 탐지 · 조건1/2/3';")
+                      "if(title)title.textContent=m==='US'?'미장 단타 탐지':'국장 단타 탐지';")
     text=text.replace('전체 ${rows.length}종목 · 40 실시간 + 60 일봉→분봉 · 72점 이상 ${ready}종목',
                       '전체 ${rows.length}종목 · 조건1/조건2/조건3 · 실시간 감시')
     text=text.replace("if(col)col.textContent=`전체 AI 점수 · ${rows.length}종목`;",
