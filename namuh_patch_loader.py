@@ -131,6 +131,9 @@ def install():
                         # unrelated site/runtime variables remain owned by the existing patches above.
                         import namuh_conditions_final_patch
                         namuh_conditions_final_patch.apply(ns)
+                        # Isolated C3 bridge: only lets the final C3 resolver reuse a fresh PC-sync price.
+                        import namuh_c3_sync_price_patch
+                        namuh_c3_sync_price_patch.apply(ns)
                 except Exception as exc:
                     print('NAMUH USER15 LATE PATCH ERROR:',str(exc)[:220],flush=True)
                 return _prev_run(*args,**kwargs)
