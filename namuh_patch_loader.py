@@ -137,6 +137,9 @@ def install():
                         # Absolute final UI owner: calendar/filter/search geometry and Condition1 score map only.
                         import namuh_ui366_patch
                         namuh_ui366_patch.apply(ns)
+                        # Mobile search is a separate static component: no DOM reparenting or viewport listeners.
+                        import namuh_search_stable_patch
+                        namuh_search_stable_patch.apply(ns)
                 except Exception as exc:
                     print('NAMUH USER15 LATE PATCH ERROR:',str(exc)[:220],flush=True)
                 return _prev_run(*args,**kwargs)
