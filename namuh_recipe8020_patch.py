@@ -95,12 +95,90 @@ def _program15(q):
     return round(pts,1),round(ratio,2)
 
 
-def _technical20(out):
-    comp=dict(out.get('score_components') or {})
-    if comp.get('stage30') is not None:
-        return round(_clamp(float(comp.get('stage30') or 0)/30.0*20.0,0,20),1)
-    env=float(comp.get('envelope10') or 0);tech=float(comp.get('technical20') or 0)
-    return round(_clamp((env+tech)/30.0*20.0,0,20),1)
+def _ema(values,period):
+    vals=[float(x) for x in values if float(x or 0)>0]
+    if not vals:return 0.0
+    k=2.0/(period+1.0);e=vals[0]
+    for x in vals[1:]:e=x*k+e*(1.0-k)
+    return e
+
+
+def _rsi14(closes):
+    if len(closes)<15:return None
+    ds=[closes[i]-closes[i-1] for i in range(1,len(closes))][-14:]
+    gains=sum(max(x,0.0) for x in ds)/14.0
+    losses=sum(max(-x,0.0) for x in ds)/14.0
+    if losses<=1e-12:return 100.0
+    rs=gains/losses
+    return 100.0-(100.0/(1.0+rs))
+
+
+def _technical20(q):
+    """Independent TECH20 from daily OHLC; never depends on 1m/stage30."""
+    bars=list(getattr(q,'daily_bars',[]) or [])
+    closes=[]
+    highs=[]
+    lows=[]
+    for b in bars[-40:]:
+        try:
+            c=float(b.get('close') or 0);h=float(b.get('high') or 0);l=float(b.get('low') or 0)
+        except Exception:
+            continue
+        if c>0:
+            closes.append(c);highs.append(h or c);lows.append(l or c)
+    p=float(getattr(q,'price',0) or (closes[-1] if closes else 0))
+    if len(closes)<20 or p<=0:
+        return 0.0,{'status':'daily bars <20'}
+
+    # Replace today's partial close with the latest live price when possible.
+    closes=list(closes)
+    if closes:closes[-1]=p
+
+    # Moving-average trend: 5 points.
+    ma5=sum(closes[-5:])/5.0
+    ma20=sum(closes[-20:])/20.0
+    prev_ma20=sum(closes[-21:-1])/20.0 if len(closes)>=21 else ma20
+    ma_pts=(2.0 if p>=ma5 else 0.0)+(2.0 if ma5>=ma20 else 0.0)+(1.0 if ma20>=prev_ma20 else 0.0)
+
+    # RSI: 4 points. Strong-but-not-overheated momentum scores highest.
+    rsi=_rsi14(closes)
+    if rsi is None:rsi_pts=0.0
+    elif 50<=rsi<=70:rsi_pts=4.0
+    elif 40<=rsi<50 or 70<rsi<=78:rsi_pts=3.0
+    elif 30<=rsi<40:rsi_pts=1.5
+    elif rsi>78:rsi_pts=1.0
+    else:rsi_pts=0.5
+
+    # MACD: 4 points.
+    macd=_ema(closes[-30:],12)-_ema(closes[-30:],26)
+    macd_hist=[]
+    if len(closes)>=26:
+        start=max(26,len(closes)-9)
+        for i in range(start,len(closes)+1):
+            part=closes[:i]
+            macd_hist.append(_ema(part[-30:],12)-_ema(part[-30:],26))
+    signal=_ema(macd_hist,9) if macd_hist else 0.0
+    macd_pts=(3.0 if macd>=signal else 0.0)+(1.0 if macd>=0 else 0.0)
+
+    # Bollinger position: 3 points.
+    win=closes[-20:];mid=sum(win)/20.0
+    var=sum((x-mid)**2 for x in win)/20.0
+    sd=var**0.5;upper=mid+2*sd;lower=mid-2*sd
+    if mid<=p<=upper:bb_pts=3.0
+    elif lower<=p<mid:bb_pts=1.5
+    elif p>upper:bb_pts=1.0
+    else:bb_pts=0.0
+
+    # Price structure: 4 points.
+    prev_close=closes[-2] if len(closes)>=2 else p
+    prev5_high=max(highs[-6:-1]) if len(highs)>=6 else max(highs[:-1] or [p])
+    structure_pts=(2.0 if p>=prev_close else 0.0)+(2.0 if p>=prev5_high else (1.0 if p>=ma20 else 0.0))
+
+    total=round(_clamp(ma_pts+rsi_pts+macd_pts+bb_pts+structure_pts,0,20),1)
+    return total,{
+        'MA':round(ma_pts,1),'RSI':round(rsi_pts,1),'MACD':round(macd_pts,1),'볼린저':round(bb_pts,1),'가격구조':round(structure_pts,1),
+        'rsi':None if rsi is None else round(rsi,1),'ma5':round(ma5,2),'ma20':round(ma20,2),'macd':round(macd,4),'signal':round(signal,4)
+    }
 
 
 def apply(ns):
@@ -128,7 +206,7 @@ def apply(ns):
         news5=round(_clamp(event_score/10.0*5.0,0,5),1)
         sector_raw=float((secmap or {}).get(core.sector_name(q,market),out.get('sector_score',0)) or 0)
         sector5=round(_clamp(sector_raw/10.0*5.0,0,5),1)
-        tech20=_technical20(out)
+        tech20,tech_breakdown=_technical20(q)
         recipe80=round(daily20+volume15+exec20+program15+news5+sector5,1)
         total=round(_clamp(recipe80+tech20,0,100),1)
 
@@ -141,6 +219,7 @@ def apply(ns):
         out['score_model']='RECIPE80+TECH20'
         out['recipe_score']=recipe80
         out['technical_score']=tech20
+        out['technical_breakdown']=tech_breakdown
         out['entry_gate_pass']=bool(not blocked and exec_ok and total>=72.0)
         out['execution_gate_pass']=bool(exec_ok)
         out['execution_gate_reason']=exec_reason
@@ -163,6 +242,7 @@ def apply(ns):
             f'{exec_reason} · {exec20:.1f}/20',
             f'프로그램 순매수 {float(getattr(q,"program_net",0) or 0):,.0f}주 · {program15:.1f}/15',
             f'공시/호재 {news5:.1f}/5 · 섹터수급 {sector5:.1f}/5',
+            f"기술 MA {tech_breakdown.get('MA',0):.1f}/5 · RSI {tech_breakdown.get('RSI',0):.1f}/4 · MACD {tech_breakdown.get('MACD',0):.1f}/4 · 볼린저 {tech_breakdown.get('볼린저',0):.1f}/3 · 구조 {tech_breakdown.get('가격구조',0):.1f}/4",
             '1분봉 진입조건 삭제 · 수신 상태만 감시',
         ]
         if str(getattr(q,'code',''))=='005930' and time.time()-samsung_log[0]>=10:
@@ -172,7 +252,7 @@ def apply(ns):
                 f"daily={daily20:.1f} volume={volume15:.1f} exec={exec20:.1f} program={program15:.1f} "
                 f"news={news5:.1f} sector={sector5:.1f} price={float(getattr(q,'price',0) or 0):.0f} "
                 f"strength={float(getattr(q,'execution_strength',0) or 0):.1f} program_net={float(getattr(q,'program_net',0) or 0):.0f} "
-                f"entry={bool(out['entry_gate_pass'])}", flush=True)
+                f"tech_detail={tech_breakdown} entry={bool(out['entry_gate_pass'])}", flush=True)
         return out
     core.candidate=candidate
 
@@ -198,4 +278,4 @@ def apply(ns):
         core.health_payload=health
     except Exception:pass
 
-    print('NAMUH RECIPE PATCH: KR 80 + TECH20 active; 1m entry gate removed',flush=True)
+    print('NAMUH RECIPE PATCH: KR 80 + TECH20 daily-indicator engine active; 1m entry gate removed',flush=True)
