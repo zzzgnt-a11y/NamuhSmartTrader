@@ -30,12 +30,11 @@
   }
   function syncSmartVisibility(){const wrap=q('#v345SmartMoneySec');if(!wrap)return;const show=mode()==='KR'&&Boolean(lastSession?.kr_active);wrap.classList.toggle('hide',!show)}
 
-  function setClosedState(s){
-    lastSession=s;const m=mode(),closed=q('#candidateClosed'),zone=q('#candidateZone');
-    if(m==='KR'&&!s.kr_active){zone?.classList.add('hide');closed?.classList.remove('hide');const strong=closed?.querySelector('strong')||closed?.querySelector('b');if(strong)strong.textContent='장 종료 · NXT 거래 종료'}
-    syncSmartVisibility();
-  }
+  // app.js is the only owner of candidateZone/candidateClosed.  The previous
+  // session helper also toggled them every 5 seconds, causing KR scalp flicker.
+  function setClosedState(s){lastSession=s;syncSmartVisibility()}
   async function syncSession(){
+    if(document.hidden)return;
     try{const r=await fetch('/api/v344/session',{cache:'no-store'});if(!r.ok)return;const s=await r.json();setClosedState(s);const want=String(s.default_view||'KR').toUpperCase();if(!manual()&&(want==='KR'||want==='US')&&mode()!==want){const b=q(want==='US'?'#usModeLabel':'#krModeLabel');if(b){autoSwitch=true;b.click();setTimeout(()=>{autoSwitch=false;lastMode='';loadEvents(true)},160)}}}catch(e){console.error(e)}
   }
 
@@ -51,12 +50,12 @@
     const score=Number(e.score||0);return `<article class="v344-event-row ${cls}" data-stock="${esc((e.market||mode())+'/'+(e.code||''))}"><div class="v344-event-meta"><span>${esc(e.label||e.form||'공시')}${score?` ${score>0?'+':''}${score.toFixed(0)}`:''}</span><small>${esc(e.date||'')}</small></div><b>${esc(e.corp_name||e.code||'-')}</b><p class="v344-event-titleline">${esc(e.title||'-')}</p><div class="v344-ai"><strong>AI 요약</strong><span>${esc(aiSummary(e))}</span></div><small>${esc(e.source||'공식 공시')}</small></article>`;
   }
   async function loadEvents(reset=true){
-    if(eventBusy)return;const box=buildEventBrowser(),base=q('#eventList');if(!box)return;const m=mode();if(reset||lastMode!==m){eventPage=1;eventTotal=1;lastMode=m}else if(eventPage>=eventTotal)return;
+    if(document.hidden||eventBusy)return;const box=buildEventBrowser(),base=q('#eventList');if(!box)return;const m=mode();if(reset||lastMode!==m){eventPage=1;eventTotal=1;lastMode=m}else if(eventPage>=eventTotal)return;
     eventBusy=true;const page=reset?1:eventPage+1;q('#v344EventStatus').textContent=`${m} · 갱신 중`;
     try{const r=await fetch(`/api/v344/disclosures?market=${m}&months=3&page=${page}&page_size=50`,{cache:'no-store'});if(!r.ok)throw new Error(`HTTP ${r.status}`);const d=await r.json(),rows=d.items||[];if(!d.ok&&d.status)throw new Error(d.status);if(rows.length){if(base)base.style.display='none';box.style.display='flex';if(reset)q('#v344EventList').innerHTML='';q('#v344EventList').insertAdjacentHTML('beforeend',rows.map(eventRow).join(''));eventPage=Number(d.page||page);eventTotal=Number(d.total_page||1);q('#v344EventTitle').textContent=m==='KR'?'최근 3개월 전종목 공시':'최근 3개월 기업공시';q('#v344EventStatus').textContent=`${m} · ${Number(d.total_count??rows.length).toLocaleString()}건 · ${d.source||''}`;q('#v344EventMore').style.display=eventPage<eventTotal?'block':'none'}else{eventPage=1;eventTotal=1;q('#v344EventMore').style.display='none';if(!useLiveEventFallback(d.status||'최근 3개월 공시 없음')){q('#v344EventList').innerHTML=`<div class="empty">${esc(d.status||'최근 3개월 공식 공시 없음')}</div>`}}}catch(e){if(!useLiveEventFallback('3개월 공식 공시 연결 오류 · 실시간 이벤트 표시')){if(reset)q('#v344EventList').innerHTML=`<div class="empty">${esc(e.message||'공시 연결 오류')}</div>`}console.error(e)}finally{eventBusy=false}
   }
 
   function bind(){document.addEventListener('click',e=>{const marketBtn=e.target.closest?.('#krModeLabel,#usModeLabel');if(marketBtn&&!autoSwitch){try{sessionStorage.setItem(manualKey,'1')}catch(_){}setTimeout(()=>{lastMode='';syncSmartVisibility();loadEvents(true)},180)}const row=e.target.closest?.('.v344-event-row[data-stock]');if(row){const key=row.dataset.stock||'';if(key.split('/')[1])location.href='/stock/'+key}},true)}
-  function init(){separateSmartMoney();bind();buildEventBrowser();syncSession();loadEvents(true);setInterval(syncSession,5000);setInterval(()=>loadEvents(true),60000)}
+  function init(){separateSmartMoney();bind();buildEventBrowser();syncSession();loadEvents(true);setInterval(syncSession,15000);setInterval(()=>loadEvents(true),120000);document.addEventListener('visibilitychange',()=>{if(!document.hidden){syncSession();loadEvents(true)}})}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
 })();
