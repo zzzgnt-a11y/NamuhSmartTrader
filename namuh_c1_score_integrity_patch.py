@@ -358,8 +358,10 @@ def apply(ns=None):
             execution12, exec_ok, exec_reason = _execution(core, q, now_dt.timestamp())
             actual_raw, scored_raw, techmeta = _tech_calc(core, q, market, now_dt, c1)
 
+            bd["daily10"] = round(_floor1(bd.get("daily10"), 10), 1)
             bd["minute10"] = minute10
             bd["execution12"] = execution12
+            bd["orderbook8"] = round(_floor1(bd.get("orderbook8"), 8), 1)
             raw_total = sum(scored_raw[k] for k in TECH_MAX)
             standard45 = round(_clamp(raw_total / 75.0 * 45.0, 0, 45), 1)
             bd["standard45"] = standard45
