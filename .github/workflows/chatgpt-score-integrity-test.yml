@@ -10,27 +10,19 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Find NHPLUG execution-strength source
+      - name: Inspect currentExecution schema
         run: |
           python - <<'PY'
           import json, urllib.request
-          with urllib.request.urlopen('https://www.nhplug.com/openapi-docs/krstock/openapi.json',timeout=30) as r: spec=json.load(r)
-          def scan(x,path=''):
-              if isinstance(x,dict):
-                  desc=str(x.get('description') or '')
-                  if '체결강도' in desc:
-                      print('EXEC_STRENGTH',path,'DESC=',desc[:160])
-                  for k,v in x.items(): scan(v,f'{path}/{k}')
-              elif isinstance(x,list):
-                  for i,v in enumerate(x): scan(v,f'{path}/{i}')
-          scan(spec)
-          print('PATHS')
-          for p in spec.get('paths',{}):
-              if any(t in p.lower() for t in ('time','tick','cont','execution','current')):
-                  print(p)
-          print('REALTIME_TOP_KEYS', list((spec.get('x-realtime-channels') or {}).keys()))
-          print('REALTIME_RAW_TYPE', type(spec.get('x-realtime-channels')).__name__)
-          print('REALTIME_RAW_PREFIX', str(spec.get('x-realtime-channels'))[:5000])
+          with urllib.request.urlopen('https://www.nhplug.com/openapi-docs/krstock/openapi.json',timeout=30) as r: s=json.load(r)
+          p=s['paths']['/krstock/quote/v1/currentExecution']['post']
+          sch=p['responses']['200']['content']['application/json']['schema']['properties']
+          for outname,node in sch.items():
+              target=node
+              if target.get('type')=='array': target=target.get('items',{})
+              props=target.get('properties',{})
+              print('OUTPUT',outname,'TYPE',node.get('type'),'FIELDS')
+              for k,v in props.items(): print(k,'=',str(v.get('description') or '')[:90])
+          rb=p.get('requestBody',{}).get('content',{}).get('application/json',{}).get('schema',{})
+          print('REQUEST',json.dumps(rb,ensure_ascii=False)[:5000])
           PY
-      - name: Syntax
-        run: python -m py_compile namuh_c1_score_integrity_patch.py namuh_score_floor1_history_patch.py
