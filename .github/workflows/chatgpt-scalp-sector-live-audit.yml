@@ -10,37 +10,20 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Audit live detector and sector flow
+      - name: Inspect live cache and universe
         run: |
           python - <<'PY'
-          import json,time,urllib.request
+          import json,urllib.request
           base='https://namuh-smart-trader.onrender.com'
-          def get(path,timeout=45):
-              req=urllib.request.Request(base+path,headers={'User-Agent':'NamuhScalpSectorAudit/1.0'})
-              with urllib.request.urlopen(req,timeout=timeout) as r:return json.load(r)
+          def get(path):
+              req=urllib.request.Request(base+path,headers={'User-Agent':'NamuhScalpCacheAudit/1.0'})
+              with urllib.request.urlopen(req,timeout=60) as r:return json.load(r)
           h=get('/api/v34/status')
-          print('HEALTH',json.dumps({'build':h.get('build'),'scalp_sector_final':h.get('scalp_sector_final'),'diag':h.get('diagnostics')},ensure_ascii=False,sort_keys=True))
-          samples=[]
-          for i in range(5):
-              u=get('/api/v352/universe?market=KR&catalog=0')
-              rows=u.get('scores') or []
-              sample=[{'code':x.get('code'),'name':x.get('name'),'score':x.get('score'),'sector':x.get('sector')} for x in rows[:30]]
-              samples.append(sample)
-              print('SAMPLE',i,json.dumps(sample,ensure_ascii=False))
-              time.sleep(8)
-          uniq=sorted({x['code'] for s in samples for x in s if x.get('code')})
-          print('DIVERSITY',json.dumps({'unique_top30':len(uniq),'codes':uniq},ensure_ascii=False))
           st=get('/api/state?market=KR')
-          secs=st.get('sectors') or []
-          print('SECTORS',json.dumps(secs[:8],ensure_ascii=False))
-          leaders=[]
-          for x in secs[:5]:
-              c=str(x.get('leader_code') or '')
-              if c and c not in leaders:leaders.append(c)
-          for c in leaders[:5]:
-              try:
-                  p=get('/api/v364/investor-probe?code='+c)
-                  print('PROBE',c,json.dumps(p,ensure_ascii=False))
-              except Exception as e:
-                  print('PROBE_ERR',c,type(e).__name__,str(e)[:200])
+          u=get('/api/v352/universe?market=KR&catalog=0')
+          print('HEALTH',json.dumps({'build':h.get('build'),'loop':h.get('loop'),'scalp_sector_final':h.get('scalp_sector_final'),'diag':h.get('diagnostics')},ensure_ascii=False))
+          for k in ('scalp','candidates','scores'):
+              if k in st: print('STATE_'+k.upper(),json.dumps(st.get(k),ensure_ascii=False))
+          print('STATE_KEYS',sorted(st.keys()))
+          print('UNIVERSE',json.dumps(u,ensure_ascii=False))
           PY
