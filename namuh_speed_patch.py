@@ -54,14 +54,16 @@ def _install_health_shield(ns, ttl=10.0):
 def apply(ns=None):
     # Speed only: do not alter strategy, scoring, UI layout, filters, or calendars.
     shield = _install_health_shield(ns, 10.0)
-    # Maximum practical UI polling: stock 1s, time-AI 1s, coin 1s.
     _rewrite('static/app.js', [
         (r'setInterval\(refresh\s*,\s*(?:1000|3000|5000|10000)\)', 'setInterval(refresh,1000)'),
     ])
+    # Universe results are server-cached for multiple seconds. Polling every
+    # second only creates redundant request/JSON/DOM work and increases
+    # contention with /api/state. Five seconds preserves visible freshness.
     _rewrite('static/v364_main.js', [
-        (r'setInterval\(loadScores\s*,\s*(?:1000|5000|10000|20000)\)', 'setInterval(loadScores,1000)'),
+        (r'setInterval\(loadScores\s*,\s*(?:1000|5000|10000|20000)\)', 'setInterval(loadScores,5000)'),
     ])
     _rewrite('static/coin.js', [
         (r'setInterval\(refresh\s*,\s*(?:1000|3000|5000|10000)\)', 'setInterval(refresh,1000)'),
     ])
-    print(f'NAMUH SPEED PATCH active: health10={shield} stock=1s AI=1s coin=1s', flush=True)
+    print(f'NAMUH SPEED PATCH active: health10={shield} AI=5s', flush=True)
