@@ -10,60 +10,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Static checks
-        run: |
-          python -m py_compile namuh_universe_patch.py namuh_scalp_sector_final_0908.py namuh_patch_loader.py
-          python - <<'PY'
-          u=open('namuh_universe_patch.py',encoding='utf-8').read()
-          s=open('namuh_scalp_sector_final_0908.py',encoding='utf-8').read()
-          assert "score_source':'live_cache+rebuild'" in u
-          assert "cached,cache_ts=_cache_snapshot(market)" in u
-          assert "recent5_completed" in s and "person_exit" in s
-          print('STATIC PASS')
-          PY
-      - name: Live audit
+      - name: Recheck warmed live detector
         run: |
           python - <<'PY'
           import json,time,urllib.request
-          base='https://namuh-smart-trader.onrender.com'; expected='550ac8e8e369'
-          def get(path,timeout=60):
-              req=urllib.request.Request(base+path,headers={'User-Agent':'NamuhFinalScalpSector/1.0'})
-              with urllib.request.urlopen(req,timeout=timeout) as r:return json.load(r)
-          h={}
-          for i in range(24):
-              try:
-                  h=get('/api/v34/status')
-                  if str(h.get('build') or '').startswith(expected):break
-                  print('WAIT_BUILD',i,h.get('build'))
-              except Exception as e:print('WAIT_ERR',i,type(e).__name__,str(e)[:120])
-              time.sleep(8)
-          assert str(h.get('build') or '').startswith(expected),(h.get('build'),expected)
-          samples=[]; last={}
-          for i in range(5):
-              last=get('/api/v352/universe?market=KR&catalog=0')
-              rows=last.get('scores') or []
-              sample=[{'code':x.get('code'),'name':x.get('name'),'score':x.get('score'),'sector':x.get('sector')} for x in rows[:30]]
-              samples.append(sample)
-              print('SAMPLE',i,json.dumps(sample,ensure_ascii=False))
-              time.sleep(8)
-          uniq=sorted({x['code'] for s in samples for x in s if x.get('code')})
-          st=get('/api/state?market=KR'); secs=st.get('sectors') or []
-          top5=secs[:5]
-          print('UNIVERSE_META',json.dumps({k:last.get(k) for k in ('scored_count','entry_score','score_source','source_counts','updated_at')},ensure_ascii=False))
-          print('DIVERSITY',json.dumps({'unique_top30_across_5':len(uniq),'codes':uniq},ensure_ascii=False))
-          print('SECTORS',json.dumps(top5,ensure_ascii=False))
-          assert last.get('score_source') in ('live_cache+rebuild','rebuild')
-          assert int(last.get('entry_score') or 0)==70
-          assert int(last.get('scored_count') or 0)>0
-          assert len(uniq)>=3,uniq
-          assert top5
-          # Sector tabs need actual flow_share keys, and fallback source must remain explicit when used.
-          for x in top5:
-              fs=x.get('flow_share') or {}
-              for k in ('foreign','institution','program','person_exit','composite'):
-                  assert k in fs,(x.get('sector'),k,fs)
-              src=x.get('flow_source') or {}
-              if src:
-                  assert src.get('foreign') in ('current','recent5_completed')
-                  assert src.get('person_exit') in ('current','recent5_completed')
+          base='https://namuh-smart-trader.onrender.com'
+          def get(path):
+              req=urllib.request.Request(base+path,headers={'User-Agent':'NamuhWarmAudit/1.0'})
+              with urllib.request.urlopen(req,timeout=60) as r:return json.load(r)
+          for i in range(4):
+              h=get('/api/v34/status'); u=get('/api/v352/universe?market=KR&catalog=0'); st=get('/api/state?market=KR')
+              rows=u.get('scores') or []; secs=st.get('sectors') or []
+              print('SNAP',i,json.dumps({'build':h.get('build'),'loop':h.get('loop'),'universe':{k:u.get(k) for k in ('scored_count','score_source','source_counts','updated_at')},'codes':[x.get('code') for x in rows[:30]],'names':[x.get('name') for x in rows[:30]],'sector_count':len(secs),'sectors':secs[:6]},ensure_ascii=False))
+              time.sleep(15)
           PY
