@@ -78,13 +78,8 @@ def install():
                         import namuh_conditions_final_patch;namuh_conditions_final_patch.apply(ns)
                         import namuh_coin_position50_patch;namuh_coin_position50_patch.apply(ns)
                         import namuh_c3_sync_price_patch;namuh_c3_sync_price_patch.apply(ns)
-                        # UI366 remains the static score-map owner, but its old
-                        # stock-detail candidate recomputation is disabled here;
-                        # the final consistency owner supplies the exact main-page row.
                         setattr(ns['core'],'_NAMUH_UI366_DETAIL',True)
                         import namuh_ui366_patch;namuh_ui366_patch.apply(ns)
-                        # Keep zero/data-wait auditing without the old history-backed
-                        # detail recomputation that caused main/detail score drift.
                         import namuh_zero_score_audit_patch;namuh_zero_score_audit_patch.apply(ns)
                         import namuh_score_floor1_history_patch;namuh_score_floor1_history_patch.apply(ns)
                         import namuh_live_quote_integrity_patch;namuh_live_quote_integrity_patch.apply(ns)
@@ -93,6 +88,7 @@ def install():
                         import namuh_runtime_traffic_guard;namuh_runtime_traffic_guard.apply(ns)
                         import namuh_requested_fixes_0908;namuh_requested_fixes_0908.apply(ns)
                         import namuh_market_consistency_patch;namuh_market_consistency_patch.apply(ns)
+                        import namuh_final_runtime_0908;namuh_final_runtime_0908.apply(ns)
                 except Exception as exc:
                     print('NAMUH USER15 LATE PATCH ERROR:',str(exc)[:220],flush=True)
                 return _prev_run(*args,**kwargs)
