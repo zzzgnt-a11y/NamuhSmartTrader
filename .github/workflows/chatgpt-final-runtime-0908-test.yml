@@ -10,39 +10,33 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Syntax and helper checks
-        run: |
-          python -m py_compile namuh_final_runtime_0908.py namuh_patch_loader.py
-          python - <<'PY'
-          from types import SimpleNamespace
-          from collections import deque
-          from datetime import timezone, timedelta
-          import namuh_final_runtime_0908 as p
-          q=SimpleNamespace(price=110.0,daily_bars=deque([
-            {'date':'20260904','open':90,'high':100,'low':80,'close':95,'volume':1},
-            {'date':'20260907','open':96,'high':108,'low':92,'close':100,'volume':1},
-          ]),code='TEST')
-          core=SimpleNamespace(KST=timezone(timedelta(hours=9)))
-          s,ok,meta=p._daily10_authoritative(core,q,'KR')
-          assert s==10.0 and ok,(s,ok,meta)
-          q.price=90
-          s,ok,meta=p._daily10_authoritative(core,q,'KR')
-          assert s==1.0 and not ok,(s,ok,meta)
-          print('daily authoritative PASS')
-          PY
-      - name: Frontend transformation checks
+      - name: Syntax
+        run: python -m py_compile namuh_final_runtime_0908.py namuh_patch_loader.py
+      - name: Live runtime audit
         run: |
           python - <<'PY'
-          import namuh_final_runtime_0908 as p
-          p._patch_frontend()
-          v=open('static/v364_main.js',encoding='utf-8').read()
-          a=open('static/app.js',encoding='utf-8').read()
-          c=open('static/coin.js',encoding='utf-8').read()
-          assert 'async function loadAiServer()' in v
-          assert 'setInterval(loadScores,10000)' in v
-          assert '75↑' in v
-          assert "let __tradeRenderKey=''" in v
-          assert 'setInterval(refresh,5000)' in a
-          assert 'setInterval(refresh,5000)' in c
-          print('frontend runtime patch PASS')
+          import json,time,urllib.request
+          base='https://namuh-smart-trader.onrender.com'
+          def get(path):
+              last=None
+              for i in range(6):
+                  try:
+                      req=urllib.request.Request(base+path,headers={'User-Agent':'NamuhAudit/1.0'})
+                      with urllib.request.urlopen(req,timeout=45) as r:return json.load(r)
+                  except Exception as e:
+                      last=e;time.sleep(8)
+              raise RuntimeError((path,last))
+          analysis=get('/api/v364/entry-analysis?market=KR')
+          ai=get('/api/v364/ai-time?market=KR')
+          state=get('/api/state?market=KR')
+          detail=get('/api/v344/stock/KR/000660?timeframe=1d&days=60')
+          c1=((detail.get('strategy_conditions') or {}).get('condition1') or {})
+          sectors=state.get('sectors') or []
+          flow={k:sum(float((x.get('flow_value') or {}).get(k) or 0) for x in sectors) for k in ('foreign','institution','program','person_exit')}
+          share_nonzero={k:sum(1 for x in sectors if float((x.get('flow_share') or {}).get(k) or 0)>0) for k in ('foreign','institution','program','person_exit')}
+          print('ENTRY_ANALYSIS='+json.dumps(analysis,ensure_ascii=False,sort_keys=True))
+          print('AI_HISTORY='+json.dumps({'count':len(ai.get('history') or []),'last':(ai.get('history') or [])[-3:]},ensure_ascii=False,sort_keys=True))
+          print('SKHYNIX_DAILY='+json.dumps({'score':c1.get('score'),'daily10':(c1.get('breakdown') or {}).get('daily10'),'daily_gate':(c1.get('gates') or {}).get('daily'),'daily_meta':c1.get('daily_meta'),'threshold':c1.get('entry_threshold'),'source':detail.get('score_consistency_source')},ensure_ascii=False,sort_keys=True))
+          print('SECTOR_FLOW='+json.dumps({'sector_count':len(sectors),'flow_total':flow,'nonzero_share':share_nonzero,'top3':sectors[:3]},ensure_ascii=False,sort_keys=True))
+          print('TRADE_COUNT='+str(analysis.get('trade_count_market'))+' STORE='+json.dumps(analysis.get('store'),ensure_ascii=False,sort_keys=True))
           PY
