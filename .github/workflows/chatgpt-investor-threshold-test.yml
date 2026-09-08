@@ -1,0 +1,39 @@
+name: ChatGPT Investor Threshold Test
+on:
+  push:
+    branches: [chatgpt-investor-threshold-test-0908]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Syntax
+        run: python -m py_compile namuh_investor_merge_final.py namuh_threshold75_final.py namuh_patch_loader.py
+      - name: Merge parser test
+        run: |
+          python - <<'PY'
+          from types import SimpleNamespace
+          from collections import deque
+          import namuh_investor_merge_final as p
+          class Q:
+              def __init__(self): self.foreign_net=0; self.institution_net=0; self.program_net=0; self.person_net=0
+              def update_flow(self,foreign=None,institution=None,program=None):
+                  if foreign is not None:self.foreign_net=foreign
+                  if institution is not None:self.institution_net=institution
+                  if program is not None:self.program_net=program
+          class Feed:
+              def __init__(self): self.qq=Q()
+              def q(self,m,c): return self.qq
+              def _apply_investor(self,c,d): pass
+              def _apply_kr(self,c,d): pass
+          feed=Feed();core=SimpleNamespace(feed=feed)
+          assert p.apply({'core':core})
+          payload={'Output_0':[{'bsop_date1':'20260908','frgn_ntby_qty':'120','prsn_ntby_qty':'-80'},{'bsop_date1':'20260908','orgn_ntby_qty':'50','prgm_ntby_qty':'20'}]}
+          feed._apply_investor('005930',payload)
+          q=feed.qq
+          assert (q.foreign_net,q.institution_net,q.person_net,q.program_net)==(120.0,50.0,-80.0,20.0),(q.foreign_net,q.institution_net,q.person_net,q.program_net)
+          print('merged investor PASS',q.foreign_net,q.institution_net,q.person_net,q.program_net)
+          PY
