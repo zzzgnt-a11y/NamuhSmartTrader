@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#f3f6fb">
+  <title>GY Stock Intelligence</title>
+  <link rel="stylesheet" href="/static/rebuild.css?v=1">
+</head>
+<body>
+  <header class="rb-top"><div class="rb-detailtop"><button id="backBtn" class="rb-back" type="button">← MARKET</button><div><b>GY STOCK INTELLIGENCE</b><div id="error" class="rb-msg"></div></div></div></header>
+  <main class="rb-detailpage">
+    <section class="rb-card rb-detailhero"><div><div class="rb-eyebrow">OFFICIAL DATA · STOCK DETAIL</div><h1 id="stockName">종목 로딩 중</h1><p id="stockMeta">공식 데이터 연결 중</p></div><div class="rb-price" id="stockPrice">—</div></section>
+    <section class="rb-card rb-section"><div class="rb-sectionhead"><div><small>01 · PRICE</small><h2>공식 캔들 차트</h2></div><div class="rb-tfs"><button data-tf="1m">1분</button><button data-tf="3m">3분</button><button data-tf="5m">5분</button><button data-tf="20m">20분</button><button data-tf="1d" class="active">일봉</button></div></div><div id="chartStatus" class="rb-msg">공식 OHLC 데이터 로딩 중</div><div class="rb-chartwrap"><canvas id="candle"></canvas></div></section>
+    <section class="rb-two"><article class="rb-card rb-section"><div class="rb-sectionhead"><div><small>02 · AI</small><h2>시간대별 AI 점수</h2></div><span>봉별 판단</span></div><div id="scoreGrid" class="rb-scoregrid"></div><div id="reasons" class="rb-reasons"></div></article><article class="rb-card rb-section"><div class="rb-sectionhead"><div><small>03 · LIVE FLOW</small><h2>현재 수급</h2></div><span>NHPLUG</span></div><div id="flowGrid" class="rb-flowgrid"></div></article></section>
+    <section class="rb-two"><article class="rb-card rb-section"><div class="rb-sectionhead"><div><small>04 · SCORE MAP</small><h2>AI 점수 분해</h2></div><span>구성 점수</span></div><div id="breakdown" class="rb-break"></div></article><article class="rb-card rb-section"><div class="rb-sectionhead"><div><small>05 · INVESTOR FLOW</small><h2>20거래일 수급</h2></div><span id="flow20Status">연결 중</span></div><div id="flow20" class="rb-list"><div class="rb-empty">수급 축적 중</div></div></article></section>
+    <section class="rb-card rb-section"><div class="rb-sectionhead"><div><small>06 · DISCLOSURE</small><h2>최근 3개월 공식 공시</h2></div><span>공식 원문 연결</span></div><div id="events"><div class="rb-empty">공시 불러오는 중</div></div></section>
+  </main>
+  <script src="/static/rebuild-stock.js?v=1"></script>
+</body>
+</html>
