@@ -40,7 +40,6 @@ def apply(ns):
     _INSTALLED = True
     feed = core.feed
 
-    # Final lightweight owner. It only removes/repairs the requested UI pieces.
     try:
         inject = ns.get("_inject")
         if callable(inject):
@@ -154,9 +153,9 @@ def apply(ns):
 
     def build_forecast():
         nonlocal forecast
-        # Startup speed guard: this 5-year KRX history fetch is useful for
-        # SMART MONEY but must never compete with the first dashboard paint.
-        if feed._stop.wait(30):
+        # Keep the expensive five-year KRX history job completely outside the
+        # first-load window. SMART MONEY still receives the same result later.
+        if feed._stop.wait(120):
             return
         with forecast_lock:
             if forecast.get("loading"):
