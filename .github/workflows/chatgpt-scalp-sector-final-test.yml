@@ -33,12 +33,12 @@ jobs:
           base='https://namuh-smart-trader.onrender.com'
           expected='14d5fed0d42f'
           def get(path,timeout=45):
-              req=urllib.request.Request(base+path,headers={'User-Agent':'NamuhScalpSectorFinalAudit/1.0'})
+              req=urllib.request.Request(base+path,headers={'User-Agent':'NamuhScalpSectorFinalAudit/2.0'})
               with urllib.request.urlopen(req,timeout=timeout) as r:return json.load(r)
           h={}
           for i in range(30):
               try:
-                  h=get('/api/v34/status')
+                  h=get('/api/health')
                   if str(h.get('build') or '').startswith(expected):
                       print('BUILD_READY',h.get('build'));break
                   print('WAIT_BUILD',i,h.get('build'))
@@ -46,9 +46,9 @@ jobs:
               time.sleep(10)
           assert str(h.get('build') or '').startswith(expected),(h.get('build'),expected)
           samples=[];last_health={};last_state={}
-          for i in range(12):
+          for i in range(15):
               try:
-                  h=get('/api/v34/status');last_health=h
+                  h=get('/api/health');last_health=h
                   u=get('/api/v352/universe?market=KR&catalog=0')
                   s=get('/api/state?market=KR');last_state=s
                   codes=[str(x.get('code') or '') for x in (u.get('scores') or [])[:30]]
