@@ -1,0 +1,43 @@
+name: ChatGPT Investor Probe Live
+on:
+  workflow_dispatch:
+  push:
+    branches: [chatgpt-stability70-live2-0908]
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Probe live investor fields
+        run: |
+          python - <<'PY'
+          import json,time,urllib.request
+          base='https://namuh-smart-trader.onrender.com'
+          def get(path,timeout=45):
+              req=urllib.request.Request(base+path,headers={'User-Agent':'NamuhInvestorProbe/1.0'})
+              with urllib.request.urlopen(req,timeout=timeout) as r:return json.load(r)
+          for i in range(24):
+              try:
+                  h=get('/api/v34/status')
+                  if str(h.get('build') or '').startswith('2e413126e5dc'):
+                      print('BUILD_READY',h.get('build'));break
+                  print('WAIT',i,h.get('build'))
+              except Exception as e:print('ERR',i,type(e).__name__,e)
+              time.sleep(10)
+          for code in ('000660','005930','012450','035420'):
+              try:
+                  d=get('/api/v364/investor-probe?code='+code)
+                  print('PROBE',code,json.dumps(d,ensure_ascii=False,sort_keys=True))
+              except Exception as e:print('PROBE_ERR',code,type(e).__name__,e)
+          try:
+              s=get('/api/state?market=KR')
+              print('SECTORS',json.dumps((s.get('sectors') or [])[:5],ensure_ascii=False,sort_keys=True))
+          except Exception as e:print('SECTOR_ERR',type(e).__name__,e)
+          try:
+              u=get('/api/v352/universe?market=KR&catalog=0')
+              print('UNIVERSE',json.dumps({'count':u.get('scored_count'),'codes':[x.get('code') for x in (u.get('scores') or [])[:30]]},ensure_ascii=False))
+          except Exception as e:print('UNIVERSE_ERR',type(e).__name__,e)
+          PY
