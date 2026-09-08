@@ -27,17 +27,18 @@ def apply(ns=None):
 
     def merged_investor(code, data):
         parsed = {}
-        any_investor = False
         for o in walk(data):
             if not isinstance(o, dict):
                 continue
-            fk, fv = _present(o, ('frgn_ntby_qty', 'invest'))
+            # NH currentInvestor exposes `frgn_ntby_qty` and `invest` together
+            # with different values. `invest` is NOT an alias for foreign flow;
+            # only the explicit foreign field may populate the foreign bucket.
+            fk, fv = _present(o, ('frgn_ntby_qty', 'foreign'))
             ik, iv = _present(o, ('orgn_ntby_qty', 'gigwan'))
             pk, pv = _present(o, ('prsn_ntby_qty', 'person'))
             gk, gv = _present(o, ('prgm_ntby_qty', 'pgtr_ntby_qty', 'program'))
             if not any((fk, ik, pk, gk)):
                 continue
-            any_investor = True
             d = normalize_date(
                 o.get('bsop_date1') or o.get('bsop_date2') or o.get('bsop_date')
                 or o.get('stck_bsop_date') or o.get('trade_date') or o.get('date')
@@ -45,9 +46,6 @@ def apply(ns=None):
             )
             if not d:
                 continue
-            # Important: currentInvestor can expose the same date through several
-            # partial output objects. Merge fields instead of overwriting the whole
-            # date row with zeros from the last partial object.
             row = parsed.setdefault(d, {'date': d, 'foreign': None, 'institution': None, 'person': None, 'program': None})
             if fk: row['foreign'] = num(fv)
             if ik: row['institution'] = num(iv)
@@ -87,24 +85,23 @@ def apply(ns=None):
     merged_investor._old = old_inv
     feed._apply_investor = merged_investor
 
-    # currentPrice already arrives for every scanned KR quote. Reuse any investor
-    # fields present there as a zero-extra-request fallback, especially foreign
-    # net flow. Do not fabricate personal flow from other categories.
+    # currentPrice fallback may update only fields that are explicitly present.
+    # Never reinterpret `invest` as foreign flow.
     old_kr = getattr(feed, '_apply_kr', None)
     if callable(old_kr) and not getattr(old_kr, '_namuh_investor_fallback', False):
         def apply_kr(code, data):
             old_kr(code, data)
             q = feed.q('KR', code)
             objs = [o for o in walk(data) if isinstance(o, dict)]
-            found_f = any(('frgn_ntby_qty' in o and o.get('frgn_ntby_qty') not in (None, '')) or ('invest' in o and o.get('invest') not in (None, '')) for o in objs)
+            found_f = any(('frgn_ntby_qty' in o and o.get('frgn_ntby_qty') not in (None, '')) or ('foreign' in o and o.get('foreign') not in (None, '')) for o in objs)
             found_p = any(('pgtr_ntby_qty' in o and o.get('pgtr_ntby_qty') not in (None, '')) or ('prgm_ntby_qty' in o and o.get('prgm_ntby_qty') not in (None, '')) or ('program' in o and o.get('program') not in (None, '')) for o in objs)
             if found_f or found_p:
-                f = pick(data, ('frgn_ntby_qty', 'invest')) if found_f else None
+                f = pick(data, ('frgn_ntby_qty', 'foreign')) if found_f else None
                 p = pick(data, ('pgtr_ntby_qty', 'prgm_ntby_qty', 'program')) if found_p else None
                 q.update_flow(foreign=f, program=p)
         apply_kr._namuh_investor_fallback = True
         feed._apply_kr = apply_kr
 
     _INSTALLED = True
-    print('NAMUH INVESTOR MERGE FINAL active: merge partial currentInvestor rows + currentPrice foreign fallback', flush=True)
+    print('NAMUH INVESTOR MERGE FINAL active: explicit foreign field + merged investor rows', flush=True)
     return True
