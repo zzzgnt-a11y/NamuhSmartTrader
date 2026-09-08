@@ -1,0 +1,48 @@
+name: ChatGPT Final Runtime 0908 Test
+on:
+  push:
+    branches: [chatgpt-final-runtime-0908-test]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Syntax and helper checks
+        run: |
+          python -m py_compile namuh_final_runtime_0908.py namuh_patch_loader.py
+          python - <<'PY'
+          from types import SimpleNamespace
+          from collections import deque
+          from datetime import timezone, timedelta
+          import namuh_final_runtime_0908 as p
+          q=SimpleNamespace(price=110.0,daily_bars=deque([
+            {'date':'20260904','open':90,'high':100,'low':80,'close':95,'volume':1},
+            {'date':'20260907','open':96,'high':108,'low':92,'close':100,'volume':1},
+          ]),code='TEST')
+          core=SimpleNamespace(KST=timezone(timedelta(hours=9)))
+          s,ok,meta=p._daily10_authoritative(core,q,'KR')
+          assert s==10.0 and ok,(s,ok,meta)
+          q.price=90
+          s,ok,meta=p._daily10_authoritative(core,q,'KR')
+          assert s==1.0 and not ok,(s,ok,meta)
+          print('daily authoritative PASS')
+          PY
+      - name: Frontend transformation checks
+        run: |
+          python - <<'PY'
+          import namuh_final_runtime_0908 as p
+          p._patch_frontend()
+          v=open('static/v364_main.js',encoding='utf-8').read()
+          a=open('static/app.js',encoding='utf-8').read()
+          c=open('static/coin.js',encoding='utf-8').read()
+          assert 'async function loadAiServer()' in v
+          assert 'setInterval(loadScores,10000)' in v
+          assert '75↑' in v
+          assert "let __tradeRenderKey=''" in v
+          assert 'setInterval(refresh,5000)' in a
+          assert 'setInterval(refresh,5000)' in c
+          print('frontend runtime patch PASS')
+          PY
