@@ -147,6 +147,10 @@ def install():
                         # use chart history for display when live tick history is still warming up.
                         import namuh_standard_detail_fix
                         namuh_standard_detail_fix.apply(ns)
+                        # Final score/data owner: connect the existing shared minute-history
+                        # collector and apply a 1-point floor only to C1 entry + 7 technical items.
+                        import namuh_score_floor1_history_patch
+                        namuh_score_floor1_history_patch.apply(ns)
                 except Exception as exc:
                     print('NAMUH USER15 LATE PATCH ERROR:',str(exc)[:220],flush=True)
                 return _prev_run(*args,**kwargs)
