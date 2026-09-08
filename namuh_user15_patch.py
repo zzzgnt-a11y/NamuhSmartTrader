@@ -153,8 +153,6 @@ def apply(ns):
 
     def build_forecast():
         nonlocal forecast
-        # Keep the expensive five-year KRX history job completely outside the
-        # first-load window. SMART MONEY still receives the same result later.
         if feed._stop.wait(120):
             return
         with forecast_lock:
@@ -218,7 +216,14 @@ def apply(ns):
 
     try:
         import v343_features as v343
-        threading.Thread(target=v343._refresh_market_flow, kwargs={"force": False}, daemon=True, name="market-flow-warm").start()
+        def market_flow_warm():
+            if feed._stop.wait(90):
+                return
+            try:
+                v343._refresh_market_flow(force=False)
+            except Exception:
+                pass
+        threading.Thread(target=market_flow_warm, daemon=True, name="market-flow-warm").start()
     except Exception:
         pass
 
