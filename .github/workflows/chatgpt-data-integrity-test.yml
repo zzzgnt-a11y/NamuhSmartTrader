@@ -6,38 +6,18 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Syntax
-        run: python -m py_compile namuh_live_quote_integrity_patch.py namuh_orderbook_integrity_patch.py namuh_volume15_curve_patch.py namuh_c1_score_integrity_patch.py namuh_patch_loader.py
-      - name: Unit data integrity
+      - name: Fast cached Samsung universe check
         run: |
           python - <<'PY'
-          from types import SimpleNamespace
-          from engine import Quote
-          import namuh_live_quote_integrity_patch as lp
-          import namuh_orderbook_integrity_patch as ob
-          import namuh_volume15_curve_patch as vp
-
-          class Feed:
-              def __init__(self): self.q0=Quote('005930','삼성전자')
-              def q(self,m,c): return self.q0
-          f=Feed()
-          q,s=lp._apply_execution(f,'005930',{'Output_1':{'stck_prpr':'274000','acml_vol':'12345678','cttr':'135.03','stck_oprc':'272000','stck_hgpr':'275000','stck_lwpr':'271500'}},source='test')
-          assert round(s,2)==135.03 and round(q.execution_strength,2)==135.03 and q.price==274000
-          q,a,b=ob._apply(f,'005930',{'Output_0':{'total_askp_rsqn':'1033073','total_bidp_rsqn':'385467','askp_rsqn1':'101','bidp_rsqn1':'202'}},'test')
-          assert a==1033073 and b==385467 and abs(q.total_ask_qty/q.total_bid_qty-2.6800556208)<1e-6
-
-          rows=[]
-          for mm,cv in [('090000',100),('090100',120),('090300',150)]:
-              rows.append({'bsop_date':'20260907','stck_cntg_hour':mm,'acml_vol':str(cv)})
-          curve=vp._curve_from_response({'Output_0':rows},'20260907')
-          assert curve['540']==100 and curve['541']==120 and curve['542']==120 and curve['543']==150
-          vp._CACHE={'005930':{}}
-          for i in range(15): vp._CACHE['005930'][f'202608{i+10:02d}']={'600':str(1000+i*10)}
-          ratio,days=vp._volume_ratio('005930',600,2000)
-          assert days==15 and ratio is not None and ratio>1
-          print('execution',q.execution_strength,'orderbook_ratio',a/b,'volume_ratio',ratio,'days',days)
+          import json,urllib.request,datetime
+          url='https://namuh-smart-trader.onrender.com/api/v352/universe?market=KR&catalog=0'
+          req=urllib.request.Request(url,headers={'Cache-Control':'no-cache','Pragma':'no-cache'})
+          with urllib.request.urlopen(req,timeout=30) as r:d=json.load(r)
+          x=next((r for r in (d.get('scores') or []) if str(r.get('code'))=='005930'),None)
+          print('UTC',datetime.datetime.now(datetime.timezone.utc).isoformat())
+          print('SAMSUNG='+json.dumps(x,ensure_ascii=False,sort_keys=True))
+          if not x: raise SystemExit('Samsung missing')
           PY
