@@ -79,16 +79,15 @@ def install():
                         import namuh_coin_position50_patch;namuh_coin_position50_patch.apply(ns)
                         import namuh_c3_sync_price_patch;namuh_c3_sync_price_patch.apply(ns)
                         import namuh_ui366_patch;namuh_ui366_patch.apply(ns)
-                        import namuh_search_stable_patch;namuh_search_stable_patch.apply(ns)
                         import namuh_standard_detail_fix;namuh_standard_detail_fix.apply(ns)
                         import namuh_score_floor1_history_patch;namuh_score_floor1_history_patch.apply(ns)
                         import namuh_live_quote_integrity_patch;namuh_live_quote_integrity_patch.apply(ns)
                         import namuh_orderbook_integrity_patch;namuh_orderbook_integrity_patch.apply(ns)
-                        # Full 15-session cumulative-volume curves prevent a new DATA_WAIT every minute.
                         import namuh_volume15_curve_patch;namuh_volume15_curve_patch.apply(ns)
-                        # Absolute-final transport guard: preserve score formulas while removing the
-                        # duplicate full-catalog REST load that made the site unresponsive.
                         import namuh_runtime_traffic_guard;namuh_runtime_traffic_guard.apply(ns)
+                        # Absolute-final user-requested owner: sector mapping/bonus,
+                        # weighted Standard45, and original v34 search UI without viewport flicker.
+                        import namuh_requested_fixes_0908;namuh_requested_fixes_0908.apply(ns)
                 except Exception as exc:
                     print('NAMUH USER15 LATE PATCH ERROR:',str(exc)[:220],flush=True)
                 return _prev_run(*args,**kwargs)
