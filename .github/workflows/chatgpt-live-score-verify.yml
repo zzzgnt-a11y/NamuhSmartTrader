@@ -9,24 +9,44 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Samsung exact-score progress
+      - name: Samsung final exact score
         run: |
           python - <<'PY'
-          import json,urllib.request,time
+          import json,urllib.request,time,datetime
           url='https://namuh-smart-trader.onrender.com/api/v344/stock/KR/005930?timeframe=1m&days=60'
-          for i in range(3):
-              with urllib.request.urlopen(urllib.request.Request(url,headers={'Cache-Control':'no-cache'}),timeout=60) as r:d=json.load(r)
+          final=None
+          for i in range(18):
+              req=urllib.request.Request(url,headers={'Cache-Control':'no-cache','Pragma':'no-cache','User-Agent':'NamuhFinalVerifier/1.0'})
+              with urllib.request.urlopen(req,timeout=70) as r:d=json.load(r)
               c1=((d.get('strategy_conditions') or {}).get('condition1') or {})
               c2=((d.get('strategy_conditions') or {}).get('condition2') or {})
               tm=c1.get('technical_meta') or {}
-              print('CHECK',i,json.dumps({
-                  'price':d.get('price'),'flow':d.get('flow'),
-                  'c1':c1.get('score'),'prereq':c1.get('prerequisite_score'),'std':c1.get('standard_score'),'bonus':c1.get('bonus_score'),
-                  'breakdown':c1.get('breakdown'),'raw':c1.get('standard_raw'),'actual':c1.get('standard_raw_before_floor'),
-                  'values':tm.get('technical_values'),'volume_ratio':tm.get('volume_ratio'),'volume_days':tm.get('volume_history_days'),
-                  'volume_queued':tm.get('volume_backfill_queued'),'orderbook':c1.get('orderbook'),
+              ob=d.get('live_orderbook_integrity') or {}
+              row={
+                  'utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                  'name':d.get('name'),'code':d.get('code'),'price':d.get('price'),
+                  'flow':d.get('flow'),'live_quote':d.get('live_quote_integrity'),'live_orderbook':ob,
+                  'c1_score':c1.get('score'),'c1_gate':c1.get('gate'),'threshold':c1.get('entry_threshold'),
+                  'prerequisite':c1.get('prerequisite_score'),'standard':c1.get('standard_score'),'bonus':c1.get('bonus_score'),
+                  'breakdown':c1.get('breakdown'),'gates':c1.get('gates'),'minute':c1.get('minute_meta'),
                   'execution':c1.get('execution_strength'),'execution_reason':c1.get('execution_reason'),
-                  'minute':c1.get('minute_meta'),'c2':c2.get('score'),'c2b':c2.get('breakdown')
-              },ensure_ascii=False,sort_keys=True))
-              time.sleep(4)
+                  'orderbook':c1.get('orderbook'),'raw':c1.get('standard_raw'),'actual_before_floor':c1.get('standard_raw_before_floor'),
+                  'technical_values':tm.get('technical_values'),'technical_reasons':tm.get('technical_reasons'),
+                  'volume_ratio':tm.get('volume_ratio'),'volume_days':tm.get('volume_history_days'),'volume_source':tm.get('volume_source'),
+                  'volume_queued':tm.get('volume_backfill_queued'),'missing':tm.get('missing'),'availability':tm.get('availability'),
+                  'c2_score':c2.get('score'),'c2_gate':c2.get('gate'),'c2_breakdown':c2.get('breakdown'),
+                  'errors':{'score':d.get('score_integrity_error'),'volume':d.get('volume15_curve_error'),'standard':d.get('standard_detail_fix_error')},
+              }
+              print('CHECK',i,json.dumps(row,ensure_ascii=False,sort_keys=True))
+              final=row
+              vol_ok=(row.get('volume_days')==15 and row.get('volume_ratio') is not None and 'full 1m cumulative curves' in str(row.get('volume_source') or ''))
+              book_ok=(float(ob.get('ask_qty') or 0)>0 and float(ob.get('bid_qty') or 0)>0 and ob.get('ratio') is not None)
+              exec_ok=(float(row.get('execution') or 0)>0 and 'currentExecution' in str((row.get('flow') or {}).get('execution_source') or ''))
+              if vol_ok and book_ok and exec_ok:
+                  print('FINAL_READY='+json.dumps(row,ensure_ascii=False,sort_keys=True))
+                  break
+              time.sleep(5)
+          else:
+              print('FINAL_NOT_FULLY_READY='+json.dumps(final,ensure_ascii=False,sort_keys=True))
+              raise SystemExit(2)
           PY
