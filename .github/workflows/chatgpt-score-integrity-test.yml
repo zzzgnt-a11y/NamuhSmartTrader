@@ -10,32 +10,27 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: NHPLUG field truth
+      - name: Find NHPLUG execution-strength source
         run: |
           python - <<'PY'
           import json, urllib.request
-          url='https://www.nhplug.com/openapi-docs/krstock/openapi.json'
-          with urllib.request.urlopen(url, timeout=30) as r: spec=json.load(r)
-          print('PATH_EXISTS', '/krstock/quote/v1/currentPrice' in spec.get('paths',{}))
-          def walk(x,path=''):
+          with urllib.request.urlopen('https://www.nhplug.com/openapi-docs/krstock/openapi.json',timeout=30) as r: spec=json.load(r)
+          def scan(x,path=''):
               if isinstance(x,dict):
-                  for k,v in x.items():
-                      p=f'{path}/{k}'
-                      if isinstance(v,dict):
-                          desc=str(v.get('description') or '')
-                          low=(k+' '+desc).lower()
-                          if any(t in low for t in ['체결강도','strength','체결','volpower','rate']):
-                              print('MATCH',p,'DESC=',desc[:120])
-                      walk(v,p)
+                  desc=str(x.get('description') or '')
+                  if '체결강도' in desc:
+                      print('EXEC_STRENGTH',path,'DESC=',desc[:160])
+                  for k,v in x.items(): scan(v,f'{path}/{k}')
               elif isinstance(x,list):
-                  for i,v in enumerate(x): walk(v,f'{path}/{i}')
-          cp=spec.get('paths',{}).get('/krstock/quote/v1/currentPrice',{})
-          walk(cp,'currentPrice')
-          rt=spec.get('x-realtime-channels') or {}
-          for k,v in rt.items():
-              if str(k).lower() in ('mc','oc','nc') or '체결가' in str(v):
-                  print('CHANNEL',k)
-                  walk(v,f'channel/{k}')
+                  for i,v in enumerate(x): scan(v,f'{path}/{i}')
+          scan(spec)
+          print('PATHS')
+          for p in spec.get('paths',{}):
+              if any(t in p.lower() for t in ('time','tick','cont','execution','current')):
+                  print(p)
+          print('REALTIME_TOP_KEYS', list((spec.get('x-realtime-channels') or {}).keys()))
+          print('REALTIME_RAW_TYPE', type(spec.get('x-realtime-channels')).__name__)
+          print('REALTIME_RAW_PREFIX', str(spec.get('x-realtime-channels'))[:5000])
           PY
       - name: Syntax
         run: python -m py_compile namuh_c1_score_integrity_patch.py namuh_score_floor1_history_patch.py
