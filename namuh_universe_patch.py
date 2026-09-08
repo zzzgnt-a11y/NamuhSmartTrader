@@ -81,7 +81,7 @@ def apply(m):
         payload={
             'ok':True,'market':market,'scores':scores,
             'scored_count':len(scores),'updated_at':updated.get(market,0.0),
-            'entry_score':72,'model':'40/60','execution_weight':10,
+            'entry_score':70,'entry_threshold':70,'model':'40/60','execution_weight':10,
         }
         if int(catalog or 0):
             cat=_catalog(market,score_map)
