@@ -15,7 +15,11 @@ function rank(root){
     // Reorder only when necessary. Re-appending an already sorted list would
     // retrigger MutationObserver forever and waste the browser main thread.
     if(!sorted.every((el,i)=>el===cards[i]))sorted.forEach(el=>root.appendChild(el));
-    sorted.forEach((el,i)=>{const hide=i>=5;if(el.hidden!==hide)el.hidden=hide;});
+    sorted.forEach((el,i)=>{
+      const hide=i>=5;if(el.hidden!==hide)el.hidden=hide;
+      const title=el.querySelector('.candidate-name b');
+      if(title){const name=String(title.textContent||'').replace(/^\s*\d+\.\s*/,'');const next=`${i+1}. ${name}`;if(title.textContent!==next)title.textContent=next;}
+    });
     const first=sorted[0];
     if(root.id==='scalpList'&&first){
       const name=String(first.querySelector('.candidate-name b')?.textContent||'').replace(/^\s*\d+\.\s*/,''),s=score(first),top=document.getElementById('topScalp');
