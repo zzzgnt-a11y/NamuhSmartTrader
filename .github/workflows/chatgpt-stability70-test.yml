@@ -1,0 +1,71 @@
+name: ChatGPT Stability70 Test
+on:
+  push:
+    branches: [chatgpt-stability70-test-0908]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Syntax and helper checks
+        run: |
+          python -m py_compile namuh_stability70_final.py namuh_patch_loader.py
+          python - <<'PY'
+          import namuh_stability70_final as p
+          assert p.C1_THRESHOLD == 70.0
+          rows=[{'code':'005930','score':1},{'code':'005930','score':2},{'code':'000660','score':3}]
+          out=p._dedupe_rows(rows)
+          assert [x['code'] for x in out]==['005930','000660']
+          src=open('namuh_stability70_final.py',encoding='utf-8').read()
+          loader=open('namuh_patch_loader.py',encoding='utf-8').read()
+          assert 'clean[:80]' in src
+          assert 'abs(ch) >= 0.8 or st >= 100.0' in src
+          assert 'setInterval(loadScores,20000)' in src
+          assert "namuh_stability70_final.apply(ns)" in loader
+          print('static stability checks PASS')
+          PY
+      - name: Live deployment audit
+        run: |
+          python - <<'PY'
+          import json,time,urllib.request
+          base='https://namuh-smart-trader.onrender.com'
+          def get(path,timeout=45):
+              req=urllib.request.Request(base+path,headers={'User-Agent':'NamuhStability70Audit/1.0'})
+              with urllib.request.urlopen(req,timeout=timeout) as r:return json.load(r)
+          health=None
+          for i in range(12):
+              try:
+                  health=get('/api/v34/status')
+                  s=(health or {}).get('stability70_final') or {}
+                  if s.get('active') and float(s.get('condition1_threshold') or 0)==70:
+                      break
+              except Exception as e:
+                  print('health retry',i,type(e).__name__,e)
+              time.sleep(10)
+          assert health and (health.get('stability70_final') or {}).get('active'),health
+          assert float((health.get('stability70_final') or {}).get('condition1_threshold') or 0)==70,health.get('stability70_final')
+          detail=get('/api/v344/stock/KR/000660?timeframe=1d&days=60')
+          c1=((detail.get('strategy_conditions') or {}).get('condition1') or {})
+          assert float(c1.get('entry_threshold') or 0)==70,c1
+          assert c1.get('threshold_owner')=='condition1 final 70',c1.get('threshold_owner')
+          u=get('/api/v352/universe?market=KR&catalog=0')
+          print('UNIVERSE',json.dumps({'entry_score':u.get('entry_score'),'scored_count':u.get('scored_count'),'top_codes':[x.get('code') for x in (u.get('scores') or [])[:15]]},ensure_ascii=False))
+          samples=[]
+          for _ in range(3):
+              d=get('/api/v352/universe?market=KR&catalog=0')
+              samples.append([str(x.get('code') or '') for x in (d.get('scores') or [])[:15]])
+              time.sleep(8)
+          uniq=sorted(set(c for row in samples for c in row if c))
+          t=time.time();flow=get('/api/v343/market-flow');flow_ms=round((time.time()-t)*1000)
+          state=get('/api/state?market=KR')
+          sectors=state.get('sectors') or []
+          flow_ready={k:sum(1 for x in sectors if (x.get('flow_share') or {}).get(k) not in (None,'')) for k in ('foreign','institution','person_exit','program')}
+          print('HEALTH_STABILITY',json.dumps(health.get('stability70_final'),ensure_ascii=False,sort_keys=True))
+          print('C1',json.dumps({'score':c1.get('score'),'threshold':c1.get('entry_threshold'),'gate':c1.get('gate'),'owner':c1.get('threshold_owner')},ensure_ascii=False))
+          print('SCALP_DIVERSITY',json.dumps({'sample_count':len(samples),'unique_top15':len(uniq),'unique_codes':uniq,'samples':samples},ensure_ascii=False))
+          print('INDEX_FLOW',json.dumps({'latency_ms':flow_ms,'keys':sorted((flow.get('items') or {}).keys())},ensure_ascii=False))
+          print('SECTOR_FLOW',json.dumps({'sector_count':len(sectors),'share_present':flow_ready,'top3':sectors[:3]},ensure_ascii=False))
+          PY
