@@ -5,17 +5,47 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#f3f6fb">
   <title>GY Trading OS</title>
-  <link rel="stylesheet" href="/static/rebuild.css?v=1">
+  <link rel="stylesheet" href="/static/rebuild.css?v=3">
+  <link rel="stylesheet" href="/static/rebuild-full.css?v=3">
 </head>
 <body>
-  <header class="rb-top"><div class="rb-topin"><div class="rb-brand"><div class="rb-logo">GY</div><div><b>TRADING OS</b><small>OFFICIAL DATA · AUTO ENGINE</small></div></div><div class="rb-search"><div class="rb-searchline"><span>⌕</span><input id="stockSearch" autocomplete="off" spellcheck="false" placeholder="국내 종목명 / 종목코드 검색"></div><div id="searchResults" class="rb-results"></div></div><div class="rb-marketbtns"><button data-mode="KR" class="active">KR</button><button data-mode="US">US</button></div></div></header>
+  <header class="rb-top">
+    <div class="rb-topin">
+      <div class="rb-brand"><div class="rb-logo">GY</div><div><b>TRADING OS</b><small>OFFICIAL DATA · AUTO ENGINE</small></div></div>
+      <div class="rb-search"><div class="rb-searchline"><span>⌕</span><input id="stockSearch" autocomplete="off" spellcheck="false" placeholder="국내 종목명 / 종목코드 검색"></div><div id="searchResults" class="rb-results"></div></div>
+      <div class="rb-marketbtns"><button data-mode="KR" class="active">KR</button><button data-mode="US">US</button><button data-mode="COIN">COIN</button></div>
+    </div>
+  </header>
+
   <main class="rb-page">
-    <section class="rb-hero"><article class="rb-card rb-hero-copy"><div class="rb-eyebrow">GY / LIVE MARKET COMMAND</div><h1>GY AUTOMATED<br>TRADING SYSTEM</h1><p><span id="modeLabel">국내주식</span> · AI 점수 상위 종목 우선 · 종목 클릭 시 상세 분석</p><div id="error" class="rb-msg"></div></article><article class="rb-card rb-status"><div class="rb-stat"><small>ASSET</small><b id="equity">-</b></div><div class="rb-stat"><small>REALIZED PNL</small><b id="pnl">-</b></div><div class="rb-stat"><small>API</small><b id="health">확인 중</b></div><div class="rb-stat"><small>SESSION</small><b id="session">확인 중</b></div><div class="rb-stat"><small>UPDATED</small><b id="updated">-</b></div></article></section>
-    <section class="rb-card rb-section"><div class="rb-sectionhead"><div><small>AI SCORE BOARD</small><h2>AI 점수 상위 5개</h2></div><span>높은 점수 순 · 최대 5개</span></div><div id="top5" class="rb-grid5"><div class="rb-empty">AI 후보 불러오는 중</div></div></section>
-    <section class="rb-two"><article class="rb-card rb-section"><div class="rb-sectionhead"><div><small>SECTOR</small><h2>주도 섹터</h2></div><span>현재 강도 순</span></div><div id="sectors" class="rb-list"><div class="rb-empty">섹터 데이터 대기</div></div></article><article class="rb-card rb-section"><div class="rb-sectionhead"><div><small>PORTFOLIO</small><h2>보유 포지션</h2></div><span>종목 클릭 → 상세</span></div><div id="positions" class="rb-list"><div class="rb-empty">보유종목 확인 중</div></div></article></section>
-    <section class="rb-card rb-section"><div class="rb-sectionhead"><div><small>DISCLOSURE</small><h2>최근 공시</h2></div><span>공식 데이터</span></div><div id="events" class="rb-list"><div class="rb-empty">공시 수신 대기</div></div></section>
+    <section class="rb-hero">
+      <article class="rb-card rb-hero-copy"><div class="rb-eyebrow">GY / LIVE MARKET COMMAND</div><h1>GY AUTOMATED<br>TRADING SYSTEM</h1><p><span id="modeLabel">국내주식</span> · 공식 데이터 기반 자동 분석 · 모의투자</p><div id="error" class="rb-msg"></div></article>
+      <article class="rb-card rb-status"><div class="rb-stat"><small>ASSET</small><b id="equity">-</b></div><div class="rb-stat"><small>REALIZED PNL</small><b id="pnl">-</b></div><div class="rb-stat"><small>API</small><b id="health">확인 중</b></div><div class="rb-stat"><small>TOP SIGNAL</small><b id="topSignal">-</b></div><div class="rb-stat"><small>SESSION</small><b id="session">확인 중</b></div><div class="rb-stat"><small>UPDATED</small><b id="updated">-</b></div></article>
+    </section>
+
+    <section class="rb-controls">
+      <article class="rb-card rb-control"><small>오늘 운용금액</small><strong id="currentBudget">확인 중</strong><div class="rb-budgetline"><input id="budget" inputmode="numeric" placeholder="비우면 자동 최대"><button id="saveBudget">SAVE</button></div><label class="rb-check"><input id="autoMax" type="checkbox" checked> 미설정 시 최대금액 자동운용</label></article>
+      <article class="rb-card rb-control"><small>LEADING SECTOR</small><strong id="topSector">분석 중</strong><div id="fxNote" class="rb-msg"></div></article>
+      <article class="rb-card rb-control"><small>MODE</small><strong id="marketCaption">국장 주요 지수 · 공식 데이터</strong><div class="rb-msg">검색창은 항상 상단 고정</div></article>
+    </section>
+
+    <section class="rb-card rb-section"><div class="rb-sectionhead"><div><small>01 · MARKET RADAR</small><h2>시장 관제</h2></div><span>지수 클릭 → 상세 차트</span></div><div id="markets" class="rb-marketgrid"><div class="rb-empty">시장 데이터 수신 중</div></div></section>
+
+    <section class="rb-two">
+      <article class="rb-card rb-section"><div class="rb-sectionhead"><div><small>02 · SECTOR</small><h2>주도 섹터</h2></div><span>섹터 클릭 → 구성종목</span></div><div id="sectors" class="rb-sectorgrid"><div class="rb-empty">섹터 데이터 대기</div></div></article>
+      <article class="rb-card rb-section"><div class="rb-sectionhead"><div><small>LIVE · DISCLOSURE</small><h2>공시</h2></div><span id="eventStatus">공식 데이터</span></div><div id="events" class="rb-list"><div class="rb-empty">공시 수신 대기</div></div></article>
+    </section>
+
+    <section class="rb-card rb-section"><div class="rb-sectionhead"><div><small>03 · AI SIGNAL BOARD</small><h2>AI 점수 상위 종목</h2></div><span>코스피·코스닥 분석 결과 중 높은 점수 순 · 최대 5개</span></div><div id="closedBoard" class="rb-closed hide">장 종료 · 후보 표출 중지</div><div id="signalZone" class="rb-signalsplit"><div><div class="rb-columnhead"><span>FAST SIGNAL</span><b>AI 상위 5개</b></div><div id="top5" class="rb-candidatelist"><div class="rb-empty">AI 후보 불러오는 중</div></div></div><div id="smartColumn"><div class="rb-columnhead"><span>SMART MONEY</span><b>수급 매집 후보</b></div><div id="smartList" class="rb-candidatelist"><div class="rb-empty">스마트머니 후보 축적 중</div></div></div></div></section>
+
+    <section class="rb-card rb-section"><div class="rb-sectionhead"><div><small>04 · PORTFOLIO</small><h2>보유 포지션</h2></div><span id="heldCost">-</span></div><div id="positions" class="rb-list"><div class="rb-empty">보유종목 확인 중</div></div></section>
+
+    <section class="rb-card rb-section"><div class="rb-sectionhead"><div><small>05 · PNL × MACRO CALENDAR</small><h2>손익 & 중요 일정</h2></div><span>FOMC · CPI · NFP · PPI</span></div><div class="rb-calendar-wrap"><div><div class="rb-calbar"><button id="prevMonth">‹</button><strong id="monthTitle">-</strong><button id="nextMonth">›</button></div><div class="rb-week"><div>일</div><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div>토</div></div><div id="calendar" class="rb-calendar"></div></div><aside class="rb-detailbox"><h3 id="daySummary">날짜를 선택하세요</h3><div id="dayDetail" class="rb-list"></div></aside></div></section>
   </main>
-  <footer class="rb-footer">GY Trading OS · single-owner frontend</footer>
-  <script src="/static/rebuild.js?v=1"></script>
+
+  <div id="sectorModal" class="rb-modal hide"><div class="rb-modalback" data-close-sector></div><section class="rb-modalcard"><div class="rb-modalhead"><div><small>SECTOR CONSTITUENTS</small><h2 id="sectorTitle">섹터</h2><p id="sectorSummary">불러오는 중</p></div><button class="rb-close" data-close-sector>×</button></div><div id="sectorMembers"></div></section></div>
+
+  <footer class="rb-footer">GY Trading OS · clean single-owner frontend</footer>
+  <script src="/static/rebuild.js?v=3"></script>
 </body>
 </html>
