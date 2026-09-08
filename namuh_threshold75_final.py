@@ -18,7 +18,7 @@ def apply(ns=None):
     if core is None:
         return False
     old = core.candidate
-    if getattr(old, '_namuh_threshold75_final', False):
+    if getattr(old, '_namuh_threshold70_absolute', False):
         _INSTALLED = True
         return True
 
@@ -38,13 +38,14 @@ def apply(ns=None):
             total = _f(c1.get('score'), _f(out.get('score')))
             blocked = bool(gates.get('event_block', False))
             hard = bool(gates.get('daily') and gates.get('minute1m') and gates.get('execution') and gates.get('orderbook'))
-            gate = bool(not blocked and hard and total >= 75.0)
-            gates['total75'] = total >= 75.0
-            gates['total_threshold'] = total >= 75.0
-            c1['entry_threshold'] = 75.0
+            gate = bool(not blocked and hard and total >= 70.0)
+            gates.pop('total75', None)
+            gates['total70'] = total >= 70.0
+            gates['total_threshold'] = total >= 70.0
+            c1['entry_threshold'] = 70.0
             c1['gate'] = gate
             c1['gates'] = gates
-            c1['threshold_owner'] = 'condition1 final 75'
+            c1['threshold_owner'] = 'condition1 final 70'
             out['condition1'] = c1
             out['condition1_gate_pass'] = gate
             labels = [x for x in list(out.get('condition_labels') or []) if str(x) != '조건1']
@@ -53,11 +54,11 @@ def apply(ns=None):
             out['condition_labels'] = list(dict.fromkeys(labels))
             out['condition_display'] = '복합조건' if len([x for x in out['condition_labels'] if str(x).startswith('조건')]) > 1 else (out['condition_labels'][0] if out['condition_labels'] else '')
         except Exception as exc:
-            out['threshold75_final_error'] = str(exc)[:180]
+            out['threshold70_absolute_error'] = str(exc)[:180]
         return out
 
-    candidate._namuh_threshold75_final = True
+    candidate._namuh_threshold70_absolute = True
     core.candidate = candidate
     _INSTALLED = True
-    print('NAMUH CONDITION1 FINAL THRESHOLD active: KR/US C1>=75', flush=True)
+    print('NAMUH CONDITION1 FINAL THRESHOLD active: KR/US C1>=70', flush=True)
     return True
