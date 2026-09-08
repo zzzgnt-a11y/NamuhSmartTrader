@@ -1,0 +1,24 @@
+name: ChatGPT Scalp Sector Quick
+on:
+  push:
+    branches: [chatgpt-scalp-sector-quick-0908]
+jobs:
+  quick:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Live snapshot
+        run: |
+          python - <<'PY'
+          import json,urllib.request,time
+          base='https://namuh-smart-trader.onrender.com'
+          def get(p):
+              req=urllib.request.Request(base+p,headers={'User-Agent':'NamuhQuickAudit/1.0'})
+              with urllib.request.urlopen(req,timeout=45) as r:return json.load(r)
+          h=get('/api/health')
+          s=get('/api/state?market=KR')
+          u=get('/api/v352/universe?market=KR&catalog=0')
+          print('HEALTH',json.dumps({'build':h.get('build'),'fix':h.get('scalp_sector_final')},ensure_ascii=False,sort_keys=True))
+          print('UNIVERSE',json.dumps({'count':u.get('scored_count'),'codes':[x.get('code') for x in (u.get('scores') or [])[:40]]},ensure_ascii=False))
+          print('SECTORS',json.dumps((s.get('sectors') or [])[:8],ensure_ascii=False,sort_keys=True))
+          PY
