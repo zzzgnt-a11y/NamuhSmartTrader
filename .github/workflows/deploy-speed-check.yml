@@ -57,43 +57,42 @@ jobs:
               [[ "$line" == code=200* ]] || exit 1
               if [[ "$path" == '/api/v34/status' ]]; then
                 python - <<'PY'
-import json
-p='/tmp/body'
-with open(p,'rb') as f:
-    data=json.load(f)
-assert isinstance(data,dict)
-print('status_json_ok keys=', len(data))
-PY
+          import json
+          with open('/tmp/body','rb') as f:
+              data=json.load(f)
+          assert isinstance(data,dict)
+          print('status_json_ok keys=', len(data))
+          PY
               fi
               if [[ "$path" == '/api/state?market=KR' || "$path" == '/api/state?market=US' ]]; then
                 python - <<'PY'
-import json
-with open('/tmp/body','rb') as f:
-    data=json.load(f)
-assert isinstance(data,dict)
-assert data.get('mode') in ('KR','US')
-assert 'market' in data and 'paper' in data
-print('state_json_ok mode=',data.get('mode'),'keys=',len(data))
-PY
+          import json
+          with open('/tmp/body','rb') as f:
+              data=json.load(f)
+          assert isinstance(data,dict)
+          assert data.get('mode') in ('KR','US')
+          assert 'market' in data and 'paper' in data
+          print('state_json_ok mode=',data.get('mode'),'keys=',len(data))
+          PY
               fi
             done
           done
           echo '--- summaries ---' | tee -a speed-results.txt
           python - <<'PY' | tee -a speed-results.txt
-import re, statistics
-from pathlib import Path
-cur=None; vals={}
-for line in Path('speed-results.txt').read_text().splitlines():
-    if line.startswith('ENDPOINT '):
-        cur=line.split(' ',1)[1]; vals.setdefault(cur,[])
-    m=re.search(r'ttfb=([0-9.]+) total=([0-9.]+)',line)
-    if cur and m:
-        vals[cur].append((float(m.group(1)),float(m.group(2))))
-for path, xs in vals.items():
-    if not xs: continue
-    ttfb=[x[0] for x in xs]; total=[x[1] for x in xs]
-    print(path, 'ttfb_med=',round(statistics.median(ttfb),4),'total_med=',round(statistics.median(total),4),'total_max=',round(max(total),4))
-PY
+          import re, statistics
+          from pathlib import Path
+          cur=None; vals={}
+          for line in Path('speed-results.txt').read_text().splitlines():
+              if line.startswith('ENDPOINT '):
+                  cur=line.split(' ',1)[1]; vals.setdefault(cur,[])
+              m=re.search(r'ttfb=([0-9.]+) total=([0-9.]+)',line)
+              if cur and m:
+                  vals[cur].append((float(m.group(1)),float(m.group(2))))
+          for path, xs in vals.items():
+              if not xs: continue
+              ttfb=[x[0] for x in xs]; total=[x[1] for x in xs]
+              print(path, 'ttfb_med=',round(statistics.median(ttfb),4),'total_med=',round(statistics.median(total),4),'total_max=',round(max(total),4))
+          PY
 
       - uses: actions/upload-artifact@v4
         if: always()
