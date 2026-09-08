@@ -9,27 +9,24 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Inspect NH orderbook REST truth
+      - name: Samsung exact-score progress
         run: |
           python - <<'PY'
-          import json,urllib.request
-          with urllib.request.urlopen('https://www.nhplug.com/openapi-docs/krstock/openapi.json',timeout=30) as r:s=json.load(r)
-          for path,node in s.get('paths',{}).items():
-              blob=json.dumps(node,ensure_ascii=False)
-              if '호가' in blob and any(t in blob for t in ('잔량','매도호가','매수호가')):
-                  print('PATH',path)
-                  post=node.get('post') or {}
-                  try:
-                      props=post['responses']['200']['content']['application/json']['schema']['properties']
-                  except Exception: continue
-                  for oname,onode in props.items():
-                      t=onode.get('items',{}) if onode.get('type')=='array' else onode
-                      pp=t.get('properties',{})
-                      useful=[]
-                      for k,v in pp.items():
-                          d=str(v.get('description') or '')
-                          if any(w in d for w in ('잔량','호가')): useful.append((k,d))
-                      if useful:
-                          print(' OUTPUT',oname)
-                          for k,d in useful: print('  ',k,'=',d)
+          import json,urllib.request,time
+          url='https://namuh-smart-trader.onrender.com/api/v344/stock/KR/005930?timeframe=1m&days=60'
+          for i in range(3):
+              with urllib.request.urlopen(urllib.request.Request(url,headers={'Cache-Control':'no-cache'}),timeout=60) as r:d=json.load(r)
+              c1=((d.get('strategy_conditions') or {}).get('condition1') or {})
+              c2=((d.get('strategy_conditions') or {}).get('condition2') or {})
+              tm=c1.get('technical_meta') or {}
+              print('CHECK',i,json.dumps({
+                  'price':d.get('price'),'flow':d.get('flow'),
+                  'c1':c1.get('score'),'prereq':c1.get('prerequisite_score'),'std':c1.get('standard_score'),'bonus':c1.get('bonus_score'),
+                  'breakdown':c1.get('breakdown'),'raw':c1.get('standard_raw'),'actual':c1.get('standard_raw_before_floor'),
+                  'values':tm.get('technical_values'),'volume_ratio':tm.get('volume_ratio'),'volume_days':tm.get('volume_history_days'),
+                  'volume_queued':tm.get('volume_backfill_queued'),'orderbook':c1.get('orderbook'),
+                  'execution':c1.get('execution_strength'),'execution_reason':c1.get('execution_reason'),
+                  'minute':c1.get('minute_meta'),'c2':c2.get('score'),'c2b':c2.get('breakdown')
+              },ensure_ascii=False,sort_keys=True))
+              time.sleep(4)
           PY
