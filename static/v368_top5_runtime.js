@@ -9,11 +9,14 @@ function rank(root){
   if(!root||busy)return;
   const cards=[...root.querySelectorAll(':scope > .candidate')];
   if(!cards.length)return;
+  const sorted=cards.slice().sort((a,b)=>score(b)-score(a));
   busy=true;
   try{
-    cards.sort((a,b)=>score(b)-score(a));
-    cards.forEach((el,i)=>{root.appendChild(el);el.hidden=i>=5;});
-    const first=cards[0];
+    // Reorder only when necessary. Re-appending an already sorted list would
+    // retrigger MutationObserver forever and waste the browser main thread.
+    if(!sorted.every((el,i)=>el===cards[i]))sorted.forEach(el=>root.appendChild(el));
+    sorted.forEach((el,i)=>{const hide=i>=5;if(el.hidden!==hide)el.hidden=hide;});
+    const first=sorted[0];
     if(root.id==='scalpList'&&first){
       const name=String(first.querySelector('.candidate-name b')?.textContent||'').replace(/^\s*\d+\.\s*/,''),s=score(first),top=document.getElementById('topScalp');
       if(top&&Number.isFinite(s))top.textContent=`${name} ${Math.round(s)}점`;
