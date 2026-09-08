@@ -6,58 +6,30 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Syntax
-        run: python -m py_compile namuh_live_quote_integrity_patch.py namuh_c1_score_integrity_patch.py namuh_score_floor1_history_patch.py namuh_patch_loader.py
-      - name: Live Samsung detail and universe
+      - name: Inspect NH orderbook REST truth
         run: |
           python - <<'PY'
-          import json,time,urllib.request
-          base='https://namuh-smart-trader.onrender.com'
-          def get(path):
-              last=None
-              for _ in range(8):
+          import json,urllib.request
+          with urllib.request.urlopen('https://www.nhplug.com/openapi-docs/krstock/openapi.json',timeout=30) as r:s=json.load(r)
+          for path,node in s.get('paths',{}).items():
+              blob=json.dumps(node,ensure_ascii=False)
+              if '호가' in blob and any(t in blob for t in ('잔량','매도호가','매수호가')):
+                  print('PATH',path)
+                  post=node.get('post') or {}
                   try:
-                      req=urllib.request.Request(base+path,headers={'Cache-Control':'no-cache','User-Agent':'NamuhScoreVerifier/1.0'})
-                      with urllib.request.urlopen(req,timeout=40) as r:return json.load(r)
-                  except Exception as e:
-                      last=e;time.sleep(3)
-              raise RuntimeError(last)
-          health=get('/api/v34/status')
-          print('HEALTH_LIVE_QUOTE='+json.dumps({
-              'samsung_execution':health.get('samsung_execution'),
-              'kr_live_quote_integrity':health.get('kr_live_quote_integrity'),
-              'c1_score_integrity':health.get('c1_score_integrity'),
-          },ensure_ascii=False,sort_keys=True))
-          detail=get('/api/v344/stock/KR/005930?timeframe=1m&days=60')
-          sc=detail.get('strategy_conditions') or {}
-          c1=sc.get('condition1') or {}
-          c2=sc.get('condition2') or {}
-          print('SAMSUNG_DETAIL='+json.dumps({
-              'name':detail.get('name'),'code':detail.get('code'),'price':detail.get('price'),
-              'flow':detail.get('flow'),'live_quote_integrity':detail.get('live_quote_integrity'),
-              'c1_score':c1.get('score'),'c1_gate':c1.get('gate'),
-              'prerequisite_score':c1.get('prerequisite_score'),'standard_score':c1.get('standard_score'),'bonus_score':c1.get('bonus_score'),
-              'breakdown':c1.get('breakdown'),'gates':c1.get('gates'),'minute_meta':c1.get('minute_meta'),
-              'execution_strength':c1.get('execution_strength'),'execution_reason':c1.get('execution_reason'),
-              'standard_raw':c1.get('standard_raw'),'standard_raw_before_floor':c1.get('standard_raw_before_floor'),
-              'technical_values':(c1.get('technical_meta') or {}).get('technical_values'),
-              'technical_meta':c1.get('technical_meta'),
-              'c2_score':c2.get('score'),'c2_gate':c2.get('gate'),'c2_breakdown':c2.get('breakdown'),
-              'score_integrity_error':detail.get('score_integrity_error'),'standard_detail_fix_error':detail.get('standard_detail_fix_error')
-          },ensure_ascii=False,sort_keys=True))
-          uni=get('/api/v352/universe?market=KR&catalog=0')
-          row=next((x for x in (uni.get('scores') or []) if str(x.get('code'))=='005930'),None)
-          print('SAMSUNG_UNIVERSE='+json.dumps({
-              'price':None if not row else row.get('price'),
-              'execution_strength':None if not row else row.get('execution_strength'),
-              'condition1':None if not row else row.get('condition1'),
-              'condition2':None if not row else row.get('condition2'),
-              'score':None if not row else row.get('score'),
-          },ensure_ascii=False,sort_keys=True))
-          if not row: raise SystemExit('Samsung missing from universe')
-          if detail.get('score_integrity_error'): raise SystemExit('score_integrity_error='+str(detail.get('score_integrity_error')))
+                      props=post['responses']['200']['content']['application/json']['schema']['properties']
+                  except Exception: continue
+                  for oname,onode in props.items():
+                      t=onode.get('items',{}) if onode.get('type')=='array' else onode
+                      pp=t.get('properties',{})
+                      useful=[]
+                      for k,v in pp.items():
+                          d=str(v.get('description') or '')
+                          if any(w in d for w in ('잔량','호가')): useful.append((k,d))
+                      if useful:
+                          print(' OUTPUT',oname)
+                          for k,d in useful: print('  ',k,'=',d)
           PY
