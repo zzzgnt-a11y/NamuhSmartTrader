@@ -10,13 +10,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Install minimal test dependency
+        run: pip install requests -q
       - name: Syntax
         run: python -m py_compile namuh_investor_merge_final.py namuh_threshold75_final.py namuh_patch_loader.py
       - name: Merge parser test
         run: |
           python - <<'PY'
           from types import SimpleNamespace
-          from collections import deque
           import namuh_investor_merge_final as p
           class Q:
               def __init__(self): self.foreign_net=0; self.institution_net=0; self.program_net=0; self.person_net=0
