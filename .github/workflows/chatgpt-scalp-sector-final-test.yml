@@ -1,0 +1,75 @@
+name: ChatGPT Scalp Sector Final Test
+on:
+  push:
+    branches: [chatgpt-scalp-sector-final-0908]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Static correction checks
+        run: |
+          python -m py_compile namuh_scalp_sector_final_0908.py namuh_investor_merge_final.py namuh_patch_loader.py
+          python - <<'PY'
+          import pathlib
+          s=pathlib.Path('namuh_scalp_sector_final_0908.py').read_text(encoding='utf-8')
+          i=pathlib.Path('namuh_investor_merge_final.py').read_text(encoding='utf-8')
+          l=pathlib.Path('namuh_patch_loader.py').read_text(encoding='utf-8')
+          assert 'public_rank_nh_verify' in s
+          assert 'recent5_completed' in s
+          assert 'ensure_daily_bars("KR", code, 30)' in s
+          assert "('frgn_ntby_qty', 'foreign')" in i
+          assert "('frgn_ntby_qty', 'invest')" not in i
+          assert 'namuh_scalp_sector_final_0908.apply(ns)' in l
+          print('STATIC_PASS')
+          PY
+      - name: Live breadth and sector audit
+        run: |
+          python - <<'PY'
+          import json,time,urllib.request
+          base='https://namuh-smart-trader.onrender.com'
+          expected='14d5fed0d42f'
+          def get(path,timeout=45):
+              req=urllib.request.Request(base+path,headers={'User-Agent':'NamuhScalpSectorFinalAudit/1.0'})
+              with urllib.request.urlopen(req,timeout=timeout) as r:return json.load(r)
+          h={}
+          for i in range(30):
+              try:
+                  h=get('/api/v34/status')
+                  if str(h.get('build') or '').startswith(expected):
+                      print('BUILD_READY',h.get('build'));break
+                  print('WAIT_BUILD',i,h.get('build'))
+              except Exception as e:print('WAIT_ERR',i,type(e).__name__,str(e)[:100])
+              time.sleep(10)
+          assert str(h.get('build') or '').startswith(expected),(h.get('build'),expected)
+          samples=[];last_health={};last_state={}
+          for i in range(12):
+              try:
+                  h=get('/api/v34/status');last_health=h
+                  u=get('/api/v352/universe?market=KR&catalog=0')
+                  s=get('/api/state?market=KR');last_state=s
+                  codes=[str(x.get('code') or '') for x in (u.get('scores') or [])[:30]]
+                  samples.append(codes)
+                  sf=(h.get('scalp_sector_final') or {})
+                  print('SAMPLE',i,json.dumps({'count':u.get('scored_count'),'codes':codes,'discovery_source':sf.get('discovery_source'),'discovery_count':sf.get('discovery_count'),'verified':len(sf.get('nh_verified_active') or []),'pending':sf.get('activation_pending')},ensure_ascii=False))
+              except Exception as e:print('SAMPLE_ERR',i,type(e).__name__,str(e)[:120])
+              time.sleep(10)
+          uniq=sorted(set(c for row in samples for c in row if c))
+          sectors=(last_state.get('sectors') or [])[:5]
+          flow={x.get('sector'):{'foreign':(x.get('flow_share') or {}).get('foreign'),'person_exit':(x.get('flow_share') or {}).get('person_exit'),'source':x.get('flow_source')} for x in sectors}
+          print('FINAL_HEALTH',json.dumps(last_health.get('scalp_sector_final') or {},ensure_ascii=False,sort_keys=True))
+          print('DIVERSITY',json.dumps({'unique':len(uniq),'codes':uniq},ensure_ascii=False))
+          print('SECTOR_FLOW',json.dumps(flow,ensure_ascii=False,sort_keys=True))
+          sf=last_health.get('scalp_sector_final') or {}
+          assert sf.get('active') is True,sf
+          assert int(sf.get('discovery_count') or 0)>=10,sf
+          assert sf.get('discovery_source') not in ('waiting',''),sf
+          assert len(uniq)>=5,(uniq,samples)
+          assert sectors,sectors
+          assert any(float((x.get('flow_share') or {}).get('foreign') or 0)>0 for x in sectors),flow
+          assert any(float((x.get('flow_share') or {}).get('person_exit') or 0)>0 for x in sectors),flow
+          assert any((x.get('flow_source') or {}).get('foreign')=='recent5_completed' or (x.get('flow_source') or {}).get('person_exit')=='recent5_completed' for x in sectors),flow
+          PY
