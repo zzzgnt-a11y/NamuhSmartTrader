@@ -1,0 +1,46 @@
+name: ChatGPT Floor1 Score Test
+on:
+  push:
+    branches: [chatgpt-floor1-test-20260908]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Python syntax checks
+        run: |
+          python -m py_compile namuh_score_floor1_history_patch.py namuh_patch_loader.py namuh_conditions_final_patch.py namuh_zero_score_audit_patch.py namuh_minute_data_patch.py
+      - name: Floor score rules
+        run: |
+          python - <<'PY'
+          import namuh_score_floor1_history_patch as p
+          assert p._floor1(0,10) == 1.0
+          assert p._floor1(-3,10) == 1.0
+          assert p._floor1(7.5,10) == 7.5
+          assert p._floor1(20,10) == 10.0
+          src=open('namuh_score_floor1_history_patch.py',encoding='utf-8').read()
+          for key in ['MACD','RSI','볼린저','거래량','이평','가격구조','엘리어트']:
+              assert f'"{key}"' in src
+          assert 'raw_total / 75.0 * 45.0' in src
+          assert 'leading_sector' not in src.split('maxima = {',1)[1].split('}',1)[0]
+          assert 'news3_75' not in src.split('maxima = {',1)[1].split('}',1)[0]
+          loader=open('namuh_patch_loader.py',encoding='utf-8').read()
+          assert 'namuh_score_floor1_history_patch.apply(ns)' in loader
+          assert 'namuh_standard_detail_fix.apply(ns)' in loader
+          assert loader.index('namuh_standard_detail_fix.apply(ns)') < loader.index('namuh_score_floor1_history_patch.apply(ns)')
+          print('floor1 rules OK')
+          PY
+      - name: Final recipe gates unchanged
+        run: |
+          python - <<'PY'
+          src=open('namuh_conditions_final_patch.py',encoding='utf-8').read()
+          assert '"daily": daily_ok' in src
+          assert '"minute1m": minute_ok' in src
+          assert '"execution": exec_ok' in src
+          assert '"orderbook": order_ok' in src
+          assert '"event_block": blocked' in src
+          print('C1 gates present and unchanged')
+          PY
