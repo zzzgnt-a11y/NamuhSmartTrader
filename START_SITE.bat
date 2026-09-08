@@ -4,7 +4,7 @@ setlocal
 title Namuh Smart Trader WEB
 
 echo =========================================
-echo Namuh Smart Trader WEB sequential start
+echo Namuh Smart Trader CLEAN WEB start
 echo =========================================
 
 where python >nul 2>&1
@@ -35,8 +35,8 @@ if not exist .env (
   exit /b 1
 )
 
-echo [4/4] Starting web server...
-python app.py
+echo [4/4] Starting clean frontend wrapper...
+python runtime_server_clean.py
 exit /b %errorlevel%
 
 :fail
