@@ -13,56 +13,28 @@ def patch(m):
     namuh_daily_fetch_patch.apply(m)
     namuh_universe_patch.apply(m)
 
-    # KR intraday fail-soft: an upstream daily-history outage must not stop all trading.
-    # Missing daily data contributes 0/15 points, but only the daily gate is skipped.
-    # Execution strength, orderbook, 1m, technical confirmation, event block and the
-    # final score threshold remain active. As soon as daily_score is present again,
-    # the normal >=25 daily gate is used automatically.
     old_candidate=m.candidate
     def candidate_failsoft(*args,**kwargs):
         out=old_candidate(*args,**kwargs)
         if not isinstance(out,dict):return out
         market=str(args[1] if len(args)>1 else kwargs.get('market','')).upper()
-        if market!='KR' or out.get('daily_score') is not None:
-            return out
+        if market!='KR' or out.get('daily_score') is not None:return out
         q=args[0] if args else kwargs.get('q')
         blocked=bool(getattr(q,'event_blocked',False)) if q is not None else False
-        try:
-            blocked=blocked or any(bool(x.get('blocked')) for x in list(getattr(q,'events',[]) or []) if isinstance(x,dict))
+        try:blocked=blocked or any(bool(x.get('blocked')) for x in list(getattr(q,'events',[]) or []) if isinstance(x,dict))
         except Exception:pass
-        out['daily_gate_pass']=True
-        out['daily_failsoft']=True
-        out['entry_gate_pass']=bool(
-            out.get('execution_gate_pass',False)
-            and out.get('orderbook_gate_pass',False)
-            and out.get('minute_gate_pass',False)
-            and out.get('technical_gate_pass',False)
-            and not blocked
-        )
-        reasons=[]
-        for r in list(out.get('reasons') or []):
-            if str(r).startswith('일봉 데이터 대기'):
-                reasons.append('일봉 API 장애 · 0/15 · Gate만 임시 통과')
-            else:
-                reasons.append(r)
-        out['reasons']=reasons
+        out['daily_gate_pass']=True;out['daily_failsoft']=True
+        out['entry_gate_pass']=bool(out.get('execution_gate_pass',False) and out.get('orderbook_gate_pass',False) and out.get('minute_gate_pass',False) and out.get('technical_gate_pass',False) and not blocked)
+        out['reasons']=['일봉 API 장애 · 0/15 · Gate만 임시 통과' if str(r).startswith('일봉 데이터 대기') else r for r in list(out.get('reasons') or [])]
         return out
     m.candidate=candidate_failsoft
 
     old=m.health_payload
     def health():
         d=dict(old());rep={}
-        try:
-            row=m._minute_signal('999999',False);rep=(row or {}).get('recipe_report') or {}
+        try:rep=(m._minute_signal('999999',False) or {}).get('recipe_report') or {}
         except Exception:pass
-        d.update({
-            'scalp_score_model':'50/30/20',
-            'execution_weight':15,
-            'kr_daily_failsoft':True,
-            'execution_calibration':((rep.get('execution_strength') or {}).get('status') if isinstance(rep,dict) else None) or 'PENDING',
-            'vi_reentry_watch':len(getattr(m,'_NAMUH_VI_STATE',{})),
-            'all_ai_scored':{k:len(v) for k,v in getattr(m,'_NAMUH_ALL_SCORES',{}).items()},
-        })
+        d.update({'scalp_score_model':'50/30/20','execution_weight':15,'kr_daily_failsoft':True,'execution_calibration':((rep.get('execution_strength') or {}).get('status') if isinstance(rep,dict) else None) or 'PENDING','vi_reentry_watch':len(getattr(m,'_NAMUH_VI_STATE',{})),'all_ai_scored':{k:len(v) for k,v in getattr(m,'_NAMUH_ALL_SCORES',{}).items()}})
         return d
     m.health_payload=health
 
@@ -85,10 +57,6 @@ def install():
         try:patch(sys.modules['app'])
         except Exception:pass
     else:sys.meta_path.insert(0,Finder())
-
-    # sitecustomize wraps uvicorn.run after this install() returns. Wrapping it
-    # here means the late UI/data guards execute after all later strategy owners
-    # have been installed, but still before the FastAPI lifespan/background loops.
     try:
         import uvicorn
         if not getattr(uvicorn,'_NAMUH_USER15_WRAPPED',False):
@@ -96,50 +64,30 @@ def install():
             _prev_run=uvicorn.run
             def _run_with_user15(*args,**kwargs):
                 try:
-                    main=sys.modules.get('__main__')
-                    ns=getattr(main,'__dict__',{}) if main else {}
+                    main=sys.modules.get('__main__');ns=getattr(main,'__dict__',{}) if main else {}
                     if ns.get('core') is not None:
-                        import namuh_user15_patch
-                        namuh_user15_patch.apply(ns)
-                        import namuh_user15_stability
-                        namuh_user15_stability.apply(ns)
-                        import v364_ui_cleanup_patch
-                        v364_ui_cleanup_patch.apply(ns)
-                        import namuh_us_holiday_patch
-                        namuh_us_holiday_patch.apply(ns)
-                        import namuh_stock_detail_fix
-                        namuh_stock_detail_fix.apply(ns)
-                        import namuh_condition1_v2_patch
-                        namuh_condition1_v2_patch.apply(ns)
-                        import namuh_page_speed_patch
-                        namuh_page_speed_patch.apply(ns)
-                        import namuh_ai_scoreboard_patch
-                        namuh_ai_scoreboard_patch.apply(ns)
-                        import namuh_speed_patch
-                        namuh_speed_patch.apply(ns)
-                        import namuh_conditions_final_patch
-                        namuh_conditions_final_patch.apply(ns)
-                        import namuh_coin_position50_patch
-                        namuh_coin_position50_patch.apply(ns)
-                        import namuh_c3_sync_price_patch
-                        namuh_c3_sync_price_patch.apply(ns)
-                        import namuh_ui366_patch
-                        namuh_ui366_patch.apply(ns)
-                        import namuh_search_stable_patch
-                        namuh_search_stable_patch.apply(ns)
-                        import namuh_standard_detail_fix
-                        namuh_standard_detail_fix.apply(ns)
-                        import namuh_score_floor1_history_patch
-                        namuh_score_floor1_history_patch.apply(ns)
-                        # Actual NH execution strength comes only from currentExecution/realtime execution.
-                        import namuh_live_quote_integrity_patch
-                        namuh_live_quote_integrity_patch.apply(ns)
-                        # Actual orderbook score uses total queue quantities from currentPrice.
-                        import namuh_orderbook_integrity_patch
-                        namuh_orderbook_integrity_patch.apply(ns)
+                        import namuh_user15_patch;namuh_user15_patch.apply(ns)
+                        import namuh_user15_stability;namuh_user15_stability.apply(ns)
+                        import v364_ui_cleanup_patch;v364_ui_cleanup_patch.apply(ns)
+                        import namuh_us_holiday_patch;namuh_us_holiday_patch.apply(ns)
+                        import namuh_stock_detail_fix;namuh_stock_detail_fix.apply(ns)
+                        import namuh_condition1_v2_patch;namuh_condition1_v2_patch.apply(ns)
+                        import namuh_page_speed_patch;namuh_page_speed_patch.apply(ns)
+                        import namuh_ai_scoreboard_patch;namuh_ai_scoreboard_patch.apply(ns)
+                        import namuh_speed_patch;namuh_speed_patch.apply(ns)
+                        import namuh_conditions_final_patch;namuh_conditions_final_patch.apply(ns)
+                        import namuh_coin_position50_patch;namuh_coin_position50_patch.apply(ns)
+                        import namuh_c3_sync_price_patch;namuh_c3_sync_price_patch.apply(ns)
+                        import namuh_ui366_patch;namuh_ui366_patch.apply(ns)
+                        import namuh_search_stable_patch;namuh_search_stable_patch.apply(ns)
+                        import namuh_standard_detail_fix;namuh_standard_detail_fix.apply(ns)
+                        import namuh_score_floor1_history_patch;namuh_score_floor1_history_patch.apply(ns)
+                        import namuh_live_quote_integrity_patch;namuh_live_quote_integrity_patch.apply(ns)
+                        import namuh_orderbook_integrity_patch;namuh_orderbook_integrity_patch.apply(ns)
+                        # Full 15-session cumulative-volume curves prevent a new DATA_WAIT every minute.
+                        import namuh_volume15_curve_patch;namuh_volume15_curve_patch.apply(ns)
                 except Exception as exc:
                     print('NAMUH USER15 LATE PATCH ERROR:',str(exc)[:220],flush=True)
                 return _prev_run(*args,**kwargs)
             uvicorn.run=_run_with_user15
-    except Exception:
-        pass
+    except Exception:pass
