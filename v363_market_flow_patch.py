@@ -156,3 +156,11 @@ def apply(ns):
             _CACHE["payload"] = out
             _CACHE["ts"] = now
         return out
+
+    # Final runtime layer: function/data stability only. It deliberately leaves
+    # every existing site design, control and option position unchanged.
+    try:
+        import namuh_v367_unified
+        namuh_v367_unified.apply(ns)
+    except Exception as exc:
+        print("NAMUH V367 INSTALL ERROR:", str(exc)[:240], flush=True)
