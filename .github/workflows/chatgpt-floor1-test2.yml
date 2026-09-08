@@ -1,0 +1,35 @@
+name: ChatGPT Floor1 Score Test 2
+on:
+  push:
+    branches: [chatgpt-floor1-test2-20260908]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Syntax
+        run: python -m py_compile namuh_score_floor1_history_patch.py namuh_patch_loader.py namuh_conditions_final_patch.py namuh_zero_score_audit_patch.py namuh_minute_data_patch.py
+      - name: Verify floor isolation
+        run: |
+          python - <<'PY'
+          import namuh_score_floor1_history_patch as p
+          assert p._floor1(0,10)==1.0
+          assert p._floor1(7,10)==7.0
+          s=open('namuh_score_floor1_history_patch.py',encoding='utf-8').read()
+          for k in ['MACD','RSI','볼린저','거래량','이평','가격구조','엘리어트']:
+              assert f'"{k}"' in s
+          assert 'raw_total / 75.0 * 45.0' in s
+          assert 'market not in ("KR", "US")' in s
+          assert 'c._order8 =' not in s
+          assert 'c._standard45 =' not in s
+          assert 'C2/coin/bonus unchanged' in s
+          loader=open('namuh_patch_loader.py',encoding='utf-8').read()
+          assert loader.index('namuh_standard_detail_fix.apply(ns)') < loader.index('namuh_score_floor1_history_patch.apply(ns)')
+          base=open('namuh_conditions_final_patch.py',encoding='utf-8').read()
+          for x in ['"daily": daily_ok','"minute1m": minute_ok','"execution": exec_ok','"orderbook": order_ok']:
+              assert x in base
+          print('isolated C1 floor OK')
+          PY
