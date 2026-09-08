@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import random
 import re
+import types
 import unittest
 from pathlib import Path
 
@@ -17,6 +18,14 @@ def ids(text: str) -> set[str]:
     return set(re.findall(r'\bid=["\']([^"\']+)["\']', text))
 
 
+def literal_dollar_ids(js: str) -> set[str]:
+    return set(re.findall(r"\$\(['\"]([^'\"]+)['\"]\)", js))
+
+
+def static_assets(html: str) -> set[str]:
+    return set(re.findall(r'(?:src|href)=["\']/static/([^?"\']+)', html))
+
+
 class CleanFrontendValidated(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -29,6 +38,19 @@ class CleanFrontendValidated(unittest.TestCase):
         cls.stock_js = read("static/rebuild-stock.js")
         cls.base_css = read("static/rebuild.css")
         cls.full_css = read("static/rebuild-full.css")
+        py_parts = []
+        for path in ROOT.rglob("*.py"):
+            try:
+                rel = path.relative_to(ROOT)
+            except ValueError:
+                continue
+            if rel.parts and rel.parts[0] == "tests":
+                continue
+            try:
+                py_parts.append(path.read_text(encoding="utf-8"))
+            except UnicodeDecodeError:
+                pass
+        cls.python_sources = "\n".join(py_parts)
 
     def _assert_invariants(self):
         # Canonical production entry and clean owner files.
@@ -82,6 +104,10 @@ class CleanFrontendValidated(unittest.TestCase):
         self.assertNotIn("/static/stock.js", self.stock)
         self.assertNotIn("/static/v346.css", self.stock)
 
+        # Every static asset referenced by canonical HTML must exist.
+        for asset in static_assets(self.home) | static_assets(self.stock):
+            self.assertTrue((ROOT / "static" / asset).is_file(), asset)
+
         # Whole-market search/on-demand tracking and guarded state refresh.
         self.assertIn("/api/v34/search?market=", self.main_js)
         self.assertIn("/api/v34/track/", self.main_js)
@@ -122,6 +148,7 @@ class CleanFrontendValidated(unittest.TestCase):
             "monthTitle","nextMonth","calendar","daySummary","dayDetail","sectorModal","sectorTitle","sectorSummary","sectorMembers",
         ):
             self.assertIn(required, home_ids, required)
+        self.assertTrue(literal_dollar_ids(self.main_js).issubset(home_ids), sorted(literal_dollar_ids(self.main_js) - home_ids))
 
         # Detail page: composition board only; requests are timeout/overlap guarded.
         self.assertIn("AI 점수 구성표", self.stock)
@@ -144,6 +171,20 @@ class CleanFrontendValidated(unittest.TestCase):
             "flowGrid","flow20Status","flow20","events",
         ):
             self.assertIn(required, stock_ids, required)
+        self.assertTrue(literal_dollar_ids(self.stock_js).issubset(stock_ids), sorted(literal_dollar_ids(self.stock_js) - stock_ids))
+
+        # Frontend/backend contract sanity: every called API family must exist in Python source.
+        for api in (
+            "/api/state",
+            "/api/budget",
+            "/api/sector/",
+            "/api/v34/search",
+            "/api/v34/track/",
+            "/api/v344/stock/",
+            "/api/v344/disclosures/",
+            "/api/v344/investor-stock/",
+        ):
+            self.assertIn(api, self.python_sources, api)
 
         # Syntax-level sanity.
         ast.parse(self.runtime)
@@ -178,6 +219,54 @@ class CleanFrontendValidated(unittest.TestCase):
                     (a["score"], a["priority_score"]),
                     (b["score"], b["priority_score"]),
                 )
+
+    def test_route_override_executes_and_is_idempotent(self):
+        tree = ast.parse(self.route_patch)
+        selected = [
+            node for node in tree.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in {"_front_route", "apply"}
+        ]
+        code = compile(ast.Module(body=selected, type_ignores=[]), "namuh_clean_frontend_patch.py", "exec")
+
+        class FakeFileResponse:
+            def __init__(self, path):
+                self.path = Path(path)
+
+        class FakeRoute:
+            def __init__(self, path, endpoint=None, name=None):
+                self.path = path
+                self.endpoint = endpoint
+                self.name = name
+
+        class FakeApp:
+            def __init__(self):
+                self.router = types.SimpleNamespace(routes=[FakeRoute("/"), FakeRoute("/stock/{market}/{code}")])
+                self.state = types.SimpleNamespace()
+
+            def add_api_route(self, path, endpoint, **kwargs):
+                self.router.routes.append(FakeRoute(path, endpoint, kwargs.get("name")))
+
+        env = {
+            "ROOT": ROOT,
+            "_INSTALLED": False,
+            "FileResponse": FakeFileResponse,
+        }
+        exec(code, env)
+        app = FakeApp()
+        core = types.SimpleNamespace(app=app)
+        self.assertTrue(env["apply"]({"core": core}))
+        self.assertEqual(app.router.routes[0].path, "/stock/{market}/{code}")
+        self.assertEqual(app.router.routes[1].path, "/")
+        self.assertEqual(app.router.routes[0].name, "namuh_clean_stock")
+        self.assertEqual(app.router.routes[1].name, "namuh_clean_home")
+        self.assertTrue(app.state.namuh_clean_frontend)
+        before = len(app.router.routes)
+        self.assertTrue(env["apply"]({"core": core}))
+        self.assertEqual(len(app.router.routes), before)
+        home_response = app.router.routes[1].endpoint()
+        stock_response = app.router.routes[0].endpoint("KR", "005930")
+        self.assertEqual(home_response.path.name, "rebuild-index.html")
+        self.assertEqual(stock_response.path.name, "rebuild-stock.html")
 
 
 if __name__ == "__main__":
