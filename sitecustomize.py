@@ -127,6 +127,7 @@ try:
                     import namuh_c2_window_patch;namuh_c2_window_patch.apply(ns)
                     import namuh_condition_threshold_patch;namuh_condition_threshold_patch.apply(ns)
                     import namuh_us_strategy123_patch;namuh_us_strategy123_patch.apply(ns)
+                    import namuh_condition1_75_patch;namuh_condition1_75_patch.apply(ns)
                     import v363_market_flow_patch;v363_market_flow_patch.apply(ns)
             except Exception as exc:
                 print('LATE RUNTIME PATCH ERROR:',exc,flush=True)
