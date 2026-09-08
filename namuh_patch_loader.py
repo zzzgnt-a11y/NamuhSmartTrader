@@ -103,59 +103,40 @@ def install():
                         namuh_user15_patch.apply(ns)
                         import namuh_user15_stability
                         namuh_user15_stability.apply(ns)
-                        # USER15 historically re-injected v361 into the two main
-                        # pages. Strip it again after USER15 so v364/coin.js remain
-                        # the sole UI owners and trade filters cannot be deleted.
                         import v364_ui_cleanup_patch
                         v364_ui_cleanup_patch.apply(ns)
-                        # US full-market holidays must block candidate scan and entry.
                         import namuh_us_holiday_patch
                         namuh_us_holiday_patch.apply(ns)
-                        # Restore 1m/3m/5m/20m stock-detail AI scores and prioritize chart loading.
                         import namuh_stock_detail_fix
                         namuh_stock_detail_fix.apply(ns)
-                        # Condition1 V2 is installed first for compatibility; the final condition owner below replaces it.
                         import namuh_condition1_v2_patch
                         namuh_condition1_v2_patch.apply(ns)
-                        # Make repeat page loads instant: cached first paint, deferred auxiliary APIs,
-                        # versioned static asset cache, and immediate cached stock charts.
                         import namuh_page_speed_patch
                         namuh_page_speed_patch.apply(ns)
-                        # Final stock-detail condition score composition UI owner.
                         import namuh_ai_scoreboard_patch
                         namuh_ai_scoreboard_patch.apply(ns)
-                        # Speed-only late owner: main stock/AI/coin polling at 1 second.
                         import namuh_speed_patch
                         namuh_speed_patch.apply(ns)
-                        # Absolute final strategy owner. Only Condition1/2/3 internals are replaced;
-                        # unrelated site/runtime variables remain owned by the existing patches above.
                         import namuh_conditions_final_patch
                         namuh_conditions_final_patch.apply(ns)
-                        # Coin auto-entry position sizing: use 50% of effective coin budget per C1/C2 entry.
                         import namuh_coin_position50_patch
                         namuh_coin_position50_patch.apply(ns)
-                        # Isolated C3 bridge: only lets the final C3 resolver reuse a fresh PC-sync price.
                         import namuh_c3_sync_price_patch
                         namuh_c3_sync_price_patch.apply(ns)
-                        # Absolute final UI owner: calendar/filter/search geometry and Condition1 score map only.
                         import namuh_ui366_patch
                         namuh_ui366_patch.apply(ns)
-                        # Mobile search is a separate static component: no DOM reparenting or viewport listeners.
                         import namuh_search_stable_patch
                         namuh_search_stable_patch.apply(ns)
-                        # Final stock-detail correction: exactly seven technical indicators;
-                        # use chart history for display when live tick history is still warming up.
                         import namuh_standard_detail_fix
                         namuh_standard_detail_fix.apply(ns)
-                        # Final score/data owner: connect the existing shared minute-history
-                        # collector and apply a 1-point floor only to C1 entry + 7 technical items.
                         import namuh_score_floor1_history_patch
                         namuh_score_floor1_history_patch.apply(ns)
-                        # Official live quote owner: currentExecution is the NH endpoint that
-                        # actually contains cttr. Keep hot fixed KR symbols on realtime mc and
-                        # force exact currentExecution refresh for opened stock-detail pages.
+                        # Actual NH execution strength comes only from currentExecution/realtime execution.
                         import namuh_live_quote_integrity_patch
                         namuh_live_quote_integrity_patch.apply(ns)
+                        # Actual orderbook score uses total queue quantities from currentPrice.
+                        import namuh_orderbook_integrity_patch
+                        namuh_orderbook_integrity_patch.apply(ns)
                 except Exception as exc:
                     print('NAMUH USER15 LATE PATCH ERROR:',str(exc)[:220],flush=True)
                 return _prev_run(*args,**kwargs)
