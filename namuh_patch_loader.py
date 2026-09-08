@@ -91,6 +91,7 @@ def install():
                         import namuh_final_runtime_0908;namuh_final_runtime_0908.apply(ns)
                         import namuh_investor_merge_final;namuh_investor_merge_final.apply(ns)
                         import namuh_threshold75_final;namuh_threshold75_final.apply(ns)
+                        import namuh_stability70_final;namuh_stability70_final.apply(ns)
                 except Exception as exc:
                     print('NAMUH USER15 LATE PATCH ERROR:',str(exc)[:220],flush=True)
                 return _prev_run(*args,**kwargs)
