@@ -1,0 +1,75 @@
+name: ChatGPT Market Consistency Audit
+on:
+  push:
+    branches: [chatgpt-live-audit-20260908b]
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Syntax and helper tests
+        run: |
+          python -m py_compile namuh_market_consistency_patch.py namuh_patch_loader.py
+          python - <<'PY'
+          import namuh_market_consistency_patch as p
+          raw={'거래량':15,'RSI':10,'볼린저':10,'MACD':10,'이평':10,'가격구조':10,'엘리어트':10}
+          s,parts=p._weighted45(raw)
+          assert s==45.0,(s,parts)
+          z={'거래량':0,'RSI':0,'볼린저':0,'MACD':0,'이평':0,'가격구조':0,'엘리어트':0}
+          s2,_=p._weighted45(z)
+          assert 0 < s2 < 10,s2
+          payload={'Output_0':[{'bsop_date1':'20260908','frgn_ntby_qty':'100','gigwan':'-20','person':'-80','program':'30'}]}
+          assert len(p._current_investor_rows(payload))==1
+          print('weighted45 max=',s,'floor=',s2)
+          PY
+      - name: Wait for Render main deploy
+        run: sleep 90
+      - name: Live KR-US-COIN audit
+        run: |
+          python - <<'PY'
+          import json,time,urllib.request
+          base='https://namuh-smart-trader.onrender.com'
+          def get(path,tries=8):
+              last=None
+              for _ in range(tries):
+                  try:
+                      with urllib.request.urlopen(base+path,timeout=40) as r:return json.load(r)
+                  except Exception as e:last=e;time.sleep(8)
+              raise RuntimeError(f'{path}: {last}')
+          health=get('/api/v34/status')
+          print('HEALTH_CONSISTENCY=',json.dumps(health.get('market_consistency_v1'),ensure_ascii=False,sort_keys=True))
+          kr=get('/api/state?market=KR')
+          scalp=kr.get('scalp') or []
+          sam=next((x for x in scalp if str(x.get('code'))=='005930'),None)
+          detail=get('/api/v344/stock/KR/005930?timeframe=1d&days=60')
+          dc1=((detail.get('strategy_conditions') or {}).get('condition1') or {})
+          print('SAMSUNG_MAIN=',json.dumps({k:(sam or {}).get(k) for k in ('code','name','score','condition1','condition2')},ensure_ascii=False,sort_keys=True))
+          print('SAMSUNG_DETAIL=',json.dumps({'condition1_score':detail.get('condition1_score'),'main_candidate_score':detail.get('main_candidate_score'),'source':detail.get('score_consistency_source'),'c1':dc1},ensure_ascii=False,sort_keys=True))
+          if sam:
+              ms=float(sam.get('score') or 0); ds=float(dc1.get('score') or detail.get('condition1_score') or 0)
+              assert abs(ms-ds)<=0.11,(ms,ds)
+          sectors=kr.get('sectors') or []
+          print('KR_SECTOR_TOP3=',json.dumps([{'sector':x.get('sector'),'flow_share':x.get('flow_share'),'flow_value':x.get('flow_value')} for x in sectors[:3]],ensure_ascii=False,sort_keys=True))
+          us=get('/api/v352/universe?market=US&catalog=0')
+          urows=us.get('scores') or []
+          u=next((x for x in urows if isinstance(x.get('condition1'),dict)),None)
+          print('US_SAMPLE=',json.dumps(u,ensure_ascii=False,sort_keys=True))
+          if u:
+              assert isinstance(u.get('condition1'),dict)
+              assert isinstance(u.get('condition2'),dict)
+              assert isinstance(u.get('condition3'),dict)
+              assert (u.get('condition1') or {}).get('standard_weight_model') or (u.get('condition1') or {}).get('score_consistency_owner')
+          coin=get('/api/coin/state')
+          crows=coin.get('candidates') or []
+          c=crows[0] if crows else None
+          print('COIN_SAMPLE=',json.dumps(c,ensure_ascii=False,sort_keys=True))
+          if c:
+              assert isinstance(c.get('condition1'),dict)
+              assert isinstance(c.get('condition2'),dict)
+              assert not isinstance(c.get('condition3'),dict),c.get('condition3')
+              mm=(c.get('condition1') or {}).get('minute_meta') or {}
+              assert 'score_parts' in mm,mm
+          PY
