@@ -1,0 +1,25 @@
+name: clean-frontend-validated
+
+on:
+  push:
+    branches: [clean-frontend-validated]
+  workflow_dispatch:
+
+jobs:
+  validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Python syntax
+        run: |
+          python -m py_compile runtime_server_v34.py namuh_patch_loader.py namuh_clean_frontend_patch.py
+      - name: JavaScript syntax
+        run: |
+          node --check static/rebuild.js
+          node --check static/rebuild-stock.js
+      - name: Isolated frontend regression suite
+        run: |
+          python -m unittest tests.test_clean_frontend_validated -v
