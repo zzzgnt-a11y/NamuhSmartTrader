@@ -94,6 +94,7 @@ def install():
                         import namuh_stability70_final;namuh_stability70_final.apply(ns)
                         import namuh_investor_probe_0908;namuh_investor_probe_0908.apply(ns)
                         import namuh_scalp_sector_final_0908;namuh_scalp_sector_final_0908.apply(ns)
+                        import namuh_scalp_sector_diversity_v2;namuh_scalp_sector_diversity_v2.apply(ns)
                 except Exception as exc:
                     print('NAMUH USER15 LATE PATCH ERROR:',str(exc)[:220],flush=True)
                 return _prev_run(*args,**kwargs)
