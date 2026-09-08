@@ -99,6 +99,7 @@ def install():
                         import namuh_v369_exact_top5;namuh_v369_exact_top5.apply(ns)
                         import namuh_v370_userfix;namuh_v370_userfix.apply(ns)
                         import namuh_v371_today_sector;namuh_v371_today_sector.apply(ns)
+                        import namuh_v372_speed_final;namuh_v372_speed_final.apply(ns)
                 except Exception as exc:
                     print('NAMUH USER15 LATE PATCH ERROR:',str(exc)[:220],flush=True)
                 return _prev_run(*args,**kwargs)
