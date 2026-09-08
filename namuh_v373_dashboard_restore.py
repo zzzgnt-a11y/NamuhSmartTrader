@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import os
+import re
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent
 _INSTALLED = False
 
 
@@ -17,13 +22,24 @@ def _route(core, path):
     )
 
 
-def _install_safe_state_routes(core):
-    """Repair the v372 route binding without changing FastAPI's dependency metadata.
+def _cached_top5(core, market):
+    market = str(market or "").upper()
+    if market not in ("KR", "US"):
+        return []
+    try:
+        with core.cache_lock:
+            rows = list((core.CACHE.get(market) or {}).get("scalp") or [])
+    except Exception:
+        rows = []
+    rows.sort(key=lambda x: _f(x.get("score")), reverse=True)
+    return rows[:5]
 
-    v372 created two wrappers in the same function scope and both captured the same
-    local name (``old``). After the second assignment, the /api/state wrapper could
-    call coin_state with the ``market`` keyword, producing a 500. Bind each route to
-    the known module endpoint instead and keep only the intended TOP5 payload trim.
+
+def _install_safe_state_routes(core):
+    """Repair v372 route binding and preserve a visible latest TOP5 after close.
+
+    Trading stays gated by candidate_scan_active/trading_window. Only the dashboard
+    display gets the latest cached AI ranking when the market is closed.
     """
     installed = {"state": False, "coin": False}
 
@@ -32,10 +48,19 @@ def _install_safe_state_routes(core):
     if state_route is not None and callable(original_state):
         def state_safe(**kwargs):
             out = original_state(**kwargs)
-            if isinstance(out, dict):
-                rows = list(out.get("scalp") or [])
-                rows.sort(key=lambda x: _f(x.get("score")), reverse=True)
-                out["scalp"] = rows[:5]
+            if not isinstance(out, dict):
+                return out
+
+            mode = str(out.get("mode") or kwargs.get("market") or "").upper()
+            rows = list(out.get("scalp") or [])
+            if mode in ("KR", "US") and not rows:
+                rows = _cached_top5(core, mode)
+                if rows:
+                    out["candidate_display_source"] = "latest_cache_after_close"
+            rows.sort(key=lambda x: _f(x.get("score")), reverse=True)
+            out["scalp"] = rows[:5]
+            out["candidate_display_count"] = len(out["scalp"])
+            out["candidate_display_live"] = bool(out.get("candidate_scan_active"))
             return out
 
         state_safe._namuh_v373_safe_state = True
@@ -50,8 +75,6 @@ def _install_safe_state_routes(core):
     original_coin_state = getattr(core, "coin_state", None)
     if coin_route is not None and callable(original_coin_state):
         def coin_state_safe(**_kwargs):
-            # The original endpoint has no query parameters. Ignore any stale
-            # dependency kwargs defensively so a bad route binding cannot 500.
             out = original_coin_state()
             if isinstance(out, dict):
                 rows = list(out.get("candidates") or [])
@@ -70,7 +93,43 @@ def _install_safe_state_routes(core):
     return installed
 
 
-def _install_health(core, installed):
+def _patch_frontend(build):
+    p = ROOT / "static/app.js"
+    if not p.exists():
+        return False
+    try:
+        text = p.read_text(encoding="utf-8")
+        old = text
+
+        # Keep the last ranked TOP5 visible after the market closes. Trading remains
+        # disabled because candidate_scan_active is still false on the backend.
+        text = text.replace(
+            'text("topScalp",scan&&scalp[0]?`${scalp[0].name} ${Number(scalp[0].score).toFixed(0)}점`:scan?"분석 중":"장 종료");',
+            'text("topScalp",scalp[0]?`${scalp[0].name} ${Number(scalp[0].score).toFixed(0)}점${scan?"":" · 장마감"}`:scan?"분석 중":"장 종료");'
+        )
+        text = text.replace(
+            '$("candidateClosed")?.classList.toggle("hide",scan);$("candidateZone")?.classList.toggle("hide",!scan);',
+            'const showCandidates=scalp.length>0;$("candidateClosed")?.classList.toggle("hide",scan);$("candidateZone")?.classList.toggle("hide",!showCandidates);'
+        )
+        text = text.replace(
+            'if(scan){html("scalpList",scalp.length?scalp.map((x,i)=>candidateCard(x,false,i+1)).join(""):\'<div class="empty">후보 데이터 축적 중</div>\');',
+            'if(scan||scalp.length){html("scalpList",scalp.length?scalp.map((x,i)=>candidateCard(x,false,i+1)).join(""):\'<div class="empty">후보 데이터 축적 중</div>\');'
+        )
+        text = text.replace(
+            'text("topSector",lead?(scan?`${lead.sector} · 대장주 : ${lead.leader||"-"}`:`${lead.sector} · 장 종료`):"분석 중");',
+            'text("topSector",lead?`${lead.sector}${scan?` · 대장주 : ${lead.leader||"-"}`:" · 장마감 최신값"}`:"분석 중");'
+        )
+
+        if text != old:
+            p.write_text(text, encoding="utf-8")
+            return True
+        return False
+    except Exception as exc:
+        print("V373 frontend patch error:", str(exc)[:160], flush=True)
+        return False
+
+
+def _install_health(core, installed, frontend):
     old = core.health_payload
     if getattr(old, "_namuh_v373_dashboard_restore", False):
         return
@@ -84,6 +143,9 @@ def _install_health(core, installed):
             "kr_us_state_route_restored": bool(installed.get("state")),
             "coin_state_route_restored": bool(installed.get("coin")),
             "top5_preserved": True,
+            "after_close_top5_visible": True,
+            "frontend_after_close_patch": bool(frontend),
+            "trading_gate_unchanged": True,
             "layout_unchanged": True,
         }
         return data
@@ -103,10 +165,13 @@ def apply(ns=None):
     _INSTALLED = True
 
     installed = _install_safe_state_routes(core)
-    _install_health(core, installed)
+    build = (os.getenv("RENDER_GIT_COMMIT") or os.getenv("GY_BUILD_ID") or "v373")[:12]
+    frontend = _patch_frontend(build)
+    _install_health(core, installed, frontend)
     print(
-        "NAMUH V373 DASHBOARD ROUTE REPAIR active: "
-        f"state={installed['state']} coin={installed['coin']} top5 preserved layout unchanged",
+        "NAMUH V373 DASHBOARD ROUTE/TOP5 REPAIR active: "
+        f"state={installed['state']} coin={installed['coin']} frontend={frontend} "
+        "latest TOP5 visible after close; trading gate unchanged",
         flush=True,
     )
     return True
