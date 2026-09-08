@@ -1,0 +1,61 @@
+name: ChatGPT Scalp Sector V2 Test
+on:
+  push:
+    branches: [chatgpt-scalp-sector-v2-test-0908]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Static checks
+        run: |
+          python -m py_compile namuh_universe_patch.py namuh_scalp_sector_final_0908.py namuh_scalp_sector_diversity_v2.py namuh_patch_loader.py
+          python - <<'PY'
+          s=open('namuh_scalp_sector_diversity_v2.py',encoding='utf-8').read()
+          l=open('namuh_patch_loader.py',encoding='utf-8').read()
+          assert '_fund_like' in s and '_apply_master_meta' in s
+          assert 'namuh_scalp_sector_diversity_v2.apply(ns)' in l
+          print('STATIC PASS')
+          PY
+      - name: Live V2 audit
+        run: |
+          python - <<'PY'
+          import json,time,urllib.request
+          base='https://namuh-smart-trader.onrender.com'; expected='d0cf6f2c817f'
+          fixed=set(['005930','000660','035420','035720','068270','012450','267260','042700','005380','000270','105560','055550','086790','028260','207940'])
+          fund_prefix=('KODEX','TIGER','RISE','ACE','PLUS','SOL','KOSEF','HANARO','TIMEFOLIO','KBSTAR','ARIRANG','FOCUS','TREX','QV','TRUE')
+          def get(path,timeout=60):
+              req=urllib.request.Request(base+path,headers={'User-Agent':'NamuhScalpSectorV2Audit/1.0'})
+              with urllib.request.urlopen(req,timeout=timeout) as r:return json.load(r)
+          h={}
+          for i in range(30):
+              try:
+                  h=get('/api/v34/status')
+                  if str(h.get('build') or '').startswith(expected): break
+                  print('WAIT_BUILD',i,h.get('build'))
+              except Exception as e: print('WAIT_ERR',i,type(e).__name__,str(e)[:100])
+              time.sleep(8)
+          assert str(h.get('build') or '').startswith(expected),(h.get('build'),expected)
+          best={}; rows=[]; nonfixed=[]
+          for i in range(18):
+              u=get('/api/v352/universe?market=KR&catalog=0'); rows=u.get('scores') or []
+              nonfixed=[x for x in rows if str(x.get('code') or '') not in fixed]
+              print('WARM',i,json.dumps({'count':len(rows),'nonfixed':[(x.get('code'),x.get('name'),x.get('sector')) for x in nonfixed],'source':u.get('score_source'),'counts':u.get('source_counts')},ensure_ascii=False))
+              if len(rows)>=12 and len(nonfixed)>=3: best=u; break
+              time.sleep(10)
+          if not best: best=u
+          names=[str(x.get('name') or '') for x in (best.get('scores') or [])]
+          bad=[n for n in names if n.upper().startswith(fund_prefix) or ' ETN' in (' '+n.upper()) or n.upper().endswith('ETN')]
+          st=get('/api/state?market=KR'); secs=st.get('sectors') or []
+          print('FINAL',json.dumps({'build':h.get('build'),'count':len(best.get('scores') or []),'nonfixed':[(x.get('code'),x.get('name'),x.get('sector')) for x in (best.get('scores') or []) if str(x.get('code') or '') not in fixed],'bad_funds':bad,'sectors':secs[:8]},ensure_ascii=False))
+          assert len(best.get('scores') or [])>=12
+          assert len([x for x in (best.get('scores') or []) if str(x.get('code') or '') not in fixed])>=3
+          assert not bad,bad
+          assert secs
+          for x in secs[:5]:
+              fs=x.get('flow_share') or {}
+              for k in ('foreign','institution','program','person_exit','composite'): assert k in fs,(x.get('sector'),fs)
+          PY
