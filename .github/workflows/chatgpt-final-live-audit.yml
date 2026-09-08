@@ -1,0 +1,68 @@
+name: ChatGPT Final Live Audit
+on:
+  push:
+    branches: [chatgpt-final-live-audit-20260908]
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Live KR-US-COIN consistency audit
+        run: |
+          python - <<'PY'
+          import json, time, urllib.request
+          base='https://namuh-smart-trader.onrender.com'
+          def get(path, tries=5):
+              last=None
+              for _ in range(tries):
+                  try:
+                      with urllib.request.urlopen(base+path, timeout=45) as r:
+                          return json.load(r)
+                  except Exception as e:
+                      last=e; time.sleep(4)
+              raise RuntimeError(f'{path}: {last}')
+
+          health=get('/api/v34/status')
+          print('HEALTH=', json.dumps(health.get('market_consistency_v1'), ensure_ascii=False, sort_keys=True))
+
+          kr=get('/api/state?market=KR')
+          scalp=kr.get('scalp') or []
+          sam=next((x for x in scalp if str(x.get('code'))=='005930'), None)
+          assert sam is not None, 'Samsung 005930 missing from KR scalp'
+          detail=get('/api/v344/stock/KR/005930?timeframe=1d&days=60')
+          dc1=((detail.get('strategy_conditions') or {}).get('condition1') or {})
+          ms=float(sam.get('score') or 0); ds=float(dc1.get('score') or detail.get('condition1_score') or 0)
+          print('KR_MAIN_SCORE=',ms,'KR_DETAIL_SCORE=',ds,'SOURCE=',detail.get('score_consistency_source'))
+          assert abs(ms-ds)<=0.11,(ms,ds)
+          assert detail.get('score_consistency_source')=='main CACHE scalp candidate',detail.get('score_consistency_source')
+
+          us=get('/api/v352/universe?market=US&catalog=0')
+          urows=us.get('scores') or []
+          u=next((x for x in urows if isinstance(x.get('condition1'),dict) and isinstance(x.get('condition2'),dict) and isinstance(x.get('condition3'),dict)),None)
+          assert u is not None,'No US C1/C2/C3 sample'
+          uc1=u['condition1']; uc2=u['condition2']
+          print('US_SAMPLE=',json.dumps({'code':u.get('code'),'score':u.get('score'),'c1':uc1,'c2':uc2,'c3':u.get('condition3')},ensure_ascii=False,sort_keys=True))
+          assert uc1.get('score_consistency_owner')=='market_consistency_v1',uc1
+          std=float(uc1.get('standard_score') or 0)
+          tech5=float((uc2.get('breakdown') or {}).get('technical5') or 0)
+          assert abs(tech5-round(std/45*5,1))<=0.11,(std,tech5)
+
+          coin=get('/api/coin/state')
+          crows=coin.get('candidates') or []
+          c=next((x for x in crows if isinstance(x.get('condition1'),dict) and isinstance(x.get('condition2'),dict)),None)
+          assert c is not None,'No coin C1/C2 sample'
+          assert not isinstance(c.get('condition3'),dict),c.get('condition3')
+          cc1=c['condition1']; cc2=c['condition2']
+          mm=cc1.get('minute_meta') or {}
+          assert 'score_parts' in mm,mm
+          cstd=float(cc1.get('standard_score') or 0)
+          ctech5=float((cc2.get('breakdown') or {}).get('technical5') or 0)
+          assert abs(ctech5-round(cstd/45*5,1))<=0.11,(cstd,ctech5)
+          print('COIN_SAMPLE=',json.dumps({'code':c.get('code'),'score':c.get('score'),'c1':cc1,'c2':cc2},ensure_ascii=False,sort_keys=True))
+
+          sectors=kr.get('sectors') or []
+          print('KR_SECTOR_TOP3=',json.dumps(sectors[:3],ensure_ascii=False,sort_keys=True))
+          print('FINAL_AUDIT_PASS')
+          PY
