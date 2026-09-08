@@ -79,15 +79,18 @@ def install():
                         import namuh_coin_position50_patch;namuh_coin_position50_patch.apply(ns)
                         import namuh_c3_sync_price_patch;namuh_c3_sync_price_patch.apply(ns)
                         import namuh_ui366_patch;namuh_ui366_patch.apply(ns)
-                        import namuh_standard_detail_fix;namuh_standard_detail_fix.apply(ns)
+                        # Keep zero/data-wait auditing, but do not install the old
+                        # history-backed detail recomputation that made main/detail scores diverge.
+                        import namuh_zero_score_audit_patch;namuh_zero_score_audit_patch.apply(ns)
                         import namuh_score_floor1_history_patch;namuh_score_floor1_history_patch.apply(ns)
                         import namuh_live_quote_integrity_patch;namuh_live_quote_integrity_patch.apply(ns)
                         import namuh_orderbook_integrity_patch;namuh_orderbook_integrity_patch.apply(ns)
                         import namuh_volume15_curve_patch;namuh_volume15_curve_patch.apply(ns)
                         import namuh_runtime_traffic_guard;namuh_runtime_traffic_guard.apply(ns)
-                        # Absolute-final user-requested owner: sector mapping/bonus,
-                        # weighted Standard45, and original v34 search UI without viewport flicker.
                         import namuh_requested_fixes_0908;namuh_requested_fixes_0908.apply(ns)
+                        # Absolute-final consistency owner: investor-sector data,
+                        # KR/US/COIN condition score integrity and main/detail equality.
+                        import namuh_market_consistency_patch;namuh_market_consistency_patch.apply(ns)
                 except Exception as exc:
                     print('NAMUH USER15 LATE PATCH ERROR:',str(exc)[:220],flush=True)
                 return _prev_run(*args,**kwargs)
