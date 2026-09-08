@@ -151,6 +151,11 @@ def install():
                         # collector and apply a 1-point floor only to C1 entry + 7 technical items.
                         import namuh_score_floor1_history_patch
                         namuh_score_floor1_history_patch.apply(ns)
+                        # Official live quote owner: currentExecution is the NH endpoint that
+                        # actually contains cttr. Keep hot fixed KR symbols on realtime mc and
+                        # force exact currentExecution refresh for opened stock-detail pages.
+                        import namuh_live_quote_integrity_patch
+                        namuh_live_quote_integrity_patch.apply(ns)
                 except Exception as exc:
                     print('NAMUH USER15 LATE PATCH ERROR:',str(exc)[:220],flush=True)
                 return _prev_run(*args,**kwargs)
