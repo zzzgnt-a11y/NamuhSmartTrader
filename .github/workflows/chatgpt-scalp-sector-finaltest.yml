@@ -10,17 +10,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Recheck warmed live detector
+      - name: Check nonfixed scalp discovery
         run: |
           python - <<'PY'
-          import json,time,urllib.request
+          import json,urllib.request
           base='https://namuh-smart-trader.onrender.com'
+          fixed=set(['005930','000660','035420','035720','068270','012450','267260','042700','005380','000270','105560','055550','086790','028260','207940'])
           def get(path):
-              req=urllib.request.Request(base+path,headers={'User-Agent':'NamuhWarmAudit/1.0'})
+              req=urllib.request.Request(base+path,headers={'User-Agent':'NamuhNonfixedAudit/1.0'})
               with urllib.request.urlopen(req,timeout=60) as r:return json.load(r)
-          for i in range(4):
-              h=get('/api/v34/status'); u=get('/api/v352/universe?market=KR&catalog=0'); st=get('/api/state?market=KR')
-              rows=u.get('scores') or []; secs=st.get('sectors') or []
-              print('SNAP',i,json.dumps({'build':h.get('build'),'loop':h.get('loop'),'universe':{k:u.get(k) for k in ('scored_count','score_source','source_counts','updated_at')},'codes':[x.get('code') for x in rows[:30]],'names':[x.get('name') for x in rows[:30]],'sector_count':len(secs),'sectors':secs[:6]},ensure_ascii=False))
-              time.sleep(15)
+          h=get('/api/v34/status');u=get('/api/v352/universe?market=KR&catalog=0');st=get('/api/state?market=KR')
+          rows=u.get('scores') or []; codes=[str(x.get('code') or '') for x in rows]
+          print('AUDIT',json.dumps({'build':h.get('build'),'count':len(rows),'codes':codes,'names':[x.get('name') for x in rows],'nonfixed':[c for c in codes if c not in fixed],'source':u.get('score_source'),'source_counts':u.get('source_counts'),'sectors':(st.get('sectors') or [])[:8]},ensure_ascii=False))
           PY
