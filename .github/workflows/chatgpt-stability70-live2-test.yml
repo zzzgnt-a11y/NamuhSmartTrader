@@ -1,0 +1,79 @@
+name: ChatGPT Stability70 Live2 Test
+on:
+  push:
+    branches: [chatgpt-stability70-live2-0908]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Static final checks
+        run: |
+          python -m py_compile namuh_stability70_final.py namuh_threshold75_final.py namuh_universe_patch.py namuh_patch_loader.py
+          python - <<'PY'
+          import pathlib
+          t=pathlib.Path('namuh_threshold75_final.py').read_text(encoding='utf-8')
+          u=pathlib.Path('namuh_universe_patch.py').read_text(encoding='utf-8')
+          s=pathlib.Path('namuh_stability70_final.py').read_text(encoding='utf-8')
+          assert "total >= 70.0" in t and "entry_threshold'] = 70.0" in t
+          assert "'entry_score':70" in u
+          assert 'C1_THRESHOLD = 70.0' in s
+          print('STATIC_FINAL_PASS')
+          PY
+      - name: Live final audit
+        run: |
+          python - <<'PY'
+          import json,time,urllib.request
+          base='https://namuh-smart-trader.onrender.com'
+          expected='016bc6c7bcd1'
+          def get_json(path,timeout=45):
+              req=urllib.request.Request(base+path,headers={'User-Agent':'NamuhFinalAudit/2.0'})
+              with urllib.request.urlopen(req,timeout=timeout) as r:return json.load(r)
+          def get_text(path,timeout=45):
+              req=urllib.request.Request(base+path,headers={'User-Agent':'NamuhFinalAudit/2.0'})
+              with urllib.request.urlopen(req,timeout=timeout) as r:return r.read().decode('utf-8','replace')
+          h={}
+          for i in range(24):
+              try:
+                  h=get_json('/api/v34/status')
+                  if str(h.get('build') or '').startswith(expected):
+                      print('BUILD_READY',h.get('build'));break
+                  print('WAIT_BUILD',i,h.get('build'))
+              except Exception as e: print('WAIT_ERR',i,type(e).__name__,str(e)[:100])
+              time.sleep(10)
+          assert str(h.get('build') or '').startswith(expected),(h.get('build'),expected)
+          detail={};c1={}
+          for i in range(18):
+              try:
+                  detail=get_json('/api/v344/stock/KR/000660?timeframe=1d&days=60')
+                  c1=((detail.get('strategy_conditions') or {}).get('condition1') or {})
+                  if float(c1.get('entry_threshold') or 0)==70:break
+                  print('WAIT_C1',i,c1.get('entry_threshold'),c1.get('score'))
+              except Exception as e:print('WAIT_C1_ERR',i,type(e).__name__,str(e)[:100])
+              time.sleep(8)
+          assert float(c1.get('entry_threshold') or 0)==70,c1
+          assert c1.get('threshold_owner')=='condition1 final 70',c1.get('threshold_owner')
+          u=get_json('/api/v352/universe?market=KR&catalog=0')
+          assert int(u.get('entry_score') or 0)==70,u.get('entry_score')
+          js=get_text('/static/v364_main.js')
+          assert '70↑' in js and 'setInterval(loadScores,20000)' in js
+          samples=[]
+          for _ in range(4):
+              d=get_json('/api/v352/universe?market=KR&catalog=0')
+              samples.append([str(x.get('code') or '') for x in (d.get('scores') or [])[:20]])
+              time.sleep(10)
+          uniq=sorted(set(c for row in samples for c in row if c))
+          t=time.time();flow=get_json('/api/v343/market-flow');flow_ms=round((time.time()-t)*1000)
+          state=get_json('/api/state?market=KR');sectors=state.get('sectors') or []
+          top3=sectors[:3]
+          shares={k:[(x.get('flow_share') or {}).get(k) for x in top3] for k in ('foreign','institution','person_exit','program')}
+          print('FINAL_HEALTH',json.dumps({'build':h.get('build'),'diag':h.get('diagnostics'),'stability':h.get('stability70_final')},ensure_ascii=False,sort_keys=True))
+          print('C1_FINAL',json.dumps({'score':c1.get('score'),'threshold':c1.get('entry_threshold'),'gate':c1.get('gate'),'owner':c1.get('threshold_owner'),'daily10':(c1.get('breakdown') or {}).get('daily10')},ensure_ascii=False))
+          print('UNIVERSE_FINAL',json.dumps({'entry_score':u.get('entry_score'),'scored_count':u.get('scored_count'),'top20':[x.get('code') for x in (u.get('scores') or [])[:20]]},ensure_ascii=False))
+          print('SCALP_DIVERSITY',json.dumps({'unique_top20_across_4':len(uniq),'unique_codes':uniq,'samples':samples},ensure_ascii=False))
+          print('INDEX_FLOW_LATENCY_MS',flow_ms)
+          print('SECTOR_FLOW_TOP3',json.dumps({'count':len(sectors),'shares':shares,'top3':top3},ensure_ascii=False))
+          PY
