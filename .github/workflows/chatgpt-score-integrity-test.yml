@@ -19,69 +19,36 @@ jobs:
           from datetime import datetime, timezone, timedelta
           from engine import Quote, rsi_points
           import namuh_c1_score_integrity_patch as p
-
-          q=Quote('005930','삼성전자')
-          q.execution_strength=130.0
-          q.execution_history.append((1.0, 95.0))
-          score, ok, reason=p._execution(None,q,999999.0)
-          assert score==12.0 and ok, (score,ok,reason)
-
-          bars=[
-            {'time':'20260908091700','open':100,'high':101,'low':99,'close':100,'volume':1},
-            {'time':'20260908091800','open':100,'high':100,'low':98,'close':99,'volume':1},
-            {'time':'20260908091900','open':99,'high':101,'low':98.5,'close':101,'volume':1},
-          ]
+          q=Quote('005930','삼성전자'); q.execution_strength=130.0; q.execution_history.append((1.0,95.0))
+          score,ok,reason=p._execution(None,q,999999.0)
+          assert score==12.0 and ok
+          bars=[{'time':'20260908091700','open':100,'high':101,'low':99,'close':100,'volume':1},{'time':'20260908091800','open':100,'high':100,'low':98,'close':99,'volume':1},{'time':'20260908091900','open':99,'high':101,'low':98.5,'close':101,'volume':1}]
           class Feed:
-            def bars(self,m,c,tf): return bars
-          core=SimpleNamespace(feed=Feed(), KST=timezone(timedelta(hours=9)))
-          q.price=101
+              def bars(self,m,c,tf): return bars
+          core=SimpleNamespace(feed=Feed(),KST=timezone(timedelta(hours=9))); q.price=101
           s,g,m=p._minute_score(core,q,'KR',datetime(2026,9,8,9,19,tzinfo=core.KST))
-          assert 9.0 <= s <= 10.0 and g, (s,g,m)
-
+          assert 9 <= s <= 10 and g
           xs=[100,99,100,99.5,100.5,100,101,100.5,101.5,101,102,101.5,102.5,102,103,102.5,103.5,103,104,103.5,104.5,104]
-          rv=p._rsi_wilder(xs,14)
-          pts=rsi_points(rv)
-          assert 0 <= rv <= 100
-          assert 0 <= pts <= 10
-          print('execution',score,ok,reason)
-          print('minute',s,g,m['score_parts'])
-          print('rsi',rv,pts)
+          rv=p._rsi_wilder(xs,14); pts=rsi_points(rv)
+          assert 0 <= rv <= 100 and 0 <= pts <= 10
+          print('execution',score,ok,reason); print('minute',s,g,m['score_parts']); print('rsi',rv,pts)
           PY
-      - name: Samsung live score report
+      - name: Samsung live universe score report
         run: |
           python - <<'PY'
-          import json, time, urllib.request
-          url='https://namuh-smart-trader.onrender.com/api/stock/KR/005930'
-          last=None
-          for i in range(6):
-              try:
-                  with urllib.request.urlopen(url, timeout=30) as r:
-                      d=json.load(r)
-                  break
-              except Exception as e:
-                  last=e; time.sleep(5)
-          else:
-              raise SystemExit(f'LIVE_FETCH_FAILED: {last}')
-          sc=d.get('strategy_conditions') or {}
-          c1=sc.get('condition1') or {}
-          c2=sc.get('condition2') or {}
-          report={
-              'name':d.get('name'),'code':d.get('code'),'price':d.get('price'),
-              'flow':d.get('flow'),
-              'c1_score':c1.get('score'),'c1_gate':c1.get('gate'),
-              'prerequisite_score':c1.get('prerequisite_score'),
-              'standard_score':c1.get('standard_score'),'bonus_score':c1.get('bonus_score'),
-              'breakdown':c1.get('breakdown'),'gates':c1.get('gates'),
-              'minute_meta':c1.get('minute_meta'),'execution_strength':c1.get('execution_strength'),
-              'execution_reason':c1.get('execution_reason'),
-              'standard_raw':c1.get('standard_raw'),
-              'standard_raw_before_floor':c1.get('standard_raw_before_floor'),
-              'technical_meta':c1.get('technical_meta'),
-              'c2_score':c2.get('score'),'c2_gate':c2.get('gate'),'c2_breakdown':c2.get('breakdown'),
-              'score_integrity_error':d.get('score_integrity_error'),
-              'standard_detail_fix_error':d.get('standard_detail_fix_error'),
-          }
-          print('SAMSUNG_LIVE_REPORT='+json.dumps(report,ensure_ascii=False,sort_keys=True))
-          if report['score_integrity_error']:
-              raise SystemExit('score_integrity_error present')
+          import json,time,urllib.request
+          def get(url):
+              last=None
+              for _ in range(6):
+                  try:
+                      with urllib.request.urlopen(url,timeout=30) as r:return json.load(r)
+                  except Exception as e:last=e;time.sleep(5)
+              raise RuntimeError(last)
+          d=get('https://namuh-smart-trader.onrender.com/api/v352/universe?market=KR&catalog=0')
+          rows=d.get('scores') or d.get('candidates') or d.get('items') or []
+          row=next((x for x in rows if str(x.get('code'))=='005930'),None)
+          print('UNIVERSE_KEYS='+json.dumps(list(d.keys()),ensure_ascii=False))
+          print('SAMSUNG_UNIVERSE='+json.dumps(row,ensure_ascii=False,sort_keys=True))
+          if not row: raise SystemExit('005930 missing from universe')
+          if row.get('score_integrity_error'): raise SystemExit('score_integrity_error='+str(row.get('score_integrity_error')))
           PY
