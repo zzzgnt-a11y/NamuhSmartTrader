@@ -86,6 +86,9 @@ def install():
                         import namuh_orderbook_integrity_patch;namuh_orderbook_integrity_patch.apply(ns)
                         # Full 15-session cumulative-volume curves prevent a new DATA_WAIT every minute.
                         import namuh_volume15_curve_patch;namuh_volume15_curve_patch.apply(ns)
+                        # Absolute-final transport guard: preserve score formulas while removing the
+                        # duplicate full-catalog REST load that made the site unresponsive.
+                        import namuh_runtime_traffic_guard;namuh_runtime_traffic_guard.apply(ns)
                 except Exception as exc:
                     print('NAMUH USER15 LATE PATCH ERROR:',str(exc)[:220],flush=True)
                 return _prev_run(*args,**kwargs)
