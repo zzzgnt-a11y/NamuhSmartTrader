@@ -75,20 +75,21 @@ def apply(ns: dict) -> bool:
     except Exception as exc:
         print('NAMUH DETAIL fast-payload error:', str(exc)[:180], flush=True)
 
-    # Give the chart request first priority on page entry. Flow/disclosure calls
-    # start a fraction later, and the live chart/scores refresh every 2 seconds.
+    # Keep chart/detail responsive without hammering the same strategy endpoint.
+    # Main state is 5 seconds, so matching that cadence avoids duplicate 2-second
+    # recomputation while still feeling live to the user.
     try:
         p = Path(__file__).resolve().parent / 'static' / 'stock.js'
         text = p.read_text(encoding='utf-8')
         text = text.replace(
             "loadStock('1d');loadInvestorFlow();loadStockEvents();setInterval(()=>loadStock(TF),15000);setInterval(loadInvestorFlow,30000);setInterval(loadStockEvents,120000);",
-            "loadStock('1d');setTimeout(loadInvestorFlow,250);setTimeout(loadStockEvents,400);setInterval(()=>loadStock(TF),2000);setInterval(loadInvestorFlow,30000);setInterval(loadStockEvents,120000);"
+            "loadStock('1d');setTimeout(loadInvestorFlow,250);setTimeout(loadStockEvents,400);setInterval(()=>loadStock(TF),5000);setInterval(loadInvestorFlow,30000);setInterval(loadStockEvents,120000);"
         )
-        text = re.sub(r"setInterval\(\(\)=>loadStock\(TF\),\s*(?:15000|3000|2000)\)", "setInterval(()=>loadStock(TF),2000)", text)
+        text = re.sub(r"setInterval\(\(\)=>loadStock\(TF\),\s*(?:15000|3000|2000|5000)\)", "setInterval(()=>loadStock(TF),5000)", text)
         p.write_text(text, encoding='utf-8')
     except Exception as exc:
         print('NAMUH DETAIL stock.js speed error:', str(exc)[:180], flush=True)
 
     _INSTALLED = True
-    print('NAMUH STOCK DETAIL FIX active: timeframe scores restored, chart prioritized, refresh=2s', flush=True)
+    print('NAMUH STOCK DETAIL FIX active: timeframe scores restored, chart prioritized, refresh=5s', flush=True)
     return True
