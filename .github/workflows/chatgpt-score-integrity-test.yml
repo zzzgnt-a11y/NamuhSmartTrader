@@ -33,7 +33,7 @@ jobs:
           assert 0 <= rv <= 100 and 0 <= pts <= 10
           print('execution',score,ok,reason); print('minute',s,g,m['score_parts']); print('rsi',rv,pts)
           PY
-      - name: Samsung live universe score report
+      - name: Samsung live data source audit
         run: |
           python - <<'PY'
           import json,time,urllib.request
@@ -44,11 +44,15 @@ jobs:
                       with urllib.request.urlopen(url,timeout=30) as r:return json.load(r)
                   except Exception as e:last=e;time.sleep(5)
               raise RuntimeError(last)
-          d=get('https://namuh-smart-trader.onrender.com/api/v352/universe?market=KR&catalog=0')
-          rows=d.get('scores') or d.get('candidates') or d.get('items') or []
+          uni=get('https://namuh-smart-trader.onrender.com/api/v352/universe?market=KR&catalog=0')
+          rows=uni.get('scores') or []
           row=next((x for x in rows if str(x.get('code'))=='005930'),None)
-          print('UNIVERSE_KEYS='+json.dumps(list(d.keys()),ensure_ascii=False))
           print('SAMSUNG_UNIVERSE='+json.dumps(row,ensure_ascii=False,sort_keys=True))
+          mt=get('https://namuh-smart-trader.onrender.com/api/minute/top?limit=100&fresh=false')
+          mrows=mt if isinstance(mt,list) else (mt.get('rows') or mt.get('items') or mt.get('data') or [])
+          mrow=next((x for x in mrows if str(x.get('code') or x.get('symbol') or x.get('iem_cd'))=='005930'),None)
+          print('MINUTE_TOP_TYPE='+type(mt).__name__)
+          print('SAMSUNG_MINUTE_SYNC='+json.dumps(mrow,ensure_ascii=False,sort_keys=True))
           if not row: raise SystemExit('005930 missing from universe')
           if row.get('score_integrity_error'): raise SystemExit('score_integrity_error='+str(row.get('score_integrity_error')))
           PY
