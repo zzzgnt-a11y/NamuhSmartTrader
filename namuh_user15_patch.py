@@ -49,11 +49,6 @@ def apply(ns):
     except Exception as exc:
         print("NAMUH USER15 UI INJECT:", str(exc)[:180], flush=True)
 
-    # ------------------------------------------------------------------
-    # KR investor parsing: currentInvestor can contain many dated rows. The
-    # previous generic pick() could select a non-latest nested row and leave
-    # foreign/institution/person/program at zero. Apply the newest dated row.
-    # ------------------------------------------------------------------
     old_apply_investor = getattr(feed, "_apply_investor", None)
     if callable(old_apply_investor):
         def apply_investor(code, data):
@@ -97,11 +92,6 @@ def apply(ns):
                 q.program_net = latest["program"]
         feed._apply_investor = apply_investor
 
-    # ------------------------------------------------------------------
-    # Broaden sector-flow coverage without turning the scanner into a request
-    # storm. With no KRX OpenAPI key, scan a balanced NH master sample across
-    # sectors instead of only the small fixed list. KRX-key behavior is kept.
-    # ------------------------------------------------------------------
     old_refresh_universe = getattr(feed, "_refresh_sector_scan_universe", None)
     if callable(old_refresh_universe):
         def refresh_sector_scan_universe():
@@ -139,9 +129,6 @@ def apply(ns):
             feed.sector_universe_asof = ""
         feed._refresh_sector_scan_universe = refresh_sector_scan_universe
 
-    # Program flow used to subscribe only the tiny fixed list, which made the
-    # program/person/institution sector tabs look almost empty. Subscribe the
-    # same bounded balanced universe after the master has had a moment to load.
     old_program_loop = getattr(feed, "program_loop", None)
     if callable(old_program_loop):
         def program_loop():
@@ -162,16 +149,15 @@ def apply(ns):
                     delay = min(30, delay * 2)
         feed.program_loop = program_loop
 
-    # ------------------------------------------------------------------
-    # SMART MONEY: 5-year KOSPI analogue analysis. One background KRX request,
-    # then cached statistics are attached to smart candidates. No candidate
-    # request waits for the 5-year download.
-    # ------------------------------------------------------------------
     forecast_lock = threading.RLock()
     forecast = {"ready": False, "loading": False, "updated_at": 0.0, "history_days": 0}
 
     def build_forecast():
         nonlocal forecast
+        # Startup speed guard: this 5-year KRX history fetch is useful for
+        # SMART MONEY but must never compete with the first dashboard paint.
+        if feed._stop.wait(30):
+            return
         with forecast_lock:
             if forecast.get("loading"):
                 return
@@ -231,8 +217,6 @@ def apply(ns):
 
     core.candidate = candidate
 
-    # Keep the market-flow endpoint warm from persisted data and refresh in the
-    # background only. This never blocks a page response.
     try:
         import v343_features as v343
         threading.Thread(target=v343._refresh_market_flow, kwargs={"force": False}, daemon=True, name="market-flow-warm").start()
