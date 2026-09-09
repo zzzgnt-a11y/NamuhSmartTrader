@@ -1,10 +1,10 @@
 @echo off
 chcp 65001 >nul
 setlocal
-title Namuh Smart Trader WEB
+title Namuh Smart Trader PC WEB
 
 echo =========================================
-echo Namuh Smart Trader CLEAN WEB start
+echo Namuh Smart Trader PC WEB start
 echo =========================================
 
 where python >nul 2>&1
@@ -30,13 +30,13 @@ if errorlevel 1 goto :fail
 
 if not exist .env (
   echo [FAIL] .env is missing.
-  echo Copy .env.example to .env and enter NHPLUG_APP_KEY / NHPLUG_APP_SECRET.
+  echo Copy .env.example to .env and enter required credentials.
   pause
   exit /b 1
 )
 
-echo [4/4] Starting clean frontend wrapper...
-python runtime_server_clean.py
+echo [4/4] Starting current v34 runtime...
+python runtime_server_v34.py
 exit /b %errorlevel%
 
 :fail
