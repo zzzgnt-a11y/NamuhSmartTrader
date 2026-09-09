@@ -35,8 +35,8 @@ if not exist .env (
   exit /b 1
 )
 
-echo [4/4] Starting current v34 runtime...
-python runtime_server_v34.py
+echo [4/4] Starting PC runtime...
+python runtime_server_pc.py
 exit /b %errorlevel%
 
 :fail
