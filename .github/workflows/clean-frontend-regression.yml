@@ -1,8 +1,8 @@
-name: clean-frontend-regression
+name: current-frontend-regression
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'fix/**']
   pull_request:
 
 jobs:
@@ -15,11 +15,13 @@ jobs:
           python-version: '3.12'
       - name: Python syntax
         run: |
-          python -m py_compile runtime_server_clean.py namuh_clean_frontend_patch.py namuh_patch_loader.py
+          python -m py_compile runtime_server_v34.py namuh_patch_loader.py namuh_clean_frontend_patch.py
       - name: JavaScript syntax
         run: |
-          node --check static/rebuild.js
-          node --check static/rebuild-stock.js
-      - name: 1000-cycle frontend invariants
+          node --check static/app.js
+          node --check static/stock.js
+          node --check static/v364_main.js
+          node --check static/v365_market_ui_fix.js
+      - name: Current frontend invariants 5 consecutive cycles
         run: |
           python -m unittest tests.test_clean_frontend_static -v
