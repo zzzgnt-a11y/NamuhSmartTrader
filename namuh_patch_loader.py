@@ -102,7 +102,6 @@ def install():
                         import namuh_v372_speed_final;namuh_v372_speed_final.apply(ns)
                         import namuh_v373_dashboard_restore;namuh_v373_dashboard_restore.apply(ns)
                         import namuh_v374_coin_ledger_fix;namuh_v374_coin_ledger_fix.apply(ns)
-                        import namuh_clean_frontend_patch;namuh_clean_frontend_patch.apply(ns)
                 except Exception as exc:
                     print('NAMUH USER15 LATE PATCH ERROR:',str(exc)[:220],flush=True)
                 return _prev_run(*args,**kwargs)
