@@ -3,8 +3,42 @@ import os
 import re
 import sys
 
+# EMERGENCY 2026-09-09: temporarily block every NHPLUG auth/data entry point.
+# This preserves the configured keys/secrets while preventing new NAMUH PLUG
+# token issuance until the reconnect/auth loop is fixed.
+def _namuh_emergency_disable_nhplug():
+    try:
+        import nhplug
+        from nhplug import auth as _nh_auth
+
+        def _blocked(*args, **kwargs):
+            raise RuntimeError('NHPLUG temporarily disabled: token issuance blocked')
+
+        _nh_auth.get_token = _blocked
+        if hasattr(nhplug, 'get_token'):
+            nhplug.get_token = _blocked
+        if hasattr(nhplug, 'call'):
+            nhplug.call = _blocked
+        try:
+            import nhplug.realtime as _nh_realtime
+            _nh_realtime.subscribe = _blocked
+        except Exception:
+            pass
+        try:
+            import nhplug.instruments as _nh_instruments
+            _nh_instruments.load_master = _blocked
+        except Exception:
+            pass
+        print('NAMUH EMERGENCY: NHPLUG token/auth/data calls disabled', flush=True)
+    except Exception as exc:
+        print('NAMUH EMERGENCY NHPLUG BLOCK ERROR:', exc, flush=True)
+
+_namuh_emergency_disable_nhplug()
+
 # Keep all previous runtime/static hotfixes first.
 import sitecustomize_legacy
+# Re-apply after legacy patches in case they imported NHPLUG symbols.
+_namuh_emergency_disable_nhplug()
 
 ROOT=Path(__file__).resolve().parent
 INDEX=ROOT/'static'/'index.html'
@@ -103,6 +137,9 @@ for rel in ('static/coin.html','static/coin-detail.html'):
 import namuh_patch_loader
 namuh_patch_loader.install()
 
+# Re-apply once more after runtime patch imports.
+_namuh_emergency_disable_nhplug()
+
 # Final runtime owners are installed before FastAPI lifespan starts.
 try:
     import uvicorn
@@ -131,6 +168,7 @@ try:
                     import v363_market_flow_patch;v363_market_flow_patch.apply(ns)
             except Exception as exc:
                 print('LATE RUNTIME PATCH ERROR:',exc,flush=True)
+            _namuh_emergency_disable_nhplug()
             return _orig_uvicorn_run(*args,**kwargs)
         uvicorn.run=_run_with_coin_patch
 except Exception:
