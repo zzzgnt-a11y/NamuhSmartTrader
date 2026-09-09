@@ -15,6 +15,7 @@ class CurrentFrontendRegression(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.start = read("START_SITE.bat")
+        cls.pc_runtime = read("runtime_server_pc.py")
         cls.runtime = read("runtime_server_v34.py")
         cls.loader = read("namuh_patch_loader.py")
         cls.sitecustomize = read("sitecustomize.py")
@@ -27,6 +28,7 @@ class CurrentFrontendRegression(unittest.TestCase):
 
     def _assert_once(self):
         for rel in (
+            "runtime_server_pc.py",
             "runtime_server_v34.py",
             "namuh_patch_loader.py",
             "static/index.html",
@@ -38,10 +40,16 @@ class CurrentFrontendRegression(unittest.TestCase):
         ):
             self.assertTrue((ROOT / rel).is_file(), rel)
 
-        # PC startup must use the runtime that actually exists.
-        self.assertIn("python runtime_server_v34.py", self.start)
+        # PC startup must use the dedicated existing launcher, never removed clean runtime.
+        self.assertIn("python runtime_server_pc.py", self.start)
         self.assertNotIn("runtime_server_clean.py", self.start)
+        self.assertIn('runpy.run_module("runtime_server_v34", run_name="__main__")', self.pc_runtime)
         self.assertIn("uvicorn.run(", self.runtime)
+
+        # PC launcher disables only the process-local emergency re-block and restores NHPLUG.
+        self.assertIn("_namuh_emergency_disable_nhplug = lambda: None", self.pc_runtime)
+        self.assertIn("importlib.reload(_nhplug)", self.pc_runtime)
+        self.assertIn("_namuh_emergency_disable_nhplug()", self.sitecustomize)
 
         # Removed clean/rebuild frontend must not be loaded at runtime.
         self.assertNotIn("namuh_clean_frontend_patch.apply", self.loader)
@@ -77,6 +85,7 @@ class CurrentFrontendRegression(unittest.TestCase):
         self.assertIn("data-f=\"SELL\"", self.v364)
         self.assertIn("v365-us", self.v365)
 
+        ast.parse(self.pc_runtime)
         ast.parse(self.runtime)
         ast.parse(self.loader)
         ast.parse(self.sitecustomize)
